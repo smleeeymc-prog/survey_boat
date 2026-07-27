@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>그래도, 여기 살고 있습니다 — 참여형 아카이브 (프로토타입)</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --ink:#1a1a1a; --ink2:#3d3d3d; --ink3:#7a7a7a;
+    --cream:#f7f4ef; --white:#ffffff;
+    --gold:#b89a6a; --gold2:#d4b896;
+    --dark:#16161e; --dark2:#22222e;
+    --font:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
+  }
+  html,body{height:100%;}
+  body{
+    font-family:var(--font); background:transparent; color:var(--ink);
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    justify-content:flex-start; overflow-x:hidden;
+  }
+  #proto-badge{
+    position:fixed; top:10px; right:10px; z-index:999;
+    background:var(--dark); color:var(--gold2); font-size:11px;
+    padding:5px 10px; border-radius:20px; letter-spacing:.02em; opacity:.85;
+  }
+  #app{ width:100%; max-width:520px; min-height:100vh; padding:32px 20px 60px;
+    display:flex; flex-direction:column; position:relative; z-index:1;
+    pointer-events:none; user-select:none; -webkit-user-select:none; }
+
+  /* 실제 조작이 필요한 요소들만 포인터 이벤트를 되살림 (그 외 빈 공간은 드래그가 캔버스로 통과) */
+  #app button,
+  #app .option-card,
+  #app .tag,
+  #app .filter-chip,
+  #app select,
+  #app textarea,
+  #app .consent-box label,
+  #app .consent-box input{
+    pointer-events:auto;
+  }
+  #app textarea{ user-select:text; -webkit-user-select:text; }
+  .screen{ display:flex; flex-direction:column; flex:1; animation:fadeIn .5s ease; }
+  @keyframes fadeIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+
+  /* progress */
+  .progress-row{ display:flex; align-items:center; gap:10px; margin-bottom:28px; }
+  .progress-bar{ flex:1; height:3px; background:rgba(227,221,208,.55); border-radius:2px; overflow:hidden; }
+  .progress-fill{ height:100%; background:var(--gold); transition:width .4s ease; }
+  .progress-label{ font-size:12px; color:var(--ink3); white-space:nowrap; }
+  .back-btn{ background:none; border:none; color:var(--ink3); font-size:13px; cursor:pointer; margin-bottom:14px; align-self:flex-start; }
+
+  /* splash */
+  .splash{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:18px; }
+  .splash h1{ font-size:26px; line-height:1.4; font-weight:700; }
+  .splash h1 span{ display:block; color:var(--gold); font-size:14px; letter-spacing:.15em; margin-bottom:10px; font-weight:500; }
+  .splash p{ color:var(--ink3); font-size:14px; line-height:1.7; max-width:340px; }
+
+  .chat-btn{
+    margin-top:18px; width:100%; max-width:320px; background:rgba(22,22,30,.72); color:var(--white);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.12); border-radius:30px; padding:16px 22px; font-size:15px; cursor:pointer;
+    display:flex; justify-content:space-between; align-items:center; font-family:var(--font);
+    transition:transform .15s ease;
+  }
+  .chat-btn:hover{ transform:translateY(-2px); }
+  .chat-btn span.arrow{ color:var(--gold2); font-size:18px; }
+
+  .onboard-line{ font-size:16px; line-height:1.8; text-align:center; padding:40px 10px; color:var(--ink2); flex:1; display:flex; align-items:center; justify-content:center; }
+
+  .fade-stage{ opacity:0; transform:translateY(8px); transition:opacity .8s ease, transform .8s ease; }
+  .fade-stage.show{ opacity:1; transform:translateY(0); }
+
+  h2.q{ font-size:19px; font-weight:700; margin-bottom:6px; }
+  p.sub{ font-size:13px; color:var(--ink3); margin-bottom:24px; line-height:1.6; }
+
+  .option-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
+  .option-card{
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.5);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-radius:14px; padding:16px 18px;
+    cursor:pointer; font-size:14px; display:flex; justify-content:space-between; align-items:center;
+    transition:all .15s ease;
+  }
+  .option-card:hover{ border-color:var(--gold2); }
+  .option-card.selected{ border-color:var(--gold); background:rgba(251,247,239,.68); font-weight:700; }
+  .option-card .desc{ font-weight:400; font-size:12px; color:var(--ink3); margin-top:3px; }
+
+  textarea.sentence{
+    width:100%; border:1.5px solid rgba(255,255,255,.55); border-radius:14px; padding:16px; font-size:15px;
+    font-family:var(--font); resize:none; min-height:110px; background:rgba(255,255,255,.5);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); line-height:1.6;
+  }
+  textarea.sentence:focus{ outline:none; border-color:var(--gold); }
+  .char-count{ text-align:right; font-size:12px; color:var(--ink3); margin-top:6px; }
+
+  .tag-wrap{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
+  .tag{
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.5);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    border-radius:20px; padding:9px 16px;
+    font-size:13px; cursor:pointer; transition:all .15s ease;
+  }
+  .tag.selected{ background:rgba(22,22,30,.72); color:var(--white); border-color:rgba(22,22,30,.72); }
+  .tag.disabled{ opacity:.35; pointer-events:none; }
+
+  .consent-box{ border:1.5px solid rgba(255,255,255,.55); border-radius:14px; padding:16px; margin-bottom:16px;
+    background:rgba(255,255,255,.5); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .consent-box label{ display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.6; cursor:pointer; }
+  .consent-box input[type=checkbox]{ margin-top:3px; accent-color:var(--gold); width:16px; height:16px; flex-shrink:0; }
+  .privacy-note{ font-size:11.5px; color:var(--ink3); line-height:1.7; margin-top:14px; padding-top:14px; border-top:1px dashed #e3ddd0; }
+
+  .next-btn{
+    margin-top:auto; width:100%; background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-radius:30px; padding:16px; font-size:15px; cursor:pointer; font-family:var(--font);
+    transition:opacity .15s ease;
+  }
+  .next-btn:disabled{ opacity:.35; cursor:not-allowed; }
+
+  /* 결과 카드 */
+  .result-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:6px; gap:22px; text-align:center; }
+  .my-card{
+    background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border-radius:20px; padding:34px 26px; width:100%;
+    max-width:340px; position:relative; animation:cardPop .6s cubic-bezier(.2,.9,.3,1.3);
+  }
+  @keyframes cardPop{ from{opacity:0; transform:scale(.85) translateY(14px);} to{opacity:1; transform:scale(1) translateY(0);} }
+  .my-card .tagline{ color:var(--gold2); font-size:11px; letter-spacing:.12em; margin-bottom:14px; }
+  .my-card .sentence-txt{ font-size:18px; line-height:1.6; font-weight:700; margin-bottom:18px; }
+  .my-card .meta-row{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; font-size:11px; color:#c9c5bc; }
+  .my-card .meta-row span{ border:1px solid #454555; border-radius:20px; padding:3px 10px; }
+  .result-wrap p.note{ color:var(--ink3); font-size:13px; }
+
+  /* 아카이브 화면 */
+  .archive-screen{ width:100%; max-width:960px; padding:24px 16px 60px; }
+  .archive-header{ text-align:center; margin-bottom:22px; }
+  .archive-header h2{ font-size:22px; margin-bottom:6px; }
+  .archive-header p{ color:var(--ink3); font-size:13px; }
+  .filter-row{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:10px; }
+  .filter-chip{
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.55);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+    border-radius:20px; padding:7px 14px;
+    font-size:12.5px; cursor:pointer;
+  }
+  .filter-chip.active{ background:rgba(22,22,30,.78); color:var(--white); border-color:rgba(22,22,30,.78); }
+  .region-select{ text-align:center; margin-bottom:22px; }
+  .region-select select{ font-family:var(--font); font-size:12.5px; padding:6px 10px; border-radius:20px;
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.55);
+    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+
+  .wall{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .wall-card{
+    background:rgba(255,255,255,.7); border:1px solid rgba(236,231,220,.8); border-radius:16px; padding:18px;
+    font-size:13.5px; line-height:1.6; animation:cardIn .5s ease backwards;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  @keyframes cardIn{ from{opacity:0; transform:translateY(10px) scale(.97);} to{opacity:1; transform:translateY(0) scale(1);} }
+  .wall-card.new-card{ border-color:var(--gold); box-shadow:0 0 0 2px rgba(184,154,106,.25); animation:cardIn .5s ease, pulse 1.8s ease 2; }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 0 0 2px rgba(184,154,106,.25);} 50%{ box-shadow:0 0 0 5px rgba(184,154,106,.12);} }
+  .wall-card .top-meta{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink3); }
+  .wall-card .state-tag{ color:var(--gold); font-weight:700; }
+  .wall-card .txt{ font-weight:600; }
+  .wall-card .kw-row{ display:flex; gap:6px; flex-wrap:wrap; }
+  .wall-card .kw{ font-size:10.5px; color:var(--ink3); border:1px solid #e3ddd0; border-radius:10px; padding:2px 8px; }
+  .empty-note{ text-align:center; color:var(--ink3); font-size:13px; padding:40px 0; }
+
+  .restart-btn{
+    display:block; margin:30px auto 0; background:none; border:1.5px solid var(--ink3); color:var(--ink2);
+    border-radius:30px; padding:10px 22px; font-size:13px; cursor:pointer; font-family:var(--font);
+  }
+
+  @media (max-width:480px){ .my-card .sentence-txt{ font-size:16px; } }
+
+  /* 병 속 풍경 3D 씬 — 전체화면 배경으로 표시 (onboard~result 단계) */
+  #bgFallback{ position:fixed; inset:0; z-index:-2; background:var(--cream); }
+  #sceneStage{
+    position:fixed; inset:0; z-index:-1;
+    opacity:0; transition:opacity .7s ease;
+  }
+  #sceneStage.visible{ opacity:1; }
+  #bottleCanvas{ width:100%; height:100%; display:block; }
+
+  /* 아카이브 카드 썸네일 */
+  .wall-card img.snap-thumb{
+    width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px;
+    background:#ece7dc; display:block;
+  }
+</style>
+</head>
+<body>
+
+<div id="proto-badge">PROTOTYPE · 목업 데이터</div>
+<div id="bgFallback"></div>
+<div id="sceneStage"><canvas id="bottleCanvas"></canvas></div>
+<div id="app"></div>
+
+<script>
+/* ===========================================================
+   그래도, 여기 살고 있습니다 — 참여형 아카이브 프로토타입
+   ※ 실제 서버/DB 없음. 브라우저 메모리에만 데이터가 존재하며
+     새로고침 시 초기화됩니다. (실서비스는 Supabase 등 연동 필요)
+=========================================================== */
+
+const REGIONS = ["아산","천안","기타 충남","충남 밖","비공개"];
+const STATES = [
+  {id:"stay", label:"머무르는 중", desc:"지금 이곳에서 계속 살아가고 있어요"},
+  {id:"leaving", label:"떠날 준비 중", desc:"곧 이곳을 떠날 계획이 있어요"},
+  {id:"returned", label:"돌아온 사람", desc:"떠났다가 다시 이곳으로 왔어요"},
+  {id:"between", label:"오가는 중", desc:"두 지역을 오가며 지내고 있어요"},
+  {id:"unsure", label:"아직 모르겠음", desc:"머물지 떠날지 아직 정하지 못했어요"},
+];
+const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
+
+// 시연용 목업 시드 데이터
+let entries = [
+  {region:"아산", state:"stay", text:"여기서 나고 자란 친구들이 아직 다 있어서, 떠날 이유를 못 찾겠어요.", keywords:["관계","익숙함"], name:"익명"},
+  {region:"천안", state:"leaving", text:"괜찮은 일자리가 여기엔 없어서, 결국 서울로 가게 될 것 같아요.", keywords:["일","불안"], name:"익명"},
+  {region:"기타 충남", state:"returned", text:"서울 살아보니 알겠더라고요, 제가 있을 곳은 여기였다는 걸.", keywords:["소속감","익숙함"], name:"바다"},
+  {region:"아산", state:"between", text:"평일엔 일 때문에 나가지만 주말엔 항상 이곳으로 돌아와요.", keywords:["일","가족"], name:"익명"},
+  {region:"충남 밖", state:"unsure", text:"고향이 그립긴 한데, 지금 자리 잡은 곳을 버리기도 애매해요.", keywords:["불안","우연"], name:"익명"},
+  {region:"천안", state:"stay", text:"작업실 월세가 여기서만 가능해서 계속 남아있어요.", keywords:["창작","주거"], name:"단단"},
+  {region:"아산", state:"leaving", text:"부모님이 여기 계시지만, 제 커리어는 다른 도시에 있는 것 같아요.", keywords:["가족","일"], name:"익명"},
+  {region:"기타 충남", state:"stay", text:"딱히 이유는 없지만 여길 떠난다는 상상이 잘 안 돼요.", keywords:["익숙함"], name:"익명"},
+  {region:"천안", state:"unsure", text:"매년 떠난다고 말만 하고 벌써 5년째 여기 살고 있네요.", keywords:["우연","익숙함"], name:"익명"},
+  {region:"충남 밖", state:"returned", text:"타지에서 지치고 나서야 이 동네의 조용함이 그리웠다는 걸 알았어요.", keywords:["소속감","불안"], name:"강"},
+];
+
+let state = {
+  step: "splash",
+  region: null,
+  stateId: null,
+  text: "",
+  keywords: [],
+  disclose: "익명",
+  consent: false,
+  filterState: "all",
+  filterRegion: "all",
+};
+
+const app = document.getElementById("app");
+
+function render(){
+  app.innerHTML = "";
+  const el = document.createElement("div");
+  el.className = "screen";
+
+  if(state.step==="splash") el.appendChild(renderSplash());
+  else if(state.step==="onboard") el.appendChild(renderOnboard());
+  else if(state.step==="region") el.appendChild(renderRegion());
+  else if(state.step==="state") el.appendChild(renderState());
+  else if(state.step==="sentence") el.appendChild(renderSentence());
+  else if(state.step==="keywords") el.appendChild(renderKeywords());
+  else if(state.step==="consent") el.appendChild(renderConsent());
+  else if(state.step==="result") el.appendChild(renderResult());
+  else if(state.step==="archive") el.appendChild(renderArchive());
+
+  app.appendChild(el);
+
+  // 3D 병 속 풍경 씬 동기화 (onboard ~ result 단계까지 배경으로 노출)
+  if(window.BottleScene) window.BottleScene.show(state.step, state);
+}
+
+function progress(stepNum, total, label){
+  const wrap = document.createElement("div");
+  wrap.className = "progress-row";
+  wrap.innerHTML = `<div class="progress-bar"><div class="progress-fill" style="width:${(stepNum/total)*100}%"></div></div>
+    <div class="progress-label">${stepNum}/${total}</div>`;
+  return wrap;
+}
+
+function backBtn(prevStep){
+  const b = document.createElement("button");
+  b.className = "back-btn";
+  b.textContent = "← 이전으로";
+  b.onclick = () => { state.step = prevStep; render(); };
+  return b;
+}
+
+function renderSplash(){
+  const d = document.createElement("div");
+  d.className = "splash";
+  d.innerHTML = `
+    <h1><span>입다 · 2026 다원예술 프로젝트</span>그래도,<br>여기 살고 있습니다</h1>
+    <p>충남·아산에 남아 살아가는 청년의 이야기를 한 문장으로 남겨주세요.<br>당신의 문장은 다른 사람들의 기록과 함께 전시장 안에 쌓입니다.</p>
+  `;
+  const btn = document.createElement("button");
+  btn.className = "chat-btn";
+  btn.innerHTML = `시작하기 <span class="arrow">→</span>`;
+  btn.onclick = () => { state.step="onboard"; render(); };
+  d.appendChild(btn);
+  return d;
+}
+
+function renderOnboard(){
+  const d = document.createElement("div");
+  d.style.display="flex"; d.style.flexDirection="column"; d.style.flex="1";
+  const line = document.createElement("div");
+  line.className = "onboard-line fade-stage";
+  line.textContent = "지금, 당신은 이곳에 머물고 있나요, 지나가고 있나요?";
+  d.appendChild(line);
+  const btn = document.createElement("button");
+  btn.className = "chat-btn fade-stage";
+  btn.innerHTML = `한 문장 남기러 가기 <span class="arrow">→</span>`;
+  btn.onclick = () => { state.step="region"; render(); };
+  d.appendChild(btn);
+
+  // 배가 화면 중앙에 뽁 하고 등장해 물가로 떨어져 정착한 뒤,
+  // 문장 → 버튼 순서로 페이드인
+  if(window.BottleScene){
+    window.BottleScene.playIntro(()=>{
+      requestAnimationFrame(()=> line.classList.add("show"));
+      setTimeout(()=> btn.classList.add("show"), 650);
+    });
+  } else {
+    line.classList.add("show"); btn.classList.add("show");
+  }
+  return d;
+}
+
+function renderRegion(){
+  const d = document.createElement("div");
+  d.appendChild(backBtn("onboard"));
+  d.appendChild(progress(1,5));
+  const h = document.createElement("h2"); h.className="q"; h.textContent="지금 활동하는 지역은 어디인가요?";
+  d.appendChild(h);
+  const p = document.createElement("p"); p.className="sub"; p.textContent="넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.";
+  d.appendChild(p);
+  const list = document.createElement("div"); list.className="option-list";
+  REGIONS.forEach(r=>{
+    const c = document.createElement("div");
+    c.className = "option-card" + (state.region===r ? " selected":"");
+    c.innerHTML = `<span>${r}</span>`;
+    c.onclick = ()=>{ state.region=r; render(); };
+    list.appendChild(c);
+  });
+  d.appendChild(list);
+  const next = document.createElement("button");
+  next.className="next-btn"; next.textContent="다음";
+  next.disabled = !state.region;
+  next.onclick = ()=>{ state.step="state"; render(); };
+  d.appendChild(next);
+  return d;
+}
+
+function renderState(){
+  const d = document.createElement("div");
+  d.appendChild(backBtn("region"));
+  d.appendChild(progress(2,5));
+  const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신의 상태에 가장 가까운 것은?";
+  d.appendChild(h);
+  const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없습니다. 지금 느끼는 대로 골라주세요.";
+  d.appendChild(p);
+  const list=document.createElement("div"); list.className="option-list";
+  STATES.forEach(s=>{
+    const c=document.createElement("div");
+    c.className="option-card"+(state.stateId===s.id?" selected":"");
+    c.innerHTML=`<div><div>${s.label}</div><div class="desc">${s.desc}</div></div>`;
+    c.onclick=()=>{ state.stateId=s.id; render(); };
+    list.appendChild(c);
+  });
+  d.appendChild(list);
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent="다음";
+  next.disabled=!state.stateId;
+  next.onclick=()=>{ state.step="sentence"; render(); };
+  d.appendChild(next);
+  return d;
+}
+
+function renderSentence(){
+  const d=document.createElement("div");
+  d.appendChild(backBtn("state"));
+  d.appendChild(progress(3,5));
+  const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신이 이곳에 머무르게 하는 것은 무엇인가요?";
+  d.appendChild(h);
+  const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없으며, 최대 80자까지 한 문장으로 남길 수 있습니다.";
+  d.appendChild(p);
+  const ta=document.createElement("textarea");
+  ta.className="sentence"; ta.maxLength=80; ta.placeholder="예: 아직 여기에 내가 아끼는 사람들이 있어서요.";
+  ta.value = state.text;
+  const count=document.createElement("div"); count.className="char-count"; count.textContent=`${ta.value.length}/80`;
+  ta.addEventListener("input",()=>{ state.text=ta.value; count.textContent=`${ta.value.length}/80`; next.disabled=ta.value.trim().length===0; });
+  d.appendChild(ta); d.appendChild(count);
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="20px";
+  next.disabled = state.text.trim().length===0;
+  next.onclick=()=>{ state.step="keywords"; render(); };
+  d.appendChild(next);
+  return d;
+}
+
+function renderKeywords(){
+  const d=document.createElement("div");
+  d.style.display="flex"; d.style.flexDirection="column"; d.style.flex="1";
+  d.appendChild(backBtn("sentence"));
+  d.appendChild(progress(4,5));
+
+  // 배가 화면 전체적으로 온전히 보이도록 선택지 묶음을 화면 하단으로 밀어냄
+  const bottomWrap=document.createElement("div");
+  bottomWrap.style.marginTop="auto";
+
+  const h=document.createElement("h2"); h.className="q"; h.textContent="그 문장을 설명하는 키워드를 골라주세요";
+  bottomWrap.appendChild(h);
+  const p=document.createElement("p"); p.className="sub"; p.textContent="최대 2개까지 선택할 수 있어요. 배의 모습이 함께 바뀌어요.";
+  bottomWrap.appendChild(p);
+  const wrap=document.createElement("div"); wrap.className="tag-wrap";
+  KEYWORDS.forEach(k=>{
+    const t=document.createElement("div");
+    t.className="tag"+(state.keywords.includes(k)?" selected":"");
+    if(!state.keywords.includes(k) && state.keywords.length>=2) t.className+=" disabled";
+    t.textContent=k;
+    t.onclick=()=>{
+      if(state.keywords.includes(k)) state.keywords=state.keywords.filter(x=>x!==k);
+      else if(state.keywords.length<2) state.keywords.push(k);
+      render();
+    };
+    wrap.appendChild(t);
+  });
+  bottomWrap.appendChild(wrap);
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="4px";
+  next.onclick=()=>{ state.step="consent"; render(); };
+  bottomWrap.appendChild(next);
+
+  d.appendChild(bottomWrap);
+  return d;
+}
+
+function renderConsent(){
+  const d=document.createElement("div");
+  d.appendChild(backBtn("keywords"));
+  d.appendChild(progress(5,5));
+  const h=document.createElement("h2"); h.className="q"; h.textContent="공개 방식과 활용 동의";
+  d.appendChild(h);
+  const p=document.createElement("p"); p.className="sub"; p.textContent="이름은 선택 사항이며, 실명 대신 별칭을 남길 수도 있어요.";
+  d.appendChild(p);
+
+  const list=document.createElement("div"); list.className="option-list";
+  ["익명","별칭","실명"].forEach(opt=>{
+    const c=document.createElement("div");
+    c.className="option-card"+(state.disclose===opt?" selected":"");
+    c.textContent=opt;
+    c.onclick=()=>{ state.disclose=opt; render(); };
+    list.appendChild(c);
+  });
+  d.appendChild(list);
+
+  const box=document.createElement("div"); box.className="consent-box";
+  box.innerHTML=`<label><input type="checkbox" id="consentChk" ${state.consent?"checked":""}>
+    <span>제출한 문장이 전시장 내 화면과 웹 아카이브에 공개되고, 아카이브북·결과보고서에 활용되는 것에 동의합니다.</span></label>
+    <div class="privacy-note">입력한 지역·상태·문장 외의 개인정보는 저장되지 않습니다. 욕설·혐오·개인정보가 포함된 문장은 비공개 처리될 수 있습니다.</div>`;
+  d.appendChild(box);
+  box.querySelector("#consentChk").addEventListener("change",(e)=>{ state.consent=e.target.checked; next.disabled=!state.consent; });
+
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent="제출하기";
+  next.disabled=!state.consent;
+  next.onclick=()=>{
+    entries.unshift({
+      region: state.region, state: state.stateId, text: state.text,
+      keywords: [...state.keywords], name: state.disclose==="익명" ? "익명" : (state.disclose==="실명" ? "제출자" : "익명 참여자"),
+      _new: true,
+    });
+    state.step="result"; render();
+  };
+  d.appendChild(next);
+  return d;
+}
+
+function stateLabel(id){ return (STATES.find(s=>s.id===id)||{}).label || id; }
+
+function renderResult(){
+  const d=document.createElement("div");
+  d.className="result-wrap";
+
+  const box=document.createElement("div");
+  box.className="fade-stage";
+  box.style.display="flex"; box.style.flexDirection="column"; box.style.alignItems="center"; box.style.gap="22px"; box.style.width="100%";
+  box.innerHTML=`
+    <div class="my-card">
+      <div class="tagline">MY SENTENCE · 지금 이곳</div>
+      <div class="sentence-txt">"${state.text}"</div>
+      <div class="meta-row">
+        <span>${state.region}</span><span>${stateLabel(state.stateId)}</span>
+        ${state.keywords.map(k=>`<span>${k}</span>`).join("")}
+      </div>
+    </div>
+    <p class="note">당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다.</p>
+  `;
+  const btn=document.createElement("button");
+  btn.className="chat-btn"; btn.style.maxWidth="320px";
+  btn.innerHTML=`머무름의 지도 보러가기 <span class="arrow">→</span>`;
+  btn.onclick=()=>{
+    if(window.BottleScene && entries[0]) entries[0].snapshot = window.BottleScene.capture();
+    state.step="archive"; render();
+  };
+  box.appendChild(btn);
+  d.appendChild(box);
+
+  // 이 페이지 진입 시: 살짝 줌 + 투명하지만 윤곽이 보이는 유리병이 풍경을 감싸며 등장(ship in a bottle)
+  // → 완료된 뒤 박스/버튼이 페이드인
+  if(window.BottleScene){
+    window.BottleScene.revealBottle(()=>{
+      requestAnimationFrame(()=> box.classList.add("show"));
+    });
+  } else {
+    box.classList.add("show");
+  }
+  return d;
+}
+
+function renderArchive(){
+  const d=document.createElement("div");
+  d.className="archive-screen";
+  d.innerHTML=`<div class="archive-header">
+      <h2>머무름의 지도</h2>
+      <p>지금까지 ${entries.length}개의 문장이 쌓였습니다</p>
+    </div>`;
+
+  const filterRow=document.createElement("div"); filterRow.className="filter-row";
+  const filters=[{id:"all",label:"전체"}, ...STATES.map(s=>({id:s.id,label:s.label}))];
+  filters.forEach(f=>{
+    const chip=document.createElement("div");
+    chip.className="filter-chip"+(state.filterState===f.id?" active":"");
+    chip.textContent=f.label;
+    chip.onclick=()=>{ state.filterState=f.id; render(); };
+    filterRow.appendChild(chip);
+  });
+  d.appendChild(filterRow);
+
+  const regionWrap=document.createElement("div"); regionWrap.className="region-select";
+  const sel=document.createElement("select");
+  sel.innerHTML = `<option value="all">전체 지역</option>` + REGIONS.map(r=>`<option value="${r}" ${state.filterRegion===r?"selected":""}>${r}</option>`).join("");
+  sel.value = state.filterRegion;
+  sel.onchange=()=>{ state.filterRegion=sel.value; render(); };
+  regionWrap.appendChild(sel);
+  d.appendChild(regionWrap);
+
+  const filtered = entries.filter(e=>
+    (state.filterState==="all" || e.state===state.filterState) &&
+    (state.filterRegion==="all" || e.region===state.filterRegion)
+  );
+
+  const wall=document.createElement("div"); wall.className="wall";
+  if(filtered.length===0){
+    const emp=document.createElement("div"); emp.className="empty-note"; emp.textContent="아직 이 조건에 맞는 기록이 없습니다.";
+    wall.appendChild(emp);
+  } else {
+    filtered.forEach((e,i)=>{
+      const c=document.createElement("div");
+      c.className="wall-card"+(e._new?" new-card":"");
+      c.style.animationDelay = (i*0.05)+"s";
+      c.innerHTML=`
+        ${e.snapshot ? `<img class="snap-thumb" src="${e.snapshot}" alt="내가 만든 병 속 풍경">` : ""}
+        <div class="top-meta"><span>${e.region}</span><span class="state-tag">${stateLabel(e.state)}</span></div>
+        <div class="txt">"${e.text}"</div>
+        <div class="kw-row">${e.keywords.map(k=>`<span class="kw">${k}</span>`).join("")}</div>
+      `;
+      wall.appendChild(c);
+    });
+  }
+  d.appendChild(wall);
+
+  const restart=document.createElement("button");
+  restart.className="restart-btn"; restart.textContent="다시 한 문장 남기기";
+  restart.onclick=()=>{
+    state = {step:"onboard", region:null, stateId:null, text:"", keywords:[], disclose:"익명", consent:false,
+      filterState:state.filterState, filterRegion:state.filterRegion};
+    render();
+  };
+  d.appendChild(restart);
+
+  return d;
+}
+
+render();
+</script>
+
+<!-- ===========================================================
+     병 속 풍경 3D 씬 (BottleScene)
+     - 화면 전체 배경으로 표시 (onboard ~ result 단계)
+     - 카메라는 항상 배를 중심으로 바라보며, 드래그하면 배를 3D로 둘러볼 수 있음
+     - 지역 → 모래 색, 상태 선택 → 배의 항해 방식(정박/출항 연기/귀환/원양 항해/표류),
+       키워드(최대 2개) → 돛 색상 + 작은 깃발로 배 커스터마이징
+     - result 단계에서 캡처(png)하여 아카이브 카드 썸네일로 저장
+=========================================================== -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+
+const REGION_SAND = {
+  "아산": 0xd9b98c,
+  "천안": 0xe0a868,
+  "기타 충남": 0xc9b880,
+  "충남 밖": 0x9aa7b0,
+  "비공개": 0xb0aca4,
+};
+
+// 키워드 → 색상 (선택 1번째: 돛 색, 2번째: 깃발 색)
+const KEYWORD_COLOR = {
+  "일": 0x6b7fd7, "관계": 0xe28ea0, "가족": 0xe0a868, "창작": 0xd4b896,
+  "익숙함": 0xb89a6a, "주거": 0x8fae8b, "불안": 0x8a6a9a, "자유": 0x7ec8d9,
+  "소속감": 0xd6c08a, "우연": 0xaaaaaa,
+};
+
+const ACTIVE_STEPS = ["onboard","region","state","sentence","keywords","consent","result"];
+
+function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+function easeOutBounce(x){
+  const n1 = 7.5625, d1 = 2.75;
+  if (x < 1/d1) return n1*x*x;
+  if (x < 2/d1) return n1*(x -= 1.5/d1)*x + 0.75;
+  if (x < 2.5/d1) return n1*(x -= 2.25/d1)*x + 0.9375;
+  return n1*(x -= 2.625/d1)*x + 0.984375;
+}
+
+// 하늘 그라디언트 텍스처 (레퍼런스 사진처럼 위는 파랑, 아래는 뿌연 수평선)
+function makeSkyTexture(){
+  const c = document.createElement("canvas");
+  c.width = 8; c.height = 256;
+  const ctx = c.getContext("2d");
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, "#7ec3e0");
+  grad.addColorStop(0.55, "#bfe3ec");
+  grad.addColorStop(1, "#eaf5f1");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 8, 256);
+  const tex = new THREE.CanvasTexture(c);
+  if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+class BottleScene {
+  constructor() {
+    this.canvas = document.getElementById("bottleCanvas");
+    this.stage = document.getElementById("sceneStage");
+
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    this.scene = new THREE.Scene();
+    this.scene.background = makeSkyTexture();
+    this.scene.fog = new THREE.Fog(0xbfe3ec, 2.6, 8);
+
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.05, 30);
+
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const sun = new THREE.DirectionalLight(0xfff6e0, 1.0);
+    sun.position.set(2.5, 3.5, 2);
+    this.scene.add(sun);
+    const rim = new THREE.DirectionalLight(0xbfe7ef, 0.3);
+    rim.position.set(-3, 1, -2);
+    this.scene.add(rim);
+
+    this.world = new THREE.Group();
+    this.scene.add(this.world);
+
+    this._buildWater();
+    this._buildShore();
+    this._buildBoat();
+    this._buildSmokePool();
+    this._buildSparkle();
+    this._buildBottleShell();
+
+    // 상태
+    this.mode = "stay";
+    this.shoreBlend = 1;
+    this.shoreTarget = 1;
+    this.introPlaying = false;
+    this.introDone = false;
+    this.visible = false;
+    this.driftSeed = Math.random() * 10;
+    this.elapsed = 0; // this.clock.getElapsedTime()/getDelta()를 같은 프레임에 함께 쓰면
+                       // 서로 델타를 잡아먹어 dt가 항상 0에 가까워지는 문제가 있어 직접 누적함
+
+    // 결과 화면: 살짝 줌 + 유리병이 풍경을 감싸는 리빌 연출
+    this.bottleRevealed = false;
+    this.bottleT = 0;
+    this.bottleTarget = 0;
+    this.camZoomT = 0;
+    this.camZoomTarget = 0;
+
+    // 드래그 오빗(카메라는 항상 배를 중심으로 둠)
+    this.orbitYaw = 0;
+    this.orbitPitch = 0;
+    this._bindDrag();
+
+    this.clock = new THREE.Clock();
+    this._resize();
+    window.addEventListener("resize", () => this._resize());
+    this._animate();
+  }
+
+  _resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
+
+  _bindDrag() {
+    let dragging = false, lastX = 0, lastY = 0;
+    const c = this.canvas;
+    c.style.touchAction = "none";
+    c.style.cursor = "grab";
+    c.addEventListener("pointerdown", (e) => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      c.style.cursor = "grabbing";
+      try { c.setPointerCapture(e.pointerId); } catch (_e) {}
+    });
+    c.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      this.orbitYaw -= dx * 0.006;
+      this.orbitPitch = Math.max(-0.32, Math.min(0.55, this.orbitPitch + dy * 0.0045));
+    });
+    const end = () => { dragging = false; c.style.cursor = "grab"; };
+    c.addEventListener("pointerup", end);
+    c.addEventListener("pointercancel", end);
+    c.addEventListener("pointerleave", end);
+  }
+
+  _buildWater() {
+    const geo = new THREE.PlaneGeometry(16, 16, 44, 44);
+    geo.rotateX(-Math.PI / 2);
+    this.waterBase = geo.attributes.position.array.slice();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x4f9fb8, roughness: 0.35, metalness: 0.05,
+      transparent: true, opacity: 0.94,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    this.world.add(mesh);
+    this.waterMesh = mesh;
+  }
+
+  _buildShore() {
+    // 사진 속 노란색 표시 영역 비율(전체 중 일부만 모래) 정도로 작게
+    const topGeo = new THREE.CircleGeometry(1.15, 28);
+    topGeo.rotateX(-Math.PI / 2);
+    topGeo.scale(0.8, 1, 1.2);
+    this.shoreTopMat = new THREE.MeshStandardMaterial({ color: 0xd9b98c, roughness: 1, transparent: true });
+    const top = new THREE.Mesh(topGeo, this.shoreTopMat);
+    top.position.y = 0.16; // 파도 최대 진폭(약 0.06)보다 충분히 높게 두어 침수되지 않도록 함
+
+    // 모래 아래에 둔덕(절벽) 벽을 붙여 물과 자연스럽게 이어지면서도 파도에 덮이지 않게 함
+    const riserGeo = new THREE.CylinderGeometry(1.02, 1.12, 0.24, 28, 1, true);
+    this.shoreRiserMat = new THREE.MeshStandardMaterial({
+      color: 0xc7a978, roughness: 1, transparent: true, side: THREE.DoubleSide,
+    });
+    const riser = new THREE.Mesh(riserGeo, this.shoreRiserMat);
+    riser.scale.set(0.8, 1, 1.2);
+    riser.position.y = 0.045;
+
+    const group = new THREE.Group();
+    group.add(top, riser);
+    group.position.set(0.95, 0, 0.2);
+    this.world.add(group);
+
+    this.shoreMesh = group;
+    this.shoreRestX = 0.95;
+    this.shoreGoneX = 3.4;
+  }
+
+  _buildBoat() {
+    const boat = new THREE.Group();
+
+    // 선체: 둥근 선체(스퀘시드 스피어) — 토이보트 느낌으로 각진 콘 대신 사용
+    const hullGeo = new THREE.SphereGeometry(0.2, 14, 10);
+    const hull = new THREE.Mesh(hullGeo, new THREE.MeshStandardMaterial({ color: 0xf3ead9, roughness: 0.75 }));
+    hull.scale.set(1, 0.32, 1.6);
+    hull.position.y = 0.02;
+    boat.add(hull);
+
+    // 캐빈 (선체 뒤쪽)
+    const cabin = new THREE.Mesh(
+      new THREE.BoxGeometry(0.11, 0.09, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xfaf3e6, roughness: 0.8 })
+    );
+    cabin.position.set(0, 0.115, -0.12);
+    boat.add(cabin);
+
+    // 증기 굴뚝(funnel) — 여기서 연기가 뿜어져 나옴
+    const funnel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.028, 0.033, 0.16, 10),
+      new THREE.MeshStandardMaterial({ color: 0x5b5a63, roughness: 0.6 })
+    );
+    funnel.position.set(0, 0.24, -0.12);
+    boat.add(funnel);
+    const funnelCap = new THREE.Mesh(
+      new THREE.TorusGeometry(0.03, 0.007, 6, 12),
+      new THREE.MeshStandardMaterial({ color: 0x3d3c44, roughness: 0.5 })
+    );
+    funnelCap.rotation.x = Math.PI / 2;
+    funnelCap.position.set(0, 0.32, -0.12);
+    boat.add(funnelCap);
+
+    // 마스트 + 돛 (뱃머리 쪽)
+    const mast = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.01, 0.01, 0.4, 6),
+      new THREE.MeshStandardMaterial({ color: 0xb08a5c })
+    );
+    mast.position.set(0, 0.2, 0.12);
+    boat.add(mast);
+
+    const sailShape = new THREE.Shape();
+    sailShape.moveTo(0, 0.19); sailShape.lineTo(0, -0.19); sailShape.lineTo(0.2, -0.14); sailShape.closePath();
+    this.sailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 });
+    const sail = new THREE.Mesh(new THREE.ShapeGeometry(sailShape), this.sailMat);
+    sail.position.set(0, 0.21, 0.12);
+    boat.add(sail);
+
+    // 키워드 2번째 선택 시 나타나는 작은 깃발
+    const flagShape = new THREE.Shape();
+    flagShape.moveTo(0, 0); flagShape.lineTo(0.1, -0.03); flagShape.lineTo(0, -0.06); flagShape.closePath();
+    this.flagMat = new THREE.MeshStandardMaterial({ color: 0xd9534f, side: THREE.DoubleSide });
+    const flag = new THREE.Mesh(new THREE.ShapeGeometry(flagShape), this.flagMat);
+    flag.position.set(0, 0.4, 0.12);
+    flag.visible = false;
+    boat.add(flag);
+    this.flagMesh = flag;
+
+    boat.position.set(0, 0.06, 0);
+    this.world.add(boat);
+    this.boat = boat;
+
+    // 연기는 굴뚝 끝에서 나옴
+    this.smokeAnchor = new THREE.Object3D();
+    this.smokeAnchor.position.set(0, 0.33, -0.12);
+    boat.add(this.smokeAnchor);
+  }
+
+  _buildSmokePool() {
+    this.smokePool = [];
+    const geo = new THREE.SphereGeometry(0.045, 8, 8);
+    for (let i = 0; i < 8; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xe9e9e9, transparent: true, opacity: 0 });
+      const m = new THREE.Mesh(geo, mat);
+      m.visible = false;
+      this.world.add(m);
+      this.smokePool.push({ mesh: m, age: 0, active: false });
+    }
+    this.smokeSpawnTimer = 0;
+  }
+
+  _buildSparkle() {
+    const mat = new THREE.SpriteMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(0.6, 0.6, 1);
+    spr.position.set(-1.2, 0.05, -1.6);
+    this.scene.add(spr);
+  }
+
+  // 옆으로 누운 유리병 셸 — 결과 화면에서만 페이드인되어 풍경을 감싸는 "ship in a bottle" 연출
+  _buildBottleShell() {
+    const pts = [
+      new THREE.Vector2(0, -1.55),
+      new THREE.Vector2(0.62, -1.5),
+      new THREE.Vector2(0.7, -0.9),
+      new THREE.Vector2(0.68, 1.0),
+      new THREE.Vector2(0.6, 1.25),
+      new THREE.Vector2(0.24, 1.5),
+      new THREE.Vector2(0.2, 1.75),
+    ];
+    const geo = new THREE.LatheGeometry(pts, 40);
+    geo.rotateZ(Math.PI / 2); // 세워진 병 형태를 옆으로 눕힘 (레퍼런스 사진처럼)
+
+    this.bottleMat = new THREE.MeshPhysicalMaterial({
+      color: 0xeaf7f2, transparent: true, opacity: 0,
+      roughness: 0.06, metalness: 0, transmission: 0.85, thickness: 0.4,
+      side: THREE.DoubleSide, depthWrite: false,
+    });
+    const glass = new THREE.Mesh(geo, this.bottleMat);
+    glass.renderOrder = 20;
+
+    // 윤곽(rim) — 살짝 확대한 뒷면만 그려서 은은한 유리 테두리를 표현
+    this.bottleRimMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0, side: THREE.BackSide, depthWrite: false,
+    });
+    const rim = new THREE.Mesh(geo, this.bottleRimMat);
+    rim.scale.setScalar(1.035);
+    rim.renderOrder = 19;
+
+    this.bottleCorkMat = new THREE.MeshStandardMaterial({ color: 0xb08a5c, roughness: 0.85, transparent: true, opacity: 0 });
+    const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 0.45, 16), this.bottleCorkMat);
+    cork.rotation.z = Math.PI / 2;
+    cork.position.x = -1.85;
+
+    const group = new THREE.Group();
+    group.add(rim, glass, cork);
+    group.scale.setScalar(1.9);
+    group.position.y = 0.18;
+    group.visible = false;
+    this.scene.add(group);
+    this.bottleGroup = group;
+  }
+
+  // 온보딩: 배가 화면 중앙에 뽁 하고 나타났다가 물가로 떨어져 정착
+  playIntro(onSettled) {
+    if (this.introDone) { onSettled && onSettled(); return; }
+    this.introPlaying = true;
+    this.introStart = this.elapsed;
+    this._onSettled = onSettled;
+  }
+
+  // 결과 화면 진입: 살짝 줌 + 유리병이 풍경을 감싸며 등장(ship in a bottle) → 완료 후 콜백
+  revealBottle(onDone) {
+    this.bottleGroup.visible = true;
+    this.bottleTarget = 1;
+    this.camZoomTarget = 1;
+    if (this.bottleRevealed) { onDone && onDone(); return; }
+    this.bottleRevealed = true;
+    setTimeout(() => onDone && onDone(), 1500);
+  }
+
+  applyRegion(region) {
+    const hex = REGION_SAND[region] || 0xd9b98c;
+    this.shoreTopMat.color.setHex(hex);
+    this.shoreRiserMat.color.setHex(hex);
+  }
+
+  applyKeywords(keywords) {
+    const cols = (keywords || []).map((k) => KEYWORD_COLOR[k]);
+    this.sailMat.color.setHex(cols[0] !== undefined ? cols[0] : 0xffffff);
+    if (cols[1] !== undefined) {
+      this.flagMat.color.setHex(cols[1]);
+      this.flagMesh.visible = true;
+    } else {
+      this.flagMesh.visible = false;
+    }
+  }
+
+  setMode(mode) {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    this.modeChangedAt = this.elapsed;
+    if (mode === "returned") {
+      // 섬(해안)은 화면 오른쪽에 있으므로, 배는 왼쪽 먼 바다(화면 밖)에서 시작해
+      // 오른쪽으로 향하며 해안에 도착 — 육지를 가로지르지 않도록 반대편에서 접근
+      this.returnStartX = -2.4;
+      this.boat.position.x = this.returnStartX;
+    }
+    if (mode === "stay" || mode === "leaving") {
+      this.boat.position.x = 0;
+    }
+    // 오가는 중 / 아직 모르겠음 → 해안이 사라진 무한한 바다
+    this.shoreTarget = (mode === "between" || mode === "unsure") ? 0 : 1;
+  }
+
+  show(step, appState) {
+    this.visible = ACTIVE_STEPS.includes(step);
+    this.stage.classList.toggle("visible", this.visible);
+    if (!this.visible) return;
+
+    this.applyRegion(appState.region);
+    this.setMode(appState.stateId || "stay");
+    this.applyKeywords(appState.keywords);
+
+    if (step !== "result") {
+      this.bottleTarget = 0;
+      this.camZoomTarget = 0;
+      this.bottleRevealed = false;
+    }
+  }
+
+  capture() {
+    this.renderer.render(this.scene, this.camera);
+    return this.canvas.toDataURL("image/png");
+  }
+
+  _spawnSmoke(dt) {
+    this.smokeSpawnTimer -= dt;
+    if (this.smokeSpawnTimer <= 0) {
+      this.smokeSpawnTimer = 0.35;
+      const free = this.smokePool.find((s) => !s.active);
+      if (free) {
+        free.active = true; free.age = 0;
+        free.mesh.visible = true;
+        free.mesh.material.opacity = 0.55;
+        free.mesh.scale.setScalar(0.6);
+        const wp = new THREE.Vector3();
+        this.smokeAnchor.getWorldPosition(wp);
+        free.mesh.position.copy(wp);
+      }
+    }
+  }
+
+  _updateSmoke(dt) {
+    this.smokePool.forEach((s) => {
+      if (!s.active) return;
+      s.age += dt;
+      s.mesh.position.y += dt * 0.25;
+      s.mesh.position.x += dt * 0.03;
+      s.mesh.scale.setScalar(0.6 + s.age * 0.6);
+      s.mesh.material.opacity = Math.max(0, 0.55 - s.age * 0.5);
+      if (s.age > 1.1) { s.active = false; s.mesh.visible = false; }
+    });
+  }
+
+  _animate() {
+    requestAnimationFrame(() => this._animate());
+    // 주의: getElapsedTime()과 getDelta()를 같은 프레임에서 함께 호출하면
+    // 서로 델타를 소비해버려 dt가 항상 0에 가까워지는 문제가 있었음(연기가 멈춰있던 원인).
+    // getDelta()만 호출하고 elapsed는 직접 누적한다.
+    const dt = Math.min(0.05, this.clock.getDelta());
+    this.elapsed += dt;
+    const t = this.elapsed;
+
+    // 물결 (버텍스 사인파 변위 — 저비용, 모바일 안전. 진폭을 살짝 낮춰 해안 침범을 줄임)
+    const pos = this.waterMesh.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const ix = i * 3;
+      const x = this.waterBase[ix], z = this.waterBase[ix + 2];
+      pos.array[ix + 1] = Math.sin(x * 1.1 + t * 1.3) * 0.035 + Math.sin(z * 0.85 + t * 1.0) * 0.028;
+    }
+    pos.needsUpdate = true;
+
+    if (this.introPlaying) {
+      // 인트로: 팝(스케일업) → 낙하(바운스) → 정착
+      const et = t - this.introStart;
+      const popDur = 0.5, fallDur = 0.85;
+      if (et < popDur) {
+        const p = et / popDur;
+        this.boat.scale.setScalar(Math.min(1, p * 1.5));
+        this.boat.position.y = 0.95;
+        this.boat.position.x = 0;
+      } else if (et < popDur + fallDur) {
+        const p = (et - popDur) / fallDur;
+        this.boat.scale.setScalar(1);
+        this.boat.position.y = THREE.MathUtils.lerp(0.95, 0.06, easeOutBounce(p));
+      } else {
+        this.boat.scale.setScalar(1);
+        this.boat.position.y = 0.06;
+        this.introPlaying = false;
+        this.introDone = true;
+        this._onSettled && this._onSettled();
+      }
+    } else {
+      // 해안 노출도 보간 (오가는 중 / 아직 모르겠음 → 무한한 바다로 트랜지션)
+      this.shoreBlend += (this.shoreTarget - this.shoreBlend) * Math.min(1, dt * 2.2);
+      this.shoreMesh.position.x = THREE.MathUtils.lerp(this.shoreGoneX, this.shoreRestX, this.shoreBlend);
+      this.shoreTopMat.opacity = this.shoreBlend;
+      this.shoreRiserMat.opacity = this.shoreBlend;
+      this.shoreMesh.visible = this.shoreBlend > 0.01;
+
+      const bob = Math.sin(t * 1.8) * 0.02;
+      let rotZ = Math.sin(t * 0.9) * 0.02;
+      let targetX = 0;
+
+      if (this.mode === "returned") {
+        // 섬은 화면 오른쪽에 있다고 가정 — 왼쪽 먼 바다에서 시작해 오른쪽(해안)으로 도착
+        const et = t - this.modeChangedAt;
+        const p = Math.min(1, et / 1.8);
+        targetX = THREE.MathUtils.lerp(this.returnStartX ?? -2.4, 0, easeOutCubic(p));
+        rotZ += -0.06 * (1 - p);
+      } else if (this.mode === "leaving") {
+        targetX = 0; // 정박한 채로 연기만 피어오름
+      } else if (this.mode === "between" || this.mode === "unsure") {
+        targetX = 0; // 카메라(=배) 고정, 물결만 흘러 항해감을 표현. 배는 상하로만 움직임
+      } else {
+        targetX = Math.sin(t * 0.4) * 0.03; // 머무르는 중: 제자리 정박
+      }
+
+      // 연기: 머무르는 중 / 아직 모르겠음을 제외한 모든 상태에서 뿜어져 나옴
+      if (this.mode !== "stay" && this.mode !== "unsure") {
+        this._spawnSmoke(dt);
+      }
+
+      this.boat.position.x = targetX;
+      this.boat.position.y = 0.06 + bob;
+      this.boat.rotation.z = rotZ;
+      this.boat.rotation.y = Math.sin(t * 0.5) * 0.08;
+    }
+
+    this._updateSmoke(dt);
+
+    // 병 리빌 보간 (결과 화면 진입 시 살짝 줌 + 유리병 페이드인)
+    this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
+    this.camZoomT += (this.camZoomTarget - this.camZoomT) * Math.min(1, dt * 2.2);
+    this.bottleMat.opacity = 0.22 * this.bottleT;
+    this.bottleRimMat.opacity = 0.5 * this.bottleT;
+    this.bottleCorkMat.opacity = 0.9 * this.bottleT;
+    if (this.bottleT < 0.01) this.bottleGroup.visible = false;
+
+    // 카메라: 항상 배를 중심으로, 드래그하면 궤도를 돌며 배를 3D로 둘러볼 수 있음
+    const boatPos = this.boat.position;
+    const radius = THREE.MathUtils.lerp(2.1, 4.4, this.camZoomT);
+    const camY = THREE.MathUtils.lerp(0.32, 1.05, this.camZoomT);
+    const baseYaw = 0.18, basePitch = 0.12;
+    const yaw = baseYaw + this.orbitYaw;
+    const pitch = basePitch + this.orbitPitch;
+    this.camera.position.set(
+      boatPos.x + radius * Math.sin(yaw) * Math.cos(pitch),
+      camY + radius * Math.sin(pitch),
+      radius * Math.cos(yaw) * Math.cos(pitch)
+    );
+    this.camera.lookAt(boatPos.x, 0.08, 0);
+
+    if (this.visible) this.renderer.render(this.scene, this.camera);
+  }
+}
+
+window.BottleScene = new BottleScene();
+</script>
+</body>
+</html>
