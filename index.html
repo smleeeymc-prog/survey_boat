@@ -25,7 +25,7 @@
     padding:5px 10px; border-radius:20px; letter-spacing:.02em; opacity:.85;
   }
   #app{ width:100%; max-width:520px; min-height:100vh; padding:32px 20px 60px;
-    display:flex; flex-direction:column; position:relative; z-index:1;
+    display:flex; flex-direction:column; position:relative; z-index:2;
     pointer-events:none; user-select:none; -webkit-user-select:none; }
 
   /* 실제 조작이 필요한 요소들만 포인터 이벤트를 되살림 (그 외 빈 공간은 드래그가 캔버스로 통과) */
@@ -174,14 +174,24 @@
 
   @media (max-width:480px){ .my-card .sentence-txt{ font-size:16px; } }
 
-  /* 병 속 풍경 3D 씬 — 전체화면 배경으로 표시 (onboard~result 단계) */
-  #bgFallback{ position:fixed; inset:0; z-index:-2; background:var(--cream); }
+  /* 병 속 풍경 3D 씬 — 전체화면 배경으로 표시 (onboard~result 단계)
+     일부 모바일 브라우저(특히 인앱 웹뷰)는 negative z-index + position:fixed 조합에서
+     합성(compositing) 오류로 요소가 아예 안 보이는 경우가 있어, z-index는 0 이상만 사용 */
+  #bgFallback{ position:fixed; inset:0; z-index:0; background:var(--cream); }
   #sceneStage{
-    position:fixed; inset:0; z-index:-1;
+    position:fixed; inset:0; z-index:1;
     opacity:0; transition:opacity .7s ease;
   }
   #sceneStage.visible{ opacity:1; }
   #bottleCanvas{ width:100%; height:100%; display:block; }
+
+  /* 3D 초기화 실패 시 안내 (파일을 로컬로 직접 열었거나 인앱 브라우저인 경우 등) */
+  #sceneError{
+    position:fixed; left:12px; right:12px; bottom:16px; z-index:50;
+    background:rgba(20,20,26,.92); color:#fff; font-size:12.5px; line-height:1.6;
+    padding:12px 14px; border-radius:12px; display:none;
+  }
+  #sceneError.show{ display:block; }
 
   /* 아카이브 카드 썸네일 */
   .wall-card img.snap-thumb{
@@ -196,6 +206,17 @@
 <div id="bgFallback"></div>
 <div id="sceneStage"><canvas id="bottleCanvas"></canvas></div>
 <div id="app"></div>
+<div id="sceneError">3D 배경을 불러오지 못했어요. ① 이 파일을 다운로드해서 그냥 열었다면 웹 서버(https)에 올려서 열어보세요. ② 카카오톡·인스타그램 등 인앱 브라우저라면 우측 상단 메뉴에서 "다른 브라우저로 열기"를 사용해보세요. ③ 브라우저를 최신 버전으로 업데이트해보세요.</div>
+
+<script>
+  // 4초 안에 3D 씬이 초기화되지 않으면(모듈 로드 실패, WebGL 미지원 등) 안내 메시지 노출
+  setTimeout(function(){
+    if(!window.BottleScene){
+      var el = document.getElementById("sceneError");
+      if(el) el.classList.add("show");
+    }
+  }, 4000);
+</script>
 
 <script>
 /* ===========================================================
@@ -682,6 +703,10 @@ class BottleScene {
     this.elapsed = 0; // this.clock.getElapsedTime()/getDelta()를 같은 프레임에 함께 쓰면
                        // 서로 델타를 잡아먹어 dt가 항상 0에 가까워지는 문제가 있어 직접 누적함
 
+    // 돛 펄럭임(바람) 세기 — 상태에 따라 다르게, 부드럽게 보간
+    this.windTarget = 0.25;
+    this.windT = 0.25;
+
     // 결과 화면: 살짝 줌 + 유리병이 풍경을 감싸는 리빌 연출
     this.bottleRevealed = false;
     this.bottleT = 0;
@@ -730,17 +755,68 @@ class BottleScene {
     c.addEventListener("pointerleave", end);
   }
 
+  // dli/waves(Tessendorf 오션 데모)의 OCEAN_FRAGMENT_SOURCE를 그대로 참고한 셰이딩.
+  // 실제로는 이미지 텍스처가 없고, 노멀맵(우리는 매 프레임 지오메트리에서 재계산)을 넣은
+  // 프레넬(반사) + 램버트(확산) 수식만으로 "유리 같은 바다" 룩을 냄.
+  _buildWaterMaterial() {
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: {
+        uOceanColor: { value: new THREE.Color(0x2f6f86) },
+        uSkyColor: { value: new THREE.Color(0x9fd6ea) },
+        uSunDirection: { value: new THREE.Vector3(2.5, 3.5, 2).normalize() },
+        uExposure: { value: 0.9 },
+      },
+      vertexShader: `
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+        void main () {
+          vNormal = normalize(normalMatrix * normal);
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uOceanColor;
+        uniform vec3 uSkyColor;
+        uniform vec3 uSunDirection;
+        uniform float uExposure;
+        varying vec3 vNormal;
+        varying vec3 vWorldPos;
+
+        vec3 hdr (vec3 color, float exposure) {
+          return 1.0 - exp(-color * exposure);
+        }
+
+        void main () {
+          vec3 normal = normalize(vNormal);
+          vec3 viewDir = normalize(cameraPosition - vWorldPos);
+          float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
+          vec3 sky = fresnel * uSkyColor;
+          float diffuse = clamp(dot(normal, normalize(uSunDirection)), 0.0, 1.0);
+          vec3 water = (1.0 - fresnel) * uOceanColor * uSkyColor * diffuse;
+          vec3 color = sky + water;
+          gl_FragColor = vec4(hdr(color, uExposure), 0.92);
+        }
+      `,
+    });
+  }
+
   _buildWater() {
     const geo = new THREE.PlaneGeometry(16, 16, 44, 44);
     geo.rotateX(-Math.PI / 2);
     this.waterBase = geo.attributes.position.array.slice();
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x4f9fb8, roughness: 0.35, metalness: 0.05,
-      transparent: true, opacity: 0.94,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(geo, this._buildWaterMaterial());
     this.world.add(mesh);
     this.waterMesh = mesh;
+
+    // 상태(바람 세기)에 따라 스케일되는 Gerstner 파도 성분 몇 개를 합성
+    this.gerstnerWaves = [
+      { dirX: 1.0, dirZ: 0.15, wavelength: 2.2, ampBase: 0.05, speed: 1.1 },
+      { dirX: 0.5, dirZ: -0.85, wavelength: 1.3, ampBase: 0.03, speed: 1.6 },
+      { dirX: -0.7, dirZ: 0.4, wavelength: 0.8, ampBase: 0.018, speed: 2.1 },
+    ];
   }
 
   _buildShore() {
@@ -769,6 +845,44 @@ class BottleScene {
     this.shoreMesh = group;
     this.shoreRestX = 0.95;
     this.shoreGoneX = 3.4;
+  }
+
+  // 삼각형 돛 실루엣을 유지하면서 펄럭임 애니메이션에 쓸 격자(그리드)로 생성
+  // 마스트에 붙는 변(x=0)은 고정, 자유단(먼 꼭짓점 쪽)으로 갈수록 더 크게 흔들리게 함
+  _makeSailGeometry() {
+    const rows = 8, cols = 6;
+    const topY = 0.19, botY = -0.19, tipX = 0.2, tipY = -0.14;
+    const positions = [], uvs = [];
+    for (let r = 0; r <= rows; r++) {
+      const v = r / rows;
+      const y = THREE.MathUtils.lerp(topY, botY, v);
+      let maxX;
+      if (y >= tipY) {
+        const t = (topY - y) / (topY - tipY);
+        maxX = THREE.MathUtils.lerp(0, tipX, t);
+      } else {
+        const t = (tipY - y) / (tipY - botY);
+        maxX = THREE.MathUtils.lerp(tipX, 0, t);
+      }
+      for (let c = 0; c <= cols; c++) {
+        const u = c / cols;
+        positions.push(u * maxX, y, 0);
+        uvs.push(u, 1 - v);
+      }
+    }
+    const indices = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const a = r * (cols + 1) + c, b = a + 1, cc = a + (cols + 1), d = cc + 1;
+        indices.push(a, cc, b, b, cc, d);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
   }
 
   _buildBoat() {
@@ -812,12 +926,14 @@ class BottleScene {
     mast.position.set(0, 0.2, 0.12);
     boat.add(mast);
 
-    const sailShape = new THREE.Shape();
-    sailShape.moveTo(0, 0.19); sailShape.lineTo(0, -0.19); sailShape.lineTo(0.2, -0.14); sailShape.closePath();
+    // 돛: 펄럭임 애니메이션을 위해 격자형 지오메트리로 생성 (삼각형 실루엣은 유지)
     this.sailMat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 });
-    const sail = new THREE.Mesh(new THREE.ShapeGeometry(sailShape), this.sailMat);
+    const sailGeo = this._makeSailGeometry();
+    this.sailBase = sailGeo.attributes.position.array.slice();
+    const sail = new THREE.Mesh(sailGeo, this.sailMat);
     sail.position.set(0, 0.21, 0.12);
     boat.add(sail);
+    this.sailMesh = sail;
 
     // 키워드 2번째 선택 시 나타나는 작은 깃발
     const flagShape = new THREE.Shape();
@@ -954,6 +1070,10 @@ class BottleScene {
     }
     // 오가는 중 / 아직 모르겠음 → 해안이 사라진 무한한 바다
     this.shoreTarget = (mode === "between" || mode === "unsure") ? 0 : 1;
+
+    // 바람(돛 펄럭임) 세기: 나아가고 있다는 느낌이 들수록 강하게
+    const windByMode = { stay: 0.22, leaving: 0.55, returned: 0.75, between: 1, unsure: 0.1 };
+    this.windTarget = windByMode[mode] ?? 0.3;
   }
 
   show(step, appState) {
@@ -1015,14 +1135,47 @@ class BottleScene {
     this.elapsed += dt;
     const t = this.elapsed;
 
-    // 물결 (버텍스 사인파 변위 — 저비용, 모바일 안전. 진폭을 살짝 낮춰 해안 침범을 줄임)
+    // 바람(파도 세기 + 돛 펄럭임 세기) 보간 — 물결/돛이 같은 값을 공유해서 일관되게 움직임
+    this.windT += (this.windTarget - this.windT) * Math.min(1, dt * 1.5);
+
+    // 물결: dli/waves(Tessendorf 오션 데모)를 참고해 실제 Gerstner 방식으로 구현.
+    // Y(높이)만이 아니라 X/Z(수평)로도 밀어내는 트로코이달 변위라서 마루가 뾰족해짐.
+    // steepness·진폭을 windT(=상태별 바람 세기)에 맞춰 스케일 — 오가는 중은 거칠게, 머무름은 잔잔하게.
     const pos = this.waterMesh.geometry.attributes.position;
+    const chop = 0.32 * (0.4 + 0.6 * this.windT);
+    const ampScale = 0.5 + 0.9 * this.windT;
     for (let i = 0; i < pos.count; i++) {
       const ix = i * 3;
-      const x = this.waterBase[ix], z = this.waterBase[ix + 2];
-      pos.array[ix + 1] = Math.sin(x * 1.1 + t * 1.3) * 0.035 + Math.sin(z * 0.85 + t * 1.0) * 0.028;
+      const x0 = this.waterBase[ix], z0 = this.waterBase[ix + 2];
+      let dx = 0, dy = 0, dz = 0;
+      for (let w = 0; w < this.gerstnerWaves.length; w++) {
+        const wave = this.gerstnerWaves[w];
+        const k = (2 * Math.PI) / wave.wavelength;
+        const theta = k * (wave.dirX * x0 + wave.dirZ * z0) - wave.speed * t;
+        const amp = wave.ampBase * ampScale;
+        const cosT = Math.cos(theta);
+        dx += chop * amp * wave.dirX * cosT;
+        dz += chop * amp * wave.dirZ * cosT;
+        dy += amp * Math.sin(theta);
+      }
+      pos.array[ix] = x0 + dx;
+      pos.array[ix + 1] = dy;
+      pos.array[ix + 2] = z0 + dz;
     }
     pos.needsUpdate = true;
+    this.waterMesh.geometry.computeVertexNormals(); // 변위된 표면 기준으로 노멀을 다시 계산 → 프레넬 셰이딩이 파도 굴곡을 따라감
+
+    // 돛 펄럭임: 자유단(먼 쪽)으로 갈수록 크게 흔들리게 함
+    const sailPos = this.sailMesh.geometry.attributes.position;
+    for (let i = 0; i < sailPos.count; i++) {
+      const ix = i * 3;
+      const x0 = this.sailBase[ix], y0 = this.sailBase[ix + 1];
+      const edgeFactor = Math.min(1, x0 / 0.16); // 마스트(x=0)는 거의 고정, 먼 쪽일수록 크게
+      const flutter = Math.sin(y0 * 7 + t * 5) * 0.03 + Math.sin(t * 8.5 + y0 * 3) * 0.012;
+      sailPos.array[ix + 2] = flutter * edgeFactor * this.windT;
+    }
+    sailPos.needsUpdate = true;
+    this.sailMesh.geometry.computeVertexNormals();
 
     if (this.introPlaying) {
       // 인트로: 팝(스케일업) → 낙하(바운스) → 정착
@@ -1109,7 +1262,11 @@ class BottleScene {
   }
 }
 
-window.BottleScene = new BottleScene();
+try {
+  window.BottleScene = new BottleScene();
+} catch (err) {
+  console.error("BottleScene 초기화 실패:", err);
+}
 </script>
 </body>
 </html>
