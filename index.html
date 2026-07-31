@@ -670,9 +670,12 @@ class BottleScene {
 
     this.scene = new THREE.Scene();
     this.scene.background = makeSkyTexture();
-    this.scene.fog = new THREE.Fog(0xbfe3ec, 2.6, 8);
+    // 무한한 바다처럼 보이게 재중심시키는 타일의 가장자리를 안개로 확실히 가리기 위해
+    // far를 타일 반경보다 충분히 짧게 잡음 (아래 _buildWater의 타일 크기 참고)
+    this.scene.fog = new THREE.Fog(0xbfe3ec, 2.2, 6.4);
 
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.05, 30);
+    // 망원렌즈 느낌: FOV를 좁혀서 시점을 돌려도 보이는 영역(특히 섬 배경)이 좁게 유지되도록 함
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.05, 30);
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
     const sun = new THREE.DirectionalLight(0xfff6e0, 1.0);
@@ -687,6 +690,8 @@ class BottleScene {
 
     this._buildWater();
     this._buildShore();
+    this._buildMountain();
+    this._buildDock();
     this._buildBoat();
     this._buildSmokePool();
     this._buildSparkle();
@@ -746,8 +751,9 @@ class BottleScene {
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      this.orbitYaw -= dx * 0.006;
-      this.orbitPitch = Math.max(-0.32, Math.min(0.55, this.orbitPitch + dy * 0.0045));
+      // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
+      this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.006));
+      this.orbitPitch = Math.max(-0.2, Math.min(0.55, this.orbitPitch + dy * 0.0045));
     });
     const end = () => { dragging = false; c.style.cursor = "grab"; };
     c.addEventListener("pointerup", end);
@@ -755,17 +761,18 @@ class BottleScene {
     c.addEventListener("pointerleave", end);
   }
 
-  // dli/waves(Tessendorf 오션 데모)의 OCEAN_FRAGMENT_SOURCE를 그대로 참고한 셰이딩.
-  // 실제로는 이미지 텍스처가 없고, 노멀맵(우리는 매 프레임 지오메트리에서 재계산)을 넣은
-  // 프레넬(반사) + 램버트(확산) 수식만으로 "유리 같은 바다" 룩을 냄.
+  // dli/waves(Tessendorf 오션 데모)의 OCEAN_FRAGMENT_SOURCE를 참고한 셰이딩에
+  // dli/waves(Tessendorf 오션 데모)의 OCEAN_FRAGMENT_SOURCE를 참고한 셰이딩.
+  // 실제 텍스처 이미지 없이, 노멀(매 프레임 지오메트리에서 재계산) + 프레넬(반사) + 램버트(확산)
+  // 수식만으로 "유리 같은 바다" 룩을 냄. (스펙큘러 반짝임 노이즈는 픽셀/블록 아티팩트 때문에 롤백)
   _buildWaterMaterial() {
     return new THREE.ShaderMaterial({
       transparent: true,
       uniforms: {
-        uOceanColor: { value: new THREE.Color(0x2f6f86) },
-        uSkyColor: { value: new THREE.Color(0x9fd6ea) },
+        uOceanColor: { value: new THREE.Color(0x2a86a3) },
+        uSkyColor: { value: new THREE.Color(0xbdeaf5) },
         uSunDirection: { value: new THREE.Vector3(2.5, 3.5, 2).normalize() },
-        uExposure: { value: 0.9 },
+        uExposure: { value: 1.05 },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -804,18 +811,23 @@ class BottleScene {
   }
 
   _buildWater() {
-    const geo = new THREE.PlaneGeometry(16, 16, 44, 44);
+    // 반경(half-extent)이 안개 far보다 충분히 크도록 타일을 넉넉하게 잡아,
+    // 배를 따라 재중심시켜도 가장자리가 항상 안개 너머에 있도록 함
+    const geo = new THREE.PlaneGeometry(24, 24, 52, 52);
     geo.rotateX(-Math.PI / 2);
     this.waterBase = geo.attributes.position.array.slice();
     const mesh = new THREE.Mesh(geo, this._buildWaterMaterial());
     this.world.add(mesh);
     this.waterMesh = mesh;
 
-    // 상태(바람 세기)에 따라 스케일되는 Gerstner 파도 성분 몇 개를 합성
+    // 상태(바람 세기)에 따라 스케일되는 Gerstner 파도 성분들.
+    // 앞의 3개는 큰 너울, 뒤의 2개는 그 사이사이를 채우는 잔주름(고주파·저진폭)
     this.gerstnerWaves = [
       { dirX: 1.0, dirZ: 0.15, wavelength: 2.2, ampBase: 0.05, speed: 1.1 },
       { dirX: 0.5, dirZ: -0.85, wavelength: 1.3, ampBase: 0.03, speed: 1.6 },
       { dirX: -0.7, dirZ: 0.4, wavelength: 0.8, ampBase: 0.018, speed: 2.1 },
+      { dirX: 0.8, dirZ: 0.55, wavelength: 0.22, ampBase: 0.006, speed: 3.4 },
+      { dirX: -0.35, dirZ: 0.9, wavelength: 0.14, ampBase: 0.004, speed: 4.3 },
     ];
   }
 
@@ -824,18 +836,18 @@ class BottleScene {
     const topGeo = new THREE.CircleGeometry(1.15, 28);
     topGeo.rotateX(-Math.PI / 2);
     topGeo.scale(0.8, 1, 1.2);
-    this.shoreTopMat = new THREE.MeshStandardMaterial({ color: 0xd9b98c, roughness: 1, transparent: true });
+    this.shoreTopMat = new THREE.MeshStandardMaterial({ color: 0xd9b98c, roughness: 1, transparent: true, depthWrite: false });
     const top = new THREE.Mesh(topGeo, this.shoreTopMat);
-    top.position.y = 0.16; // 파도 최대 진폭(약 0.06)보다 충분히 높게 두어 침수되지 않도록 함
+    top.position.y = 0.2; // Gerstner 파도 최대 진폭(대략 0.14)보다 충분히 높게 두어 침수되지 않도록 함
 
     // 모래 아래에 둔덕(절벽) 벽을 붙여 물과 자연스럽게 이어지면서도 파도에 덮이지 않게 함
-    const riserGeo = new THREE.CylinderGeometry(1.02, 1.12, 0.24, 28, 1, true);
+    const riserGeo = new THREE.CylinderGeometry(1.02, 1.12, 0.28, 28, 1, true);
     this.shoreRiserMat = new THREE.MeshStandardMaterial({
-      color: 0xc7a978, roughness: 1, transparent: true, side: THREE.DoubleSide,
+      color: 0xc7a978, roughness: 1, transparent: true, side: THREE.DoubleSide, depthWrite: false,
     });
     const riser = new THREE.Mesh(riserGeo, this.shoreRiserMat);
     riser.scale.set(0.8, 1, 1.2);
-    riser.position.y = 0.045;
+    riser.position.y = 0.06;
 
     const group = new THREE.Group();
     group.add(top, riser);
@@ -845,6 +857,64 @@ class BottleScene {
     this.shoreMesh = group;
     this.shoreRestX = 0.95;
     this.shoreGoneX = 3.4;
+  }
+
+  // 해변 뒤로 솟은 로우폴리 산 — 팩시티드(각진) 콘 2개 + 눈 덮인 정상.
+  // 카메라 회전 범위를 제한해둔 덕에 이 각도 대에서만 자연스러우면 되므로 구조를 단순화함
+  _buildMountain() {
+    const group = new THREE.Group();
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x7c8577, roughness: 0.95, flatShading: true, transparent: true, depthWrite: false });
+
+    const peak = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.35, 6), rockMat);
+    peak.position.set(0, 0.68, 0);
+    group.add(peak);
+
+    const snow = new THREE.Mesh(
+      new THREE.ConeGeometry(0.26, 0.5, 6),
+      new THREE.MeshStandardMaterial({ color: 0xf5f7f5, roughness: 0.9, flatShading: true, transparent: true, depthWrite: false })
+    );
+    snow.position.set(0.02, 1.12, -0.02);
+    group.add(snow);
+
+    const peak2 = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.85, 6), rockMat);
+    peak2.position.set(0.6, 0.42, -0.15);
+    peak2.rotation.y = 0.4;
+    group.add(peak2);
+
+    group.position.set(1.05, 0.05, -0.55); // 해안(x≈0.95) 뒤쪽(-z, 카메라 기준 먼 방향)에 배치
+    group.rotation.y = -0.3;
+    this.world.add(group);
+    this.mountainGroup = group;
+  }
+
+  // 해안에서 물 쪽으로 뻗은 나무 선착장(독)
+  _buildDock() {
+    const group = new THREE.Group();
+    const plankMat = new THREE.MeshStandardMaterial({ color: 0xa9784f, roughness: 0.85, transparent: true, depthWrite: false });
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x7a5738, roughness: 0.9, transparent: true, depthWrite: false });
+
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.035, 0.22), plankMat);
+    deck.position.y = 0.06;
+    group.add(deck);
+
+    for (let i = -1; i <= 1; i++) {
+      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.006, 0.22), postMat);
+      seam.position.set(i * 0.26, 0.079, 0);
+      group.add(seam);
+    }
+
+    [-0.36, -0.1, 0.16, 0.36].forEach((px) => {
+      [1, -1].forEach((s) => {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.34, 6), postMat);
+        post.position.set(px, -0.1, s * 0.08);
+        group.add(post);
+      });
+    });
+
+    group.position.set(-0.15, 0, 0.35); // 해안 근처(x≈0)에서 물 쪽(음의 x)으로 뻗도록
+    group.rotation.y = -0.15;
+    this.world.add(group);
+    this.dockMesh = group;
   }
 
   // 삼각형 돛 실루엣을 유지하면서 펄럭임 애니메이션에 쓸 격자(그리드)로 생성
@@ -1097,6 +1167,19 @@ class BottleScene {
     return this.canvas.toDataURL("image/png");
   }
 
+  // 물 표면 변위와 동일한 수식으로 임의 위치의 파도 높이만 계산 (배를 실제 파도 위에 태우기 위함)
+  _waveHeightAt(x, z, t) {
+    const ampScale = 0.5 + 0.9 * this.windT;
+    let dy = 0;
+    for (let w = 0; w < this.gerstnerWaves.length; w++) {
+      const wave = this.gerstnerWaves[w];
+      const k = (2 * Math.PI) / wave.wavelength;
+      const theta = k * (wave.dirX * x + wave.dirZ * z) - wave.speed * t;
+      dy += wave.ampBase * ampScale * Math.sin(theta);
+    }
+    return dy;
+  }
+
   _spawnSmoke(dt) {
     this.smokeSpawnTimer -= dt;
     if (this.smokeSpawnTimer <= 0) {
@@ -1141,17 +1224,24 @@ class BottleScene {
     // 물결: dli/waves(Tessendorf 오션 데모)를 참고해 실제 Gerstner 방식으로 구현.
     // Y(높이)만이 아니라 X/Z(수평)로도 밀어내는 트로코이달 변위라서 마루가 뾰족해짐.
     // steepness·진폭을 windT(=상태별 바람 세기)에 맞춰 스케일 — 오가는 중은 거칠게, 머무름은 잔잔하게.
+    //
+    // 무한한 바다처럼 보이게: 유한한 타일(this.waterMesh)을 매 프레임 배 위치로 재중심시키되,
+    // 파도는 "월드 좌표" 기준으로 계산해서 타일이 옮겨가도 파도 패턴 자체는 이음매 없이 이어짐.
+    // 타일 가장자리는 안개(fog)가 항상 가려주도록 타일을 안개 far보다 넉넉히 크게 잡아둠.
+    this.waterMesh.position.x = this.boat.position.x;
+
     const pos = this.waterMesh.geometry.attributes.position;
     const chop = 0.32 * (0.4 + 0.6 * this.windT);
     const ampScale = 0.5 + 0.9 * this.windT;
     for (let i = 0; i < pos.count; i++) {
       const ix = i * 3;
       const x0 = this.waterBase[ix], z0 = this.waterBase[ix + 2];
+      const wx = x0 + this.waterMesh.position.x, wz = z0; // 월드 좌표
       let dx = 0, dy = 0, dz = 0;
       for (let w = 0; w < this.gerstnerWaves.length; w++) {
         const wave = this.gerstnerWaves[w];
         const k = (2 * Math.PI) / wave.wavelength;
-        const theta = k * (wave.dirX * x0 + wave.dirZ * z0) - wave.speed * t;
+        const theta = k * (wave.dirX * wx + wave.dirZ * wz) - wave.speed * t;
         const amp = wave.ampBase * ampScale;
         const cosT = Math.cos(theta);
         dx += chop * amp * wave.dirX * cosT;
@@ -1205,20 +1295,36 @@ class BottleScene {
       this.shoreRiserMat.opacity = this.shoreBlend;
       this.shoreMesh.visible = this.shoreBlend > 0.01;
 
-      const bob = Math.sin(t * 1.8) * 0.02;
-      let rotZ = Math.sin(t * 0.9) * 0.02;
+      // 섬(산·선착장)도 해안과 함께 사라짐 — 오가는 중/아직 모르겠음의 무한한 바다에선 섬 전체가 없어야 함
+      this.mountainGroup.visible = this.shoreBlend > 0.01;
+      this.dockMesh.visible = this.shoreBlend > 0.01;
+      this.mountainGroup.traverse((o) => { if (o.material) o.material.opacity = this.shoreBlend; });
+      this.dockMesh.traverse((o) => { if (o.material) o.material.opacity = this.shoreBlend; });
+
+      let rotZ = 0;
       let targetX = 0;
 
+      // '돌아온 사람' 도착 속도를 한 번 더 늦춤(3.6초→6.5초). '오가는 중'도 같은 속도 기준을 공유
+      const TRAVEL_DURATION = 6.5;
+      const TRAVEL_SPEED = 2.4 / TRAVEL_DURATION;
+
       if (this.mode === "returned") {
-        // 섬은 화면 오른쪽에 있다고 가정 — 왼쪽 먼 바다에서 시작해 오른쪽(해안)으로 도착
+        // 섬은 화면 오른쪽에 있다고 가정 — 왼쪽 먼 바다에서 시작해 오른쪽(해안)으로 도착 (0.5배속)
         const et = t - this.modeChangedAt;
-        const p = Math.min(1, et / 1.8);
+        const p = Math.min(1, et / TRAVEL_DURATION);
         targetX = THREE.MathUtils.lerp(this.returnStartX ?? -2.4, 0, easeOutCubic(p));
         rotZ += -0.06 * (1 - p);
       } else if (this.mode === "leaving") {
         targetX = 0; // 정박한 채로 연기만 피어오름
-      } else if (this.mode === "between" || this.mode === "unsure") {
-        targetX = 0; // 카메라(=배) 고정, 물결만 흘러 항해감을 표현. 배는 상하로만 움직임
+      } else if (this.mode === "between") {
+        // 해안에서 왼쪽으로 계속 나아가는 중 — 다른 선택지를 고르기 전까지 멈추지 않고 등속 이동.
+        // 카메라가 항상 배를 따라가므로(아래 카메라 계산 참고), 배는 화면상 제자리에 있는 것처럼
+        // 보이고 대신 파도(월드 고정)가 옆으로 계속 흘러가는 것처럼 보임
+        const et = t - this.modeChangedAt;
+        targetX = -TRAVEL_SPEED * et;
+        rotZ += Math.sin(t * 0.7) * 0.015; // 항해 중 미세한 좌우 롤
+      } else if (this.mode === "unsure") {
+        targetX = 0; // 무한한 바다에서 표류 — 제자리
       } else {
         targetX = Math.sin(t * 0.4) * 0.03; // 머무르는 중: 제자리 정박
       }
@@ -1228,9 +1334,14 @@ class BottleScene {
         this._spawnSmoke(dt);
       }
 
+      // 배는 자기 위치(targetX)의 실제 파도 높이만큼 들썩임 — 제자리인 경우 제자리에서 출렁이고,
+      // 이동 중이면 지나가는 파도를 그대로 타면서 오르내림
+      const waveY = this._waveHeightAt(targetX, 0, t);
+      const waveSlope = this._waveHeightAt(targetX + 0.12, 0, t) - this._waveHeightAt(targetX - 0.12, 0, t);
+
       this.boat.position.x = targetX;
-      this.boat.position.y = 0.06 + bob;
-      this.boat.rotation.z = rotZ;
+      this.boat.position.y = 0.06 + waveY;
+      this.boat.rotation.z = rotZ + waveSlope * 0.9;
       this.boat.rotation.y = Math.sin(t * 0.5) * 0.08;
     }
 
@@ -1244,11 +1355,11 @@ class BottleScene {
     this.bottleCorkMat.opacity = 0.9 * this.bottleT;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
 
-    // 카메라: 항상 배를 중심으로, 드래그하면 궤도를 돌며 배를 3D로 둘러볼 수 있음
+    // 카메라: 항상 배를 중심으로, 드래그하면 (제한된 범위에서) 궤도를 돌며 배를 3D로 둘러볼 수 있음
     const boatPos = this.boat.position;
-    const radius = THREE.MathUtils.lerp(2.1, 4.4, this.camZoomT);
-    const camY = THREE.MathUtils.lerp(0.32, 1.05, this.camZoomT);
-    const baseYaw = 0.18, basePitch = 0.12;
+    const radius = THREE.MathUtils.lerp(2.5, 5.1, this.camZoomT); // 좁아진 FOV(망원 느낌)에 맞춰 살짝 더 멀리
+    const camY = THREE.MathUtils.lerp(0.34, 1.1, this.camZoomT);
+    const baseYaw = 0.18, basePitch = 0.14;
     const yaw = baseYaw + this.orbitYaw;
     const pitch = basePitch + this.orbitPitch;
     this.camera.position.set(
@@ -1256,6 +1367,8 @@ class BottleScene {
       camY + radius * Math.sin(pitch),
       radius * Math.cos(yaw) * Math.cos(pitch)
     );
+    // 시점이 수면 아래로 내려가지 않도록 하드 클램프 (오빗/줌 조합과 무관하게 항상 보장)
+    this.camera.position.y = Math.max(this.camera.position.y, 0.16);
     this.camera.lookAt(boatPos.x, 0.08, 0);
 
     if (this.visible) this.renderer.render(this.scene, this.camera);
