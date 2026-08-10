@@ -639,6 +639,27 @@ const MODEL_URL = "./assets/Scene.glb";
 // 모델을 다시 뽑아서 방향이 또 달라지면 0 / ±Math.PI/2 / Math.PI 중에서 이 값만 바꿀 것.
 const SHIP_FORWARD_OFFSET = Math.PI;
 
+// GLB의 Ship 노드가 씬 원점 기준으로 들고 있던 좌표 (블렌더에서 잡아둔 정박 자리).
+// 이 자리를 배 앵커의 원점(0,0,0)으로 삼기 때문에, 섬(Rock/Beachhouse)은 같은 값만큼
+// 반대로 밀어줘야 블렌더에서 잡은 배↔섬 간격이 그대로 유지된다.
+// 모델을 다시 뽑아 배 위치가 달라지면 GLB의 Ship 노드 translation을 그대로 여기 옮겨 적을 것.
+// (y는 흘수 SHIP_DRAFT가 대신하므로 쓰지 않는다 — 수면 높이는 GLB에 없는 값이라 눈으로 맞춰야 함)
+const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
+
+// 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
+// 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212 이므로, 0.12면 아랫쪽 1/4 정도만 잠긴다.
+// 파도를 세게 하거나 모델을 다시 뽑으면 다른 데 건드리지 말고 이 숫자만 조절할 것.
+const SHIP_DRAFT = 0.12;
+
+// 카메라가 배에서 떨어지는 거리 (결과 화면에서 near→far로 줌아웃).
+const CAM_RADIUS = { near: 3, far: 5.5 };
+
+// 안개 범위는 카메라 거리에 물려서 같이 움직인다. 고정값으로 두면 줌아웃한 결과 화면에서
+// 주인공(배·섬)까지 안개에 묻혀버린다. 배 바로 뒤(+0.3)에서 시작해 4.0을 더 가서 완전히 짙어짐 —
+// 바다 타일 끝(배 기준 반경 7)에 시선이 닿기 전에 끝나야 경계가 안 드러난다.
+// 안개가 너무 옅다/짙다 싶으면 다른 데 손대지 말고 이 두 숫자만 조절할 것.
+const fogRangeFor = (radius) => ({ near: radius + 0.3, far: radius + 4.3 });
+
 const REGION_SAND = {
   "아산": 0xd9b98c,
   "천안": 0xe0a868,
@@ -711,7 +732,10 @@ class BottleScene {
     this.scene.background = makeSkyTexture();
     // 무한한 바다처럼 보이게 재중심시키는 타일의 가장자리를 안개로 확실히 가리기 위해
     // far를 타일 반경보다 충분히 짧게 잡음 (아래 _buildWater의 타일 크기 참고)
-    this.scene.fog = new THREE.Fog(0xbfe3ec, 1.6, 4.8);
+    // 안개 = 바다 타일의 끝을 가리는 유일한 장치 (매 프레임 카메라 거리에 맞춰 갱신됨).
+    // 색은 하늘 그라디언트 중간톤과 같은 값이라 수평선에서 이어붙인 티가 안 난다.
+    const fog0 = fogRangeFor(CAM_RADIUS.near);
+    this.scene.fog = new THREE.Fog(0xbfe3ec, fog0.near, fog0.far);
 
     // 망원렌즈 느낌: FOV를 좁혀서 시점을 돌려도 보이는 영역(특히 섬 배경)이 좁게 유지되도록 함
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.05, 30);
@@ -735,8 +759,11 @@ class BottleScene {
     // islandGroup 전체가 슬라이드해 나가는 거리 기준값 (섬 등장 X 위치 - 퇴장 X 위치)
     // 예전엔 _buildShore()가 절차적 지오메트리를 만들면서 같이 정했는데, 이제 Shore는
     // 비동기로 로드되는 실제 모델(Rock)이라 지오메트리와 무관하게 여기서 먼저 정해둠.
-    this.islandRestX = 0;
-    this.islandGoneX = 3.4 - 0.95;
+    // 배 앵커를 GLB의 Ship 자리로 옮겼으므로(SHIP_GLB_POS) 섬도 같은 만큼 밀어야
+    // 블렌더에서 잡은 배↔섬 상대 배치가 그대로 유지된다.
+    this.islandRestX = -SHIP_GLB_POS.x;
+    this.islandGoneX = this.islandRestX + 2.45;
+    this.islandGroup.position.z = -SHIP_GLB_POS.z;
 
     this._buildWater();
     this._buildDock();
@@ -820,19 +847,28 @@ class BottleScene {
   _buildWaterMaterial() {
     return new THREE.ShaderMaterial({
       transparent: true,
-      uniforms: {
-        uOceanColor: { value: new THREE.Color(0x4bb2e0) },
-        uSkyColor: { value: new THREE.Color(0xe8f7ff) },
-        uSunDirection: { value: new THREE.Vector3(2.5, 3.5, 2).normalize() },
-        uExposure: { value: 1.15 },
-        uTime: { value: 0 },
-        uBoatX: { value: 0 },
-        uChop: { value: 0.13 },
-        uAmpScale: { value: 0.5 },
-        uFlowBoost: { value: 0 },
-        uSpecOn: { value: 1.0 },
-      },
+      // [버그5] 바다에 안개가 안 먹던 문제 — scene.fog는 "안개를 쓰겠다고 선언한" 재질에만 적용된다.
+      // 물은 커스텀 ShaderMaterial이라 그 선언이 없어서, 섬·배만 흐려지고 바다는 타일 끝까지
+      // 원래 색을 유지한 채 하늘과 직선으로 잘렸다(수평선의 하드 경계). 볼륨 안개나 별도 모델을
+      // 만들 필요 없이, Three.js가 이미 갖고 있는 안개 청크를 그대로 끼워넣으면 끝난다.
+      fog: true,
+      uniforms: THREE.UniformsUtils.merge([
+        THREE.UniformsLib.fog,
+        {
+          uOceanColor: { value: new THREE.Color(0x4bb2e0) },
+          uSkyColor: { value: new THREE.Color(0xe8f7ff) },
+          uSunDirection: { value: new THREE.Vector3(2.5, 3.5, 2).normalize() },
+          uExposure: { value: 1.15 },
+          uTime: { value: 0 },
+          uBoatX: { value: 0 },
+          uChop: { value: 0.13 },
+          uAmpScale: { value: 0.5 },
+          uFlowBoost: { value: 0 },
+          uSpecOn: { value: 1.0 },
+        },
+      ]),
       vertexShader: `
+        #include <fog_pars_vertex>
         uniform float uTime;
         uniform float uBoatX;
         uniform float uChop;
@@ -873,10 +909,14 @@ class BottleScene {
 
           vec4 worldPos = modelMatrix * vec4(position + wave, 1.0);
           vWorldPos = worldPos.xyz;
-          gl_Position = projectionMatrix * viewMatrix * worldPos;
+          // fog_vertex 청크가 mvPosition을 그대로 참조하므로 이름을 맞춰서 미리 만들어둔다.
+          vec4 mvPosition = viewMatrix * worldPos;
+          gl_Position = projectionMatrix * mvPosition;
+          #include <fog_vertex>
         }
       `,
       fragmentShader: `
+        #include <fog_pars_fragment>
         uniform vec3 uOceanColor;
         uniform vec3 uSkyColor;
         uniform vec3 uSunDirection;
@@ -909,6 +949,9 @@ class BottleScene {
 
           vec3 color = sky + water + sparkle;
           gl_FragColor = vec4(hdr(color, uExposure), 0.92);
+          // 안개는 색을 다 계산한 뒤 마지막에 섞는다 — 멀어질수록 바다가 하늘색으로 녹아
+          // 타일 경계(가장자리)가 눈에 띄기 전에 사라진다.
+          #include <fog_fragment>
         }
       `,
     });
@@ -969,6 +1012,18 @@ class BottleScene {
       }
 
       if (ship) {
+        // Seagull(갈매기 4마리)·Tube(구명튜브)는 GLB상 Ship과 형제 노드지만, 실제 좌표는
+        // 배 바로 위(갈매기)와 뱃전(튜브)이다. attach()는 월드 변환을 유지한 채 부모만 바꾸므로
+        // 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어 항해·롤링·헤딩에 딸려 간다.
+        // (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
+        ["Seagull", "Tube"].forEach((name) => {
+          const obj = root.getObjectByName(name);
+          // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
+          // 씬은 멀쩡히 돌아가고 갈매기만 없어서 한참 뒤에나 눈치챈다.
+          console.assert(obj, `[selfCheck] GLB에 "${name}" 노드가 없음 — 이름이 바뀌었는지 확인`);
+          if (obj) ship.attach(obj);
+        });
+
         const box = new THREE.Box3().setFromObject(ship);
         const topLocal = new THREE.Vector3(
           (box.max.x + box.min.x) / 2 - ship.position.x,
@@ -1011,8 +1066,14 @@ class BottleScene {
         }
 
         // [버그2] 뱃머리가 반대로 향하던 문제 — 모델을 한 번만 돌려두고 끝낸다.
-        // 마스트/깃발/연기 앵커는 전부 ship의 자식이라 같이 돌아감.
+        // 마스트/깃발/연기 앵커/갈매기/튜브는 전부 ship의 자식이라 같이 돌아감.
         ship.rotation.y += SHIP_FORWARD_OFFSET;
+
+        // [버그3] 시작 위치 — Ship 노드가 GLB 씬 좌표(x≈-0.60, y≈0.29, z≈0.15)를 그대로 들고 있어서
+        // 배가 앵커에서 그만큼 떨어진 자리에 그려졌다. 게다가 헤딩 회전(boat.rotation.y)은 앵커
+        // 기준이라, 배가 제자리에서 도는 게 아니라 반경 0.6짜리 원을 크게 휘돌아 버렸다.
+        // 앵커 = 배 자신이 되도록 로컬 좌표를 비우고, 물에 잠기는 깊이만 흘수로 남긴다.
+        ship.position.set(0, SHIP_DRAFT, 0);
 
         this.boat.add(ship);
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
@@ -1291,9 +1352,16 @@ class BottleScene {
         this._onSettled && this._onSettled();
       }
     } else {
-      this.shoreBlend += (this.shoreTarget - this.shoreBlend) * Math.min(1, dt * 2.2);
+      // 2.2 → 3.2: 섬이 화면 밖(x≈3.05)에서 출발하는데 지수 감쇠라 초반에만 빨리 움직이고
+      // 정작 프레임에 들어오는 구간에서 느려져서 "늦게 나타난다"는 인상을 줬다. 등장 거리
+      // 자체를 줄이면 가로 화면(FOV가 훨씬 넓음)에서 '무한한 바다'에 섬이 새어 보이므로,
+      // 거리는 그대로 두고 속도만 올린다.
+      this.shoreBlend += (this.shoreTarget - this.shoreBlend) * Math.min(1, dt * 3.2);
       this.islandGroup.position.x = THREE.MathUtils.lerp(this.islandGoneX, this.islandRestX, this.shoreBlend);
-      this.islandGroup.visible = this.shoreBlend > 0.5;
+      // [버그4] 섬이 "짠" 하고 나타나던 문제 — 예전 임계값이 0.5라 슬라이드가 절반이나 진행된
+      // 뒤에야 visible이 켜졌다(= 화면 중앙 근처에서 갑자기 팝인). visible은 완전히 사라졌을 때
+      // 렌더를 건너뛰려는 용도일 뿐이므로 0에 가깝게 두면 화면 밖에서부터 미끄러져 들어온다.
+      this.islandGroup.visible = this.shoreBlend > 0.002;
 
       let rotZ = 0;
       let targetX = 0;
@@ -1356,9 +1424,17 @@ class BottleScene {
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
 
     const boatPos = this.boat.position;
-    const radius = THREE.MathUtils.lerp(3, 5.5, this.camZoomT);
+    const radius = THREE.MathUtils.lerp(CAM_RADIUS.near, CAM_RADIUS.far, this.camZoomT);
+    // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
+    const fogRange = fogRangeFor(radius);
+    this.scene.fog.near = fogRange.near;
+    this.scene.fog.far = fogRange.far;
     const camY = THREE.MathUtils.lerp(0.28, 1.1, this.camZoomT);
-    const baseYaw = 0.06, basePitch = 0.2;
+    // 기본 시점: 좌측 상단에서 내려다보는 아이소메트릭. yaw가 음수면 카메라가 배 왼쪽으로,
+    // pitch 0.60rad(≈34°)은 정아이소메트릭(35.26°)에 가까운 내려다보기 각도.
+    // 바라보는 지점(lookAt)은 그대로 배 — 카메라 위치만 옮긴 것.
+    // ?debug=1 로 접속해 드래그로 각도를 잡은 뒤, HUD에 찍히는 값을 여기 붙여넣으면 된다.
+    const baseYaw = -0.45, basePitch = 0.60;
     const yaw = baseYaw + this.orbitYaw;
     const pitch = basePitch + this.orbitPitch;
     this.camera.position.set(
@@ -1406,6 +1482,25 @@ function selfCheck(s) {
       `[selfCheck] 파장 ${w.wavelength}가 셰이더에 없음 — JS와 GLSL 파도 정의가 어긋났다`
     );
   });
+
+  // 3) 바다 끝을 가리는 안개가 실제로 물에 걸려 있는가.
+  //    scene.fog는 "쓰겠다"고 선언한 재질에만 적용돼서, 셰이더를 손대다 청크나 fog:true를
+  //    떨어뜨리면 바다만 안개를 안 먹고 수평선이 다시 직선으로 잘린다(조용히 깨지는 쪽).
+  const mat = s.waterMesh.material;
+  console.assert(
+    mat.fog === true && !!mat.uniforms.fogColor && mat.fragmentShader.includes("fog_fragment"),
+    "[selfCheck] 물 재질에 안개 배선이 빠졌다 — 수평선에 하드 경계가 다시 생긴다"
+  );
+
+  // 4) 가장 많이 줌아웃한 상태(결과 화면)에서도 안개가 바다 타일 끝보다 먼저 짙어지는가.
+  //    여기가 뒤집히면 안개가 다 끼기 전에 타일이 끝나서 경계선이 그대로 보인다.
+  //    타일 크기·카메라 거리·안개 범위 중 아무거나 건드리면 조용히 깨지는 조합.
+  const tileRadius = s.waterMesh.geometry.parameters.width / 2;
+  const worstFar = fogRangeFor(CAM_RADIUS.far).far;
+  console.assert(
+    worstFar < tileRadius + CAM_RADIUS.far,
+    `[selfCheck] 최대 줌아웃에서 fog.far(${worstFar})가 타일 끝(${tileRadius + CAM_RADIUS.far})보다 멀다 — 바다 경계가 드러난다`
+  );
 }
 </script>
 </body>
