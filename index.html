@@ -647,9 +647,9 @@ const SHIP_FORWARD_OFFSET = Math.PI;
 const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
-// 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212 이므로, 0.12면 아랫쪽 1/4 정도만 잠긴다.
+// 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
 // 파도를 세게 하거나 모델을 다시 뽑으면 다른 데 건드리지 말고 이 숫자만 조절할 것.
-const SHIP_DRAFT = 0.12;
+const SHIP_DRAFT = 0.17;
 
 // 카메라가 배에서 떨어지는 거리 (결과 화면에서 near→far로 줌아웃).
 const CAM_RADIUS = { near: 3, far: 5.5 };
@@ -673,6 +673,14 @@ const KEYWORD_COLOR = {
   "일": 0x6b7fd7, "관계": 0xe28ea0, "가족": 0xe0a868, "창작": 0xd4b896,
   "익숙함": 0xb89a6a, "주거": 0x8fae8b, "불안": 0x8a6a9a, "자유": 0x7ec8d9,
   "소속감": 0xd6c08a, "우연": 0xaaaaaa,
+};
+
+// 키워드 → 갑판에 붙는 소품. 여기 없는 키워드는 아무것도 안 붙는다.
+// 고른 키워드 중 하나라도 해당되면 그 소품이 붙는다(둘 다 붙을 수도, 아무것도 안 붙을 수도 있음).
+// 소품을 더 늘리거나 매핑을 바꾸려면 여기만 고치면 된다.
+const KEYWORD_PROP = {
+  "자유": "gull",
+  "관계": "tube",
 };
 
 const ACTIVE_STEPS = ["onboard","region","state","sentence","keywords","consent","result"];
@@ -1015,17 +1023,30 @@ class BottleScene {
       }
 
       if (ship) {
-        // Seagull(갈매기 4마리)·Tube(구명튜브)는 GLB상 Ship과 형제 노드지만, 실제 좌표는
+        // Seagull(갈매기)·Tube(구명튜브)는 GLB상 Ship과 형제 노드지만, 실제 좌표는
         // 배 바로 위(갈매기)와 뱃전(튜브)이다. attach()는 월드 변환을 유지한 채 부모만 바꾸므로
         // 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어 항해·롤링·헤딩에 딸려 간다.
         // (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
+        // 기본으로는 둘 다 숨겨두고, 키워드 선택에 따라 applyKeywords에서 켠다.
         ["Seagull", "Tube"].forEach((name) => {
           const obj = root.getObjectByName(name);
           // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
           // 씬은 멀쩡히 돌아가고 갈매기만 없어서 한참 뒤에나 눈치챈다.
           console.assert(obj, `[selfCheck] GLB에 "${name}" 노드가 없음 — 이름이 바뀌었는지 확인`);
-          if (obj) ship.attach(obj);
+          if (!obj) return;
+          ship.attach(obj);
+          obj.visible = false;
         });
+        this.gullMesh = ship.getObjectByName("Seagull");
+        this.tubeMesh = ship.getObjectByName("Tube");
+
+        // GLB엔 갈매기가 4마리 겹쳐 들어있는데 크기가 작아 화면에선 한 덩어리로 뭉쳐 보인다.
+        // 가장 큰 한 마리만 남긴다 (이름은 재익스포트마다 바뀔 수 있어 크기로 고른다).
+        if (this.gullMesh && this.gullMesh.children.length > 1) {
+          const spanOf = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()).length();
+          const keep = this.gullMesh.children.reduce((a, b) => (spanOf(b) > spanOf(a) ? b : a));
+          this.gullMesh.children.slice().forEach((c) => { if (c !== keep) this.gullMesh.remove(c); });
+        }
 
         const box = new THREE.Box3().setFromObject(ship);
         const topLocal = new THREE.Vector3(
@@ -1040,21 +1061,8 @@ class BottleScene {
           cabin.traverse((c) => { if (c.isMesh) c.material = this.cabinMat; });
         }
 
-        const mast = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.012, 0.012, 0.3, 6),
-          new THREE.MeshStandardMaterial({ color: 0xb08a5c })
-        );
-        mast.position.set(topLocal.x, topLocal.y + 0.15, topLocal.z);
-        ship.add(mast);
-
-        const flagShape = new THREE.Shape();
-        flagShape.moveTo(0, 0); flagShape.lineTo(0.1, -0.03); flagShape.lineTo(0, -0.06); flagShape.closePath();
-        this.flagMat = new THREE.MeshStandardMaterial({ color: 0xd9534f, side: THREE.DoubleSide });
-        const flag = new THREE.Mesh(new THREE.ShapeGeometry(flagShape), this.flagMat);
-        flag.position.set(topLocal.x, topLocal.y + 0.27, topLocal.z);
-        flag.visible = false;
-        ship.add(flag);
-        this.flagMesh = flag;
+        // 마스트/깃발은 삭제했다 — 배 바운딩박스 꼭대기(=굴뚝 위)에 매달려 있어서 갑판이 아니라
+        // 공중에 떠 보였고, 키워드 표시는 이제 갈매기/튜브가 대신한다.
 
         const funnel = ship.getObjectByName("Funnel");
         this.smokeAnchor = new THREE.Object3D();
@@ -1204,21 +1212,35 @@ class BottleScene {
 
   applyKeywords(keywords) {
     if (!this.cabinMat) { this._pendingKeywords = keywords; return; }
-    const cols = (keywords || []).map((k) => KEYWORD_COLOR[k]);
+    const picked = keywords || [];
+    const cols = picked.map((k) => KEYWORD_COLOR[k]);
     this.cabinMat.color.setHex(cols[0] !== undefined ? cols[0] : 0xf3e6cf);
-    if (cols[1] !== undefined) {
-      this.flagMat.color.setHex(cols[1]);
-      this.flagMesh.visible = true;
-    } else {
-      this.flagMesh.visible = false;
-    }
+
+    // 갑판 소품: 예전엔 깃발 색으로 두 번째 키워드를 표현했는데, 깃발(과 공중에 뜬 마스트)을
+    // 지우면서 갈매기/튜브가 그 역할을 맡는다. 고른 키워드 중 하나라도 해당되면 붙는다.
+    const props = new Set(picked.map((k) => KEYWORD_PROP[k]).filter(Boolean));
+    if (this.gullMesh) this.gullMesh.visible = props.has("gull");
+    if (this.tubeMesh) this.tubeMesh.visible = props.has("tube");
   }
 
   setMode(mode) {
     if (this.mode === mode) return;
+    const prev = this.mode;
     this.mode = mode;
     this.modeChangedAt = this.elapsed;
     if (this._boatEaseX !== undefined) this._boatEaseX = this._wrapWave(this._boatEaseX);
+
+    // [버그7] '오가는 중'에서 다른 선택지로 바꿀 때 배가 미친듯이 요동치던 문제.
+    // '오가는 중'은 배를 월드에서 끝없이 밀어낸다(1.2/초 → 30초면 x≈-36). 파도는 월드에
+    // 고정돼 있으므로, 그 거리를 되돌아오면 배가 파도밭을 프레임당 1.8유닛(파장 하나 이상!)씩
+    // 훑으며 위아래로 튄다. 되돌아오는 경로를 부드럽게 만들 방법은 없다 — 파장들의 공배수가
+    // 1144라 짧게 접히지도 않는다. 그러니 되돌아오게 두지 말고 그 자리에서 자리를 다시 잡는다.
+    if (prev === "between" && mode !== "returned") {
+      // '아직 모르겠음'은 섬이 없으니 있던 자리에 그대로 표류. 나머지는 선착장(0)으로 자리 이동.
+      if (mode !== "unsure") this._boatEaseX = 0;
+      this.boat.position.x = this._boatEaseX ?? 0;
+    }
+
     if (mode === "returned") {
       this.returnStartX = -2.4;
       this.boat.position.x = this.returnStartX;
@@ -1402,7 +1424,9 @@ class BottleScene {
         targetX = -CRUISE_SPEED * et;
         rotZ += Math.sin(t * 0.7) * 0.015;
       } else if (this.mode === "unsure") {
-        targetX = 0;
+        // 표류 — 섬이 없으니 돌아갈 기준점도 없다. 있던 자리에 그대로 선다
+        // (0으로 되돌리면 '오가는 중'에서 누적된 거리를 한꺼번에 훑으며 요동친다).
+        targetX = this._boatEaseX ?? 0;
       } else {
         targetX = Math.sin(t * 0.4) * 0.03;
       }
