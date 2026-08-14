@@ -36,12 +36,13 @@
   #app select,
   #app textarea,
   #app .consent-box label,
-  #app .consent-box input{
+  #app input{
     pointer-events:auto;
   }
-  #app textarea{ user-select:text; -webkit-user-select:text; }
-  .screen{ display:flex; flex-direction:column; flex:1; animation:fadeIn .5s ease; }
-  @keyframes fadeIn{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+  #app textarea, #app input{ user-select:text; -webkit-user-select:text; }
+  /* 선택지를 고를 때마다 render()가 화면을 통째로 다시 만드는 구조라, 여기에 등장 애니메이션을
+     걸어두면 클릭할 때마다 UI 전체가 사라졌다 나타난다. 그래서 뺐다. */
+  .screen{ display:flex; flex-direction:column; flex:1; }
 
   /* progress */
   .progress-row{ display:flex; align-items:center; gap:10px; margin-bottom:28px; }
@@ -86,12 +87,14 @@
   .option-card.selected{ border-color:var(--gold); background:rgba(251,247,239,.68); font-weight:700; }
   .option-card .desc{ font-weight:400; font-size:12px; color:var(--ink3); margin-top:3px; }
 
-  textarea.sentence{
+  /* 이름 입력은 문장 입력과 같은 인터페이스를 쓴다 — 한 줄이라 min-height/resize만 빠진다 */
+  textarea.sentence, input.name-input{
     width:100%; border:1.5px solid rgba(255,255,255,.55); border-radius:14px; padding:16px; font-size:15px;
-    font-family:var(--font); resize:none; min-height:110px; background:rgba(255,255,255,.5);
+    font-family:var(--font); background:rgba(255,255,255,.5);
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); line-height:1.6;
   }
-  textarea.sentence:focus{ outline:none; border-color:var(--gold); }
+  textarea.sentence{ resize:none; min-height:110px; }
+  textarea.sentence:focus, input.name-input:focus{ outline:none; border-color:var(--gold); }
   .char-count{ text-align:right; font-size:12px; color:var(--ink3); margin-top:6px; }
 
   .tag-wrap{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
@@ -165,6 +168,13 @@
   .wall-card .txt{ font-weight:600; }
   .wall-card .kw-row{ display:flex; gap:6px; flex-wrap:wrap; }
   .wall-card .kw{ font-size:10.5px; color:var(--ink3); border:1px solid #e3ddd0; border-radius:10px; padding:2px 8px; }
+  /* 서명처럼 카드 맨 아래 오른쪽에 붙인다. 문장이 주인공이므로 이름은 뒤로 물러나게 */
+  .wall-card .by{
+    margin-top:2px; padding-top:8px; border-top:1px solid rgba(236,231,220,.9);
+    text-align:right; font-size:11px; color:var(--ink3); letter-spacing:.02em;
+  }
+  /* 실명·별칭을 남긴 사람은 조금 더 또렷하게 — 이름을 밝힌 선택이 드러나도록 */
+  .wall-card .by.named{ color:var(--ink2); font-weight:600; }
   .empty-note{ text-align:center; color:var(--ink3); font-size:13px; padding:40px 0; }
 
   .restart-btn{
@@ -266,6 +276,7 @@ let state = {
   text: "",
   keywords: [],
   disclose: "익명",
+  name: "",
   consent: false,
   filterState: "all",
   filterRegion: "all",
@@ -466,7 +477,7 @@ function renderConsent(){
   d.appendChild(progress(5,5));
   const h=document.createElement("h2"); h.className="q"; h.textContent="공개 방식과 활용 동의";
   d.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="이름은 선택 사항이며, 실명 대신 별칭을 남길 수도 있어요.";
+  const p=document.createElement("p"); p.className="sub"; p.textContent="익명으로 남겨도 되고, 실명 대신 별칭을 적어도 괜찮아요.";
   d.appendChild(p);
 
   const list=document.createElement("div"); list.className="option-list";
@@ -479,20 +490,46 @@ function renderConsent(){
   });
   d.appendChild(list);
 
+  // 별칭/실명을 고른 경우에만 입력창이 나온다. 익명이면 적을 것이 없다.
+  // 입력 중에는 render()를 부르지 않는다 — 다시 그리면 포커스와 커서 위치가 날아간다.
+  if(state.disclose!=="익명"){
+    const nameInput=document.createElement("input");
+    nameInput.type="text"; nameInput.className="name-input"; nameInput.maxLength=12;
+    nameInput.placeholder = state.disclose==="별칭" ? "예: 바다" : "예: 이승민";
+    nameInput.value = state.name || "";
+    const nameCount=document.createElement("div"); nameCount.className="char-count";
+    nameCount.textContent=`${nameInput.value.length}/12`;
+    nameInput.addEventListener("input",()=>{
+      state.name=nameInput.value;
+      nameCount.textContent=`${nameInput.value.length}/12`;
+      updateNext();
+    });
+    d.appendChild(nameInput); d.appendChild(nameCount);
+  }
+
   const box=document.createElement("div"); box.className="consent-box";
   box.innerHTML=`<label><input type="checkbox" id="consentChk" ${state.consent?"checked":""}>
     <span>제출한 문장이 전시장 내 화면과 웹 아카이브에 공개되고, 아카이브북·결과보고서에 활용되는 것에 동의합니다.</span></label>
     <div class="privacy-note">입력한 지역·상태·문장 외의 개인정보는 저장되지 않습니다. 욕설·혐오·개인정보가 포함된 문장은 비공개 처리될 수 있습니다.</div>`;
   d.appendChild(box);
-  box.querySelector("#consentChk").addEventListener("change",(e)=>{ state.consent=e.target.checked; next.disabled=!state.consent; });
+  box.querySelector("#consentChk").addEventListener("change",(e)=>{ state.consent=e.target.checked; updateNext(); });
 
   const next=document.createElement("button");
   next.className="next-btn"; next.textContent="제출하기";
-  next.disabled=!state.consent;
+
+  // 별칭/실명을 골랐으면 이름이 실제로 적혀 있어야 한다.
+  // 비워둔 채 제출되면 카드에 표시할 이름이 없는데 익명도 아닌 상태가 된다.
+  function updateNext(){
+    const needsName = state.disclose!=="익명";
+    next.disabled = !state.consent || (needsName && (state.name||"").trim()==="");
+  }
+  updateNext();
+
   next.onclick=()=>{
     entries.unshift({
       region: state.region, state: state.stateId, text: state.text,
-      keywords: [...state.keywords], name: state.disclose==="익명" ? "익명" : (state.disclose==="실명" ? "제출자" : "익명 참여자"),
+      keywords: [...state.keywords],
+      name: state.disclose==="익명" ? "익명" : state.name.trim(),
       _new: true,
     });
     state.step="result"; render();
@@ -589,6 +626,7 @@ function renderArchive(){
         <div class="top-meta"><span>${e.region}</span><span class="state-tag">${stateLabel(e.state)}</span></div>
         <div class="txt">"${e.text}"</div>
         <div class="kw-row">${e.keywords.map(k=>`<span class="kw">${k}</span>`).join("")}</div>
+        <div class="by${(e.name && e.name!=="익명") ? " named" : ""}">— ${e.name || "익명"}</div>
       `;
       wall.appendChild(c);
     });
@@ -598,7 +636,7 @@ function renderArchive(){
   const restart=document.createElement("button");
   restart.className="restart-btn"; restart.textContent="다시 한 문장 남기기";
   restart.onclick=()=>{
-    state = {step:"onboard", region:null, stateId:null, text:"", keywords:[], disclose:"익명", consent:false,
+    state = {step:"onboard", region:null, stateId:null, text:"", keywords:[], disclose:"익명", name:"", consent:false,
       filterState:state.filterState, filterRegion:state.filterRegion};
     render();
   };
@@ -1055,10 +1093,20 @@ class BottleScene {
           (box.max.z + box.min.z) / 2 - ship.position.z
         );
 
+        // 캐빈은 배 모델의 일부라 나중에 배 UV 아틀라스에 텍스처가 붙는다.
+        // 그래서 재질을 새로 만들어 갈아끼우지 않는다 — 그러면 map과 UV가 통째로 날아간다.
+        // 대신 원래 재질을 clone해서(다른 메쉬와 공유될 수 있으므로) color만 바꾼다.
+        // three.js는 color를 map에 곱하므로, 텍스처가 붙은 뒤에도 키워드 색이 틴트로 그대로 먹는다.
+        // (텍스처는 밝은 회색조로 그려야 틴트가 눈에 보인다)
         const cabin = ship.getObjectByName("Cabin");
         if (cabin) {
-          this.cabinMat = new THREE.MeshStandardMaterial({ color: 0xf3e6cf, roughness: 0.8 });
-          cabin.traverse((c) => { if (c.isMesh) c.material = this.cabinMat; });
+          cabin.traverse((c) => {
+            if (!c.isMesh) return;
+            c.material = c.material ? c.material.clone()
+              : new THREE.MeshStandardMaterial({ roughness: 0.8 });
+            if (!this.cabinMat) this.cabinMat = c.material;
+          });
+          if (this.cabinMat) this.cabinMat.color.setHex(0xf3e6cf);
         }
 
         // 마스트/깃발은 삭제했다 — 배 바운딩박스 꼭대기(=굴뚝 위)에 매달려 있어서 갑판이 아니라
