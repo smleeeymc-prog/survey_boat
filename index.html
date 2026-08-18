@@ -684,19 +684,45 @@ const SHIP_FORWARD_OFFSET = Math.PI;
 // (y는 흘수 SHIP_DRAFT가 대신하므로 쓰지 않는다 — 수면 높이는 GLB에 없는 값이라 눈으로 맞춰야 함)
 const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 
+// 배 전체 크기 배율. 1.0이 GLB 원본 크기.
+// 흘수(SHIP_DRAFT)도 같이 곱해야 잠기는 "비율"이 유지된다 — 안 그러면 키울수록 더 깊이 잠긴다.
+const SHIP_SCALE = 1.3;
+
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
 // 파도를 세게 하거나 모델을 다시 뽑으면 다른 데 건드리지 말고 이 숫자만 조절할 것.
 const SHIP_DRAFT = 0.17;
 
-// 카메라가 배에서 떨어지는 거리 (결과 화면에서 near→far로 줌아웃).
-const CAM_RADIUS = { near: 3, far: 5.5 };
 
 // 안개 범위는 카메라 거리에 물려서 같이 움직인다. 고정값으로 두면 줌아웃한 결과 화면에서
 // 주인공(배·섬)까지 안개에 묻혀버린다. 배 바로 뒤(+0.3)에서 시작해 4.0을 더 가서 완전히 짙어짐 —
 // 바다 타일 끝(배 기준 반경 7)에 시선이 닿기 전에 끝나야 경계가 안 드러난다.
 // 안개가 너무 옅다/짙다 싶으면 다른 데 손대지 말고 이 두 숫자만 조절할 것.
 const fogRangeFor = (radius) => ({ near: radius + 0.3, far: radius + 4.3 });
+
+// ── 질문 단계별 카메라 ─────────────────────────────────────────────────────
+// 각도(yaw/pitch)는 어느 단계에서도 건드리지 않는다. 바뀌는 건 "무엇을 바라볼지(target)"와
+// "얼마나 떨어질지(radius)"뿐이다. 그래서 전환이 회전이 아니라 미끄러지는 이동으로 보인다.
+// target은 배 위치 기준 오프셋이라, 배가 움직여도 프레이밍이 유지된다.
+const CAM_DEFAULT = { target: [0.0, 0.08, 0.0], radius: 3.0 };
+const CAM_STEPS = {
+  // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
+  region:   { target: [0.40, 0.70, -0.25], radius: 5.4 },
+  // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 73%).
+  keywords: { target: [0.0, 0.20, 0.0], radius: 1.9 },
+  // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
+  result:   { target: [0.0, 0.30, 0.0], radius: 5.5 },
+};
+// 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
+const CAM_MOVE_SEC = 1.1;
+const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+// 프리셋들이 실제로 쓰는 카메라 거리의 최소/최대.
+// 프리셋을 고치면 안개 범위 자기검증도 자동으로 따라오도록 여기서 파생시킨다.
+const CAM_RADIUS = (function () {
+  const all = [CAM_DEFAULT.radius].concat(Object.keys(CAM_STEPS).map((k) => CAM_STEPS[k].radius));
+  return { near: Math.min.apply(null, all), far: Math.max.apply(null, all) };
+})();
 
 const REGION_SAND = {
   "아산": 0xd9b98c,
@@ -812,7 +838,6 @@ class BottleScene {
     this.islandGroup.position.z = -SHIP_GLB_POS.z;
 
     this._buildWater();
-    this._buildDock();
     this._buildBoat();
     this._buildSmokePool();
     this._buildBottleShell();
@@ -840,8 +865,12 @@ class BottleScene {
     this.bottleRevealed = false;
     this.bottleT = 0;
     this.bottleTarget = 0;
-    this.camZoomT = 0;
-    this.camZoomTarget = 0;
+    // 단계 전환용 카메라 보간 상태 (_setCamStep에서 목적지를 갈아끼운다)
+    this._camCur = null;
+    this._camFrom = null;
+    this._camTo = null;
+    this._camT = 1;
+    this._setCamStep(null);
 
     // 드래그 오빗(카메라는 항상 배를 중심으로 둠)
     this.orbitYaw = 0;
@@ -903,7 +932,12 @@ class BottleScene {
         {
           uOceanColor: { value: new THREE.Color(0x4bb2e0) },
           uSkyColor: { value: new THREE.Color(0xe8f7ff) },
-          uSunDirection: { value: new THREE.Vector3(2.5, 3.5, 2).normalize() },
+          // 물의 반사용 태양 방향. 씬의 DirectionalLight(배·섬을 비추는 빛)와는 별개 값이다.
+        // 수면 반사는 거울이라, 태양이 카메라 반대편(+z)에 있으면 반짝이는 띠가 화면 뒤로 빠져
+        // 카메라를 돌리기 전에는 보이지 않는다. 기본 시점(yaw -0.45 / pitch 0.60)에서
+        // 반사가 카메라로 오도록 방위각을 -z 쪽으로 돌렸다.
+        // y는 원래 값(0.74)에 가깝게 유지 — 이 성분이 물의 확산광 밝기를 결정해서, 낮추면 바다가 어두워진다.
+        uSunDirection: { value: new THREE.Vector3(0.30, 0.72, -0.62).normalize() },
           uExposure: { value: 1.15 },
           uTime: { value: 0 },
           uBoatX: { value: 0 },
@@ -911,6 +945,10 @@ class BottleScene {
           uAmpScale: { value: 0.5 },
           uFlowPhase: { value: 0 },
           uSpecOn: { value: 1.0 },
+        // 반짝임 조절 손잡이. 지수가 낮을수록 넓게 퍼지고, 세기는 밝기다.
+        // 물리값이 아니라 눈으로 맞추는 값이라 상수로 박지 않고 밖으로 빼둔다.
+        uSpecPower: { value: 90.0 },
+        uSpecStrength: { value: 2.4 },
         },
       ]),
       vertexShader: `
@@ -971,6 +1009,8 @@ class BottleScene {
         uniform vec3 uSunDirection;
         uniform float uExposure;
         uniform float uSpecOn;
+        uniform float uSpecPower;
+        uniform float uSpecStrength;
         varying vec3 vWorldPos;
 
         vec3 hdr (vec3 color, float exposure) {
@@ -993,8 +1033,8 @@ class BottleScene {
           vec3 water = (1.0 - fresnel) * uOceanColor * diffuse;
 
           vec3 reflectDir = reflect(-sunDir, normal);
-          float spec = pow(max(dot(reflectDir, viewDir), 0.0), 70.0);
-          vec3 sparkle = vec3(1.0, 0.99, 0.95) * spec * 2.2 * uSpecOn;
+          float spec = pow(max(dot(reflectDir, viewDir), 0.0), uSpecPower);
+          vec3 sparkle = vec3(1.0, 0.99, 0.95) * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
           gl_FragColor = vec4(hdr(color, uExposure), 0.92);
@@ -1132,7 +1172,8 @@ class BottleScene {
         // 배가 앵커에서 그만큼 떨어진 자리에 그려졌다. 게다가 헤딩 회전(boat.rotation.y)은 앵커
         // 기준이라, 배가 제자리에서 도는 게 아니라 반경 0.6짜리 원을 크게 휘돌아 버렸다.
         // 앵커 = 배 자신이 되도록 로컬 좌표를 비우고, 물에 잠기는 깊이만 흘수로 남긴다.
-        ship.position.set(0, SHIP_DRAFT, 0);
+        ship.scale.setScalar(SHIP_SCALE);
+        ship.position.set(0, SHIP_DRAFT * SHIP_SCALE, 0);
 
         this.boat.add(ship);
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
@@ -1145,34 +1186,6 @@ class BottleScene {
   _applyRockColor(hex) {
     if (!this.rockMats) { this._pendingRegionHex = hex; return; }
     this.rockMats.forEach((m) => m.color.setHex(hex));
-  }
-
-  _buildDock() {
-    const group = new THREE.Group();
-    const plankMat = new THREE.MeshStandardMaterial({ color: 0xa9784f, roughness: 0.85 });
-    const postMat = new THREE.MeshStandardMaterial({ color: 0x7a5738, roughness: 0.9 });
-
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.035, 0.22), plankMat);
-    deck.position.y = 0.06;
-    group.add(deck);
-
-    for (let i = -1; i <= 1; i++) {
-      const seam = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.006, 0.22), postMat);
-      seam.position.set(i * 0.26, 0.079, 0);
-      group.add(seam);
-    }
-
-    [-0.36, -0.1, 0.16, 0.36].forEach((px) => {
-      [1, -1].forEach((s) => {
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.34, 6), postMat);
-        post.position.set(px, -0.1, s * 0.08);
-        group.add(post);
-      });
-    });
-
-    group.position.set(0.7, 0, 0.35);
-    group.rotation.y = -0.15;
-    this.islandGroup.add(group);
   }
 
   _buildBoat() {
@@ -1247,7 +1260,6 @@ class BottleScene {
   revealBottle(onDone) {
     this.bottleGroup.visible = true;
     this.bottleTarget = 1;
-    this.camZoomTarget = 1;
     if (this.bottleRevealed) { onDone && onDone(); return; }
     this.bottleRevealed = true;
     setTimeout(() => onDone && onDone(), 1500);
@@ -1300,6 +1312,21 @@ class BottleScene {
     this.windTarget = windByMode[mode] ?? 0.3;
   }
 
+  /**
+   * 단계에 맞는 카메라 목적지를 건다. 이미 같은 목적지면 다시 시작하지 않는다
+   * (같은 단계에서 render()가 여러 번 불리는데 그때마다 전환이 재시작되면 안 된다).
+   */
+  _setCamStep(step) {
+    const p = CAM_STEPS[step] || CAM_DEFAULT;
+    const to = { tx: p.target[0], ty: p.target[1], tz: p.target[2], radius: p.radius };
+    if (!this._camCur) { this._camCur = { ...to }; this._camFrom = { ...to }; this._camTo = to; this._camT = 1; return; }
+    const cur = this._camTo;
+    if (cur && cur.tx === to.tx && cur.ty === to.ty && cur.tz === to.tz && cur.radius === to.radius) return;
+    this._camFrom = { ...this._camCur };
+    this._camTo = to;
+    this._camT = 0;
+  }
+
   show(step, appState) {
     this.visible = ACTIVE_STEPS.includes(step);
     this.stage.classList.toggle("visible", this.visible);
@@ -1309,9 +1336,10 @@ class BottleScene {
     this.setMode(appState.stateId || "stay");
     this.applyKeywords(appState.keywords);
 
+    this._setCamStep(step);
+
     if (step !== "result") {
       this.bottleTarget = 0;
-      this.camZoomTarget = 0;
       this.bottleRevealed = false;
     }
   }
@@ -1505,19 +1533,32 @@ class BottleScene {
     this._updateSmoke(dt);
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
-    this.camZoomT += (this.camZoomTarget - this.camZoomT) * Math.min(1, dt * 2.2);
+    // 단계 전환: 각도는 그대로 두고 목적지(target)와 거리(radius)만 ease-in-out으로 이동한다.
+    if (this._camT < 1) {
+      this._camT = Math.min(1, this._camT + dt / CAM_MOVE_SEC);
+      const k = easeInOutCubic(this._camT);
+      const a = this._camFrom, b = this._camTo;
+      this._camCur = {
+        tx: a.tx + (b.tx - a.tx) * k,
+        ty: a.ty + (b.ty - a.ty) * k,
+        tz: a.tz + (b.tz - a.tz) * k,
+        radius: a.radius + (b.radius - a.radius) * k,
+      };
+    }
     this.bottleMat.opacity = 0.28 * this.bottleT;
     this.bottleRimMat.opacity = 0.62 * this.bottleT;
     this.bottleCorkMat.opacity = 0.9 * this.bottleT;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
 
     const boatPos = this.boat.position;
-    const radius = THREE.MathUtils.lerp(CAM_RADIUS.near, CAM_RADIUS.far, this.camZoomT);
+    const cam = this._camCur;
+    const radius = cam.radius;
+    // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
+    const tX = boatPos.x + cam.tx, tY = cam.ty, tZ = cam.tz;
     // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
     const fogRange = fogRangeFor(radius);
     this.scene.fog.near = fogRange.near;
     this.scene.fog.far = fogRange.far;
-    const camY = THREE.MathUtils.lerp(0.28, 1.1, this.camZoomT);
     // 기본 시점: 좌측 상단에서 내려다보는 아이소메트릭. yaw가 음수면 카메라가 배 왼쪽으로,
     // pitch 0.60rad(≈34°)은 정아이소메트릭(35.26°)에 가까운 내려다보기 각도.
     // 바라보는 지점(lookAt)은 그대로 배 — 카메라 위치만 옮긴 것.
@@ -1526,12 +1567,12 @@ class BottleScene {
     const yaw = baseYaw + this.orbitYaw;
     const pitch = basePitch + this.orbitPitch;
     this.camera.position.set(
-      boatPos.x + radius * Math.sin(yaw) * Math.cos(pitch),
-      camY + radius * Math.sin(pitch),
-      radius * Math.cos(yaw) * Math.cos(pitch)
+      tX + radius * Math.sin(yaw) * Math.cos(pitch),
+      tY + radius * Math.sin(pitch),
+      tZ + radius * Math.cos(yaw) * Math.cos(pitch)
     );
     this.camera.position.y = Math.max(this.camera.position.y, 0.16);
-    this.camera.lookAt(boatPos.x, 0.08, 0);
+    this.camera.lookAt(tX, tY, tZ);
 
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
