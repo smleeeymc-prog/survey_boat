@@ -683,10 +683,20 @@ function snapPicker(items, axis, value, onPick, hint){
     const trackW = track.clientWidth;
     if(!trackW) return;
     const itemW = Math.round(trackW * ITEM_RATIO);
-    for(const el of els){ el.style.width = itemW+"px"; }
-    const pad = Math.max(0, (trackW - itemW)/2);
-    list.style.paddingLeft = pad+"px";
-    list.style.paddingRight = pad+"px";
+    const pad = Math.max(0, (trackW - itemW) / 2);
+    for(const el of els){
+      el.style.width = itemW+"px";
+      el.style.marginLeft = "0px";
+      el.style.marginRight = "0px";
+    }
+    // 양끝 여백을 컨테이너 padding이 아니라 첫/마지막 항목의 margin으로 준다.
+    // 스크롤 컨테이너의 끝쪽 padding은 브라우저에 따라 scrollWidth에 안 잡혀서,
+    // 마지막 항목이 가운데까지 못 오고 오른쪽으로 치우친 채 멈춘다.
+    // flex 항목의 margin은 어느 브라우저에서나 스크롤 범위에 포함된다.
+    els[0].style.marginLeft = pad+"px";
+    els[els.length-1].style.marginRight = pad+"px";
+    list.style.paddingLeft = "0px";
+    list.style.paddingRight = "0px";
   }
 
   /** 트랙 가운데에 가장 가까운 항목. 스크롤을 읽기만 한다. */
@@ -933,14 +943,14 @@ const fogRangeFor = (radius) => ({ near: radius + 0.3, far: radius + 4.3 });
 // 각도(yaw/pitch)는 어느 단계에서도 건드리지 않는다. 바뀌는 건 "무엇을 바라볼지(target)"와
 // "얼마나 떨어질지(radius)"뿐이다. 그래서 전환이 회전이 아니라 미끄러지는 이동으로 보인다.
 // target은 배 위치 기준 오프셋이라, 배가 움직여도 프레이밍이 유지된다.
-const CAM_DEFAULT = { target: [0.0, 0.16, 0.0], radius: 9.5 };
+const CAM_DEFAULT = { target: [0.0, 0.16, 0.0], radius: 8.4 };
 const CAM_STEPS = {
   // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
-  region:   { target: [1.30, 1.20, -0.30], radius: 12.0 },
+  region:   { target: [1.30, 1.20, -0.30], radius: 10.6 },
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
   keywords: { target: [0.0, 0.35, 0.0], radius: 7.3 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
-  result:   { target: [0.0, 0.45, 0.0], radius: 13.0 },
+  result:   { target: [0.0, 0.45, 0.0], radius: 11.5 },
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
@@ -966,7 +976,9 @@ const TIME_OF_DAY = {
   },
   afternoon: {
     sky: ["#5fb0dd", "#9fd0e4", "#ffd9a6", "#ffeed2"],
-    fog: 0xf0dcbc,
+    // 노란기를 뺐다. R-B 차이가 52였는데 20으로 줄여 따뜻함만 남기고 누렇게 뜨는 걸 없앴다.
+    // 반사색(spec)은 그대로 둔다 — 물에 비치는 빛은 노랗게 남아야 오후처럼 보인다.
+    fog: 0xe8e0d4,
     ocean: 0x2f9fd4, skyRefl: 0xfff0d6, exposure: 1.22,
     sun: 0xffdca6, sunI: 1.15, sunPos: [2.8, 2.4, 1.4],
     rim: 0xd8dcea, rimI: 0.30, amb: 0xfff2df, ambI: 0.88,
@@ -1397,14 +1409,19 @@ class BottleScene {
         void main () {
           // 병 안쪽(X축을 중심축으로 하는 원통)만 남기고 나머지 바다는 버린다.
           // 반지름과 X 범위를 크게 잡았다가 줄여오면 바다가 병 속으로 빨려드는 것처럼 보인다.
+          // 병 바깥 바다를 "사라지게" 한다. 면적을 좁혀오면 수면이 슈루룩 빨려드는 것처럼
+          // 보여서 어색했다. 경계는 그대로 두고 병 바깥쪽만 서서히 투명해지게 바꿨다.
+          float clipA = 1.0;
           if (uClipOn > 0.5) {
             vec3 rel = vWorldPos - uClipCenter;
             // LatheGeometry를 Z로 +90도 돌려 축을 X로 눕혔다. 그래서 로컬 축 좌표는 -x다.
             float ax = -rel.x / uClipScale;
             float rad = bottleRadiusAt(ax) * uClipScale;
-            // uClipT가 0이면 사실상 무제한, 1이면 병 안쪽 그대로. 그 사이를 오가며 조여든다.
-            float limit = mix(60.0, rad, uClipT);
-            if (length(rel.yz) > limit) discard;
+            // 병 안쪽이면 1, 바깥이면 0. 경계는 살짝 부드럽게 이어준다.
+            float inside = 1.0 - smoothstep(rad - 0.08, rad + 0.08, length(rel.yz));
+            // uClipT가 0이면 전부 그대로 보이고, 1이면 병 바깥이 완전히 사라진다.
+            clipA = mix(1.0, inside, uClipT);
+            if (clipA < 0.004) discard;
           }
 
           // (예전엔 여기서 컨베이어 랩어라운드로 찢어진 트라이를 fwidth로 감지해 discard 했는데,
@@ -1426,7 +1443,7 @@ class BottleScene {
           vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
-          gl_FragColor = vec4(hdr(color, uExposure), 0.92);
+          gl_FragColor = vec4(hdr(color, uExposure), 0.92 * clipA);
           // 안개는 색을 다 계산한 뒤 마지막에 섞는다 — 멀어질수록 바다가 하늘색으로 녹아
           // 타일 경계(가장자리)가 눈에 띄기 전에 사라진다.
           #include <fog_fragment>
@@ -1438,7 +1455,7 @@ class BottleScene {
   _buildWater() {
     // 타일 반경(SIZE/2 = 7)은 "카메라~배 최대 거리(radius 5.5) + 안개 끝(4.8)"을 커버할 만큼만.
     // 타일이 배를 따라다니므로 이보다 더 키울 이유가 없고, 가장자리는 항상 안개 안에 묻힌다.
-    const SEGMENTS = 68, SIZE = 30;
+    const SEGMENTS = 71, SIZE = 31.5;   // 경계를 5% 넓히고 셀 크기는 유지
     const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
 
