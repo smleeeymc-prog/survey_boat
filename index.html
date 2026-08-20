@@ -97,6 +97,52 @@
   textarea.sentence:focus, input.name-input:focus{ outline:none; border-color:var(--gold); }
   .char-count{ text-align:right; font-size:12px; color:var(--ink3); margin-top:6px; }
 
+  /* ── 스냅 피커 ─────────────────────────────────────────────────────────────
+     선택지를 한 번에 하나만 보여주고 굴려서 고른다. 배가 선택지 목록에 가리지 않게 하려는 것.
+     스크롤 스냅을 쓰면 모바일 터치·데스크톱 휠이 브라우저 기본 동작으로 해결된다.
+     드래그만 따로 붙이면 된다(데스크톱은 스크롤바를 끌 수 없으므로).
+     axis에 따라 세로/가로 둘 다 같은 컴포넌트를 쓴다. */
+  .picker{ position:relative; margin-bottom:20px; }
+  .picker-track{
+    display:flex; overflow:auto; scrollbar-width:none; -ms-overflow-style:none;
+    scroll-snap-type:both mandatory; overscroll-behavior:contain;
+    cursor:grab; touch-action:pan-y;
+  }
+  .picker-track::-webkit-scrollbar{ display:none; }
+  .picker-track.dragging{ cursor:grabbing; scroll-snap-type:none; }
+  .picker.v .picker-track{ flex-direction:column; height:96px; }
+  .picker.h .picker-track{ flex-direction:row; }
+
+  .picker-item{
+    scroll-snap-align:center; flex:0 0 auto;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    transition:opacity .25s ease, transform .25s ease, color .25s ease;
+  }
+  .picker.v .picker-item{ height:96px; padding:0 18px; }
+  .picker.h .picker-item{ width:60%; padding:22px 10px; }
+
+  /* 가운데가 아닌 항목은 물러나게 — 사진처럼 양옆(위아래)이 흐리게 걸쳐 보인다 */
+  .picker-item{ opacity:.25; transform:scale(.86); }
+  .picker-item.active{ opacity:1; transform:scale(1); }
+
+  .picker-item .lab{ font-size:19px; font-weight:700; line-height:1.35; }
+  .picker-item .desc{ font-size:12.5px; color:var(--ink3); margin-top:5px; line-height:1.5; }
+  .picker.h .picker-item .lab{ font-size:22px; }
+
+  /* 선택된 항목이 어디인지 알려주는 틀 */
+  .picker-frame{
+    position:absolute; left:0; right:0; pointer-events:none;
+    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.42);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:14px;
+  }
+  .picker.v .picker-frame{ top:0; height:96px; }
+  .picker.h .picker-frame{ top:0; bottom:0; left:20%; right:20%; }
+  .picker.v .picker-track{ position:relative; z-index:1; }
+  .picker.h .picker-track{ position:relative; z-index:1; }
+
+  .picker-hint{ text-align:center; font-size:11.5px; color:var(--ink3); margin-top:8px; letter-spacing:.02em; }
+
+
   .tag-wrap{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
   .tag{
     border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.5);
@@ -249,10 +295,19 @@ const REGIONS = ["아산","천안","기타 충남","충남 밖","비공개"];
 const STATES = [
   {id:"stay", label:"머무르는 중", desc:"지금 이곳에서 계속 살아가고 있어요"},
   {id:"leaving", label:"떠날 준비 중", desc:"곧 이곳을 떠날 계획이 있어요"},
-  {id:"returned", label:"돌아온 사람", desc:"떠났다가 다시 이곳으로 왔어요"},
   {id:"between", label:"오가는 중", desc:"두 지역을 오가며 지내고 있어요"},
+  {id:"returned", label:"돌아온 사람", desc:"떠났다가 다시 이곳으로 왔어요"},
   {id:"unsure", label:"아직 모르겠음", desc:"머물지 떠날지 아직 정하지 못했어요"},
 ];
+// "이 마음을 몇 명에게 말해봤나요?" — 답이 곧 하루의 시간대가 된다.
+// 많이 말했을수록 낮, 아무에게도 말하지 않았을수록 밤.
+const SHARES = [
+  {id:"many",  label:"여러 사람에게", time:"day"},
+  {id:"close", label:"가까운 사람에게", time:"afternoon"},
+  {id:"few",   label:"한 두 명만", time:"evening"},
+  {id:"none",  label:"나눈 적 없음", time:"night"},
+];
+
 const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
 
 // 시연용 목업 시드 데이터
@@ -274,6 +329,7 @@ let state = {
   region: null,
   stateId: null,
   text: "",
+  share: null,
   keywords: [],
   disclose: "익명",
   name: "",
@@ -294,6 +350,7 @@ function render(){
   else if(state.step==="region") el.appendChild(renderRegion());
   else if(state.step==="state") el.appendChild(renderState());
   else if(state.step==="sentence") el.appendChild(renderSentence());
+  else if(state.step==="share") el.appendChild(renderShare());
   else if(state.step==="keywords") el.appendChild(renderKeywords());
   else if(state.step==="consent") el.appendChild(renderConsent());
   else if(state.step==="result") el.appendChild(renderResult());
@@ -365,23 +422,19 @@ function renderOnboard(){
 function renderRegion(){
   const d = document.createElement("div");
   d.appendChild(backBtn("onboard"));
-  d.appendChild(progress(1,5));
+  d.appendChild(progress(1,6));
   const h = document.createElement("h2"); h.className="q"; h.textContent="지금 활동하는 지역은 어디인가요?";
   d.appendChild(h);
   const p = document.createElement("p"); p.className="sub"; p.textContent="넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.";
   d.appendChild(p);
-  const list = document.createElement("div"); list.className="option-list";
-  REGIONS.forEach(r=>{
-    const c = document.createElement("div");
-    c.className = "option-card" + (state.region===r ? " selected":"");
-    c.innerHTML = `<span>${r}</span>`;
-    c.onclick = ()=>{ state.region=r; render(); };
-    list.appendChild(c);
-  });
-  d.appendChild(list);
+  // 첫 진입이면 아무것도 고르지 않은 상태이므로 목록 첫 항목이 가운데에 온다.
+  if(!state.region) state.region = REGIONS[0];
+  d.appendChild(snapPicker(
+    REGIONS.map(r=>({id:r,label:r})), "v", state.region,
+    (v)=>{ state.region=v; }, "굴려서 고르세요"
+  ));
   const next = document.createElement("button");
   next.className="next-btn"; next.textContent="다음";
-  next.disabled = !state.region;
   next.onclick = ()=>{ state.step="state"; render(); };
   d.appendChild(next);
   return d;
@@ -390,23 +443,18 @@ function renderRegion(){
 function renderState(){
   const d = document.createElement("div");
   d.appendChild(backBtn("region"));
-  d.appendChild(progress(2,5));
+  d.appendChild(progress(2,6));
   const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신의 상태에 가장 가까운 것은?";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없습니다. 지금 느끼는 대로 골라주세요.";
   d.appendChild(p);
-  const list=document.createElement("div"); list.className="option-list";
-  STATES.forEach(s=>{
-    const c=document.createElement("div");
-    c.className="option-card"+(state.stateId===s.id?" selected":"");
-    c.innerHTML=`<div><div>${s.label}</div><div class="desc">${s.desc}</div></div>`;
-    c.onclick=()=>{ state.stateId=s.id; render(); };
-    list.appendChild(c);
-  });
-  d.appendChild(list);
+  if(!state.stateId) state.stateId = STATES[0].id;
+  d.appendChild(snapPicker(
+    STATES.map(x=>({id:x.id,label:x.label,desc:x.desc})), "v", state.stateId,
+    (v)=>{ state.stateId=v; if(window.BottleScene) window.BottleScene.setMode(v); }, "굴려서 고르세요"
+  ));
   const next=document.createElement("button");
   next.className="next-btn"; next.textContent="다음";
-  next.disabled=!state.stateId;
   next.onclick=()=>{ state.step="sentence"; render(); };
   d.appendChild(next);
   return d;
@@ -415,7 +463,7 @@ function renderState(){
 function renderSentence(){
   const d=document.createElement("div");
   d.appendChild(backBtn("state"));
-  d.appendChild(progress(3,5));
+  d.appendChild(progress(3,6));
   const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신이 이곳에 머무르게 하는 것은 무엇인가요?";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없으며, 최대 80자까지 한 문장으로 남길 수 있습니다.";
@@ -429,6 +477,34 @@ function renderSentence(){
   const next=document.createElement("button");
   next.className="next-btn"; next.textContent="다음"; next.style.marginTop="20px";
   next.disabled = state.text.trim().length===0;
+  next.onclick=()=>{ state.step="share"; render(); };
+  d.appendChild(next);
+  return d;
+}
+
+function renderShare(){
+  const d=document.createElement("div");
+  d.appendChild(backBtn("sentence"));
+  d.appendChild(progress(4,6));
+  const h=document.createElement("h2"); h.className="q"; h.textContent="이 마음을 몇 명에게 말해봤나요?";
+  d.appendChild(h);
+  const p=document.createElement("p"); p.className="sub"; p.textContent="좌우로 넘겨서 골라주세요. 고른 만큼 하루의 시간이 바뀝니다.";
+  d.appendChild(p);
+
+  if(!state.share) state.share = SHARES[0].id;
+  const applyTime=(id)=>{
+    const s0=SHARES.find(x=>x.id===id);
+    if(s0 && window.BottleScene) window.BottleScene.setTimeOfDay(s0.time);
+  };
+  applyTime(state.share);
+
+  d.appendChild(snapPicker(
+    SHARES.map(x=>({id:x.id,label:x.label})), "h", state.share,
+    (v)=>{ state.share=v; applyTime(v); }, "← 좌우로 넘기기 →"
+  ));
+
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="20px";
   next.onclick=()=>{ state.step="keywords"; render(); };
   d.appendChild(next);
   return d;
@@ -437,8 +513,8 @@ function renderSentence(){
 function renderKeywords(){
   const d=document.createElement("div");
   d.style.display="flex"; d.style.flexDirection="column"; d.style.flex="1";
-  d.appendChild(backBtn("sentence"));
-  d.appendChild(progress(4,5));
+  d.appendChild(backBtn("share"));
+  d.appendChild(progress(5,6));
 
   // 배가 화면 전체적으로 온전히 보이도록 선택지 묶음을 화면 하단으로 밀어냄
   const bottomWrap=document.createElement("div");
@@ -474,25 +550,25 @@ function renderKeywords(){
 function renderConsent(){
   const d=document.createElement("div");
   d.appendChild(backBtn("keywords"));
-  d.appendChild(progress(5,5));
+  d.appendChild(progress(6,6));
   const h=document.createElement("h2"); h.className="q"; h.textContent="공개 방식과 활용 동의";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="익명으로 남겨도 되고, 실명 대신 별칭을 적어도 괜찮아요.";
   d.appendChild(p);
 
-  const list=document.createElement("div"); list.className="option-list";
-  ["익명","별칭","실명"].forEach(opt=>{
-    const c=document.createElement("div");
-    c.className="option-card"+(state.disclose===opt?" selected":"");
-    c.textContent=opt;
-    c.onclick=()=>{ state.disclose=opt; render(); };
-    list.appendChild(c);
-  });
-  d.appendChild(list);
+  const discloseWrap=document.createElement("div");
+  d.appendChild(snapPicker(
+    [{id:"익명",label:"익명"},{id:"별칭",label:"별칭"},{id:"실명",label:"실명"}],
+    "v", state.disclose,
+    (v)=>{ state.disclose=v; renderNameField(); updateNext(); }, "굴려서 고르세요"
+  ));
+  d.appendChild(discloseWrap);
 
   // 별칭/실명을 고른 경우에만 입력창이 나온다. 익명이면 적을 것이 없다.
-  // 입력 중에는 render()를 부르지 않는다 — 다시 그리면 포커스와 커서 위치가 날아간다.
-  if(state.disclose!=="익명"){
+  // 피커는 render()를 부르지 않으므로(스크롤 위치가 날아간다) 이 블록만 직접 다시 그린다.
+  function renderNameField(){
+    discloseWrap.innerHTML="";
+    if(state.disclose==="익명") return;
     const nameInput=document.createElement("input");
     nameInput.type="text"; nameInput.className="name-input"; nameInput.maxLength=12;
     nameInput.placeholder = state.disclose==="별칭" ? "예: 바다" : "예: 이승민";
@@ -504,7 +580,7 @@ function renderConsent(){
       nameCount.textContent=`${nameInput.value.length}/12`;
       updateNext();
     });
-    d.appendChild(nameInput); d.appendChild(nameCount);
+    discloseWrap.appendChild(nameInput); discloseWrap.appendChild(nameCount);
   }
 
   const box=document.createElement("div"); box.className="consent-box";
@@ -523,6 +599,7 @@ function renderConsent(){
     const needsName = state.disclose!=="익명";
     next.disabled = !state.consent || (needsName && (state.name||"").trim()==="");
   }
+  renderNameField();
   updateNext();
 
   next.onclick=()=>{
@@ -536,6 +613,108 @@ function renderConsent(){
   };
   d.appendChild(next);
   return d;
+}
+
+/**
+ * 스냅 피커 — 선택지를 한 번에 하나만 보여주고 굴려서 고른다.
+ * 목록이 화면을 덮어 배를 가리는 걸 막으려는 것.
+ *
+ * 스크롤·스냅·관성은 브라우저 기본 동작에 맡긴다(모바일 터치, 데스크톱 휠 모두 공짜).
+ * 데스크톱은 스크롤바를 끌 수 없으니 포인터 드래그만 따로 붙인다.
+ *
+ * items  : [{id, label, desc}]
+ * axis   : "v" | "h"
+ * value  : 현재 선택된 id
+ * onPick : 선택이 바뀔 때 호출 (render()를 부르지 않는다 — 다시 그리면 스크롤 위치가 날아간다)
+ */
+function snapPicker(items, axis, value, onPick, hint){
+  const wrap=document.createElement("div"); wrap.className="picker "+axis;
+  const frame=document.createElement("div"); frame.className="picker-frame";
+  const track=document.createElement("div"); track.className="picker-track";
+  wrap.appendChild(frame); wrap.appendChild(track);
+
+  const horiz = axis==="h";
+  const els=items.map(it=>{
+    const el=document.createElement("div"); el.className="picker-item";
+    el.innerHTML = it.desc
+      ? `<div class="lab">${it.label}</div><div class="desc">${it.desc}</div>`
+      : `<div class="lab">${it.label}</div>`;
+    el.onclick=()=>center(items.indexOf(it), true);
+    track.appendChild(el); return el;
+  });
+
+  // 첫 항목과 마지막 항목도 가운데로 올 수 있어야 하므로 양끝에 여백을 둔다.
+  const pad=()=>{
+    const box = horiz ? track.clientWidth : track.clientHeight;
+    const item = horiz ? els[0].offsetWidth : els[0].offsetHeight;
+    const p = Math.max(0, (box-item)/2);
+    if(horiz){ track.style.paddingLeft=p+"px"; track.style.paddingRight=p+"px"; }
+    else { track.style.paddingTop=p+"px"; track.style.paddingBottom=p+"px"; }
+  };
+
+  let idx = Math.max(0, items.findIndex(it=>it.id===value));
+
+  function center(i, smooth){
+    idx=Math.max(0,Math.min(items.length-1,i));
+    const el=els[idx];
+    const to = horiz
+      ? el.offsetLeft - (track.clientWidth-el.offsetWidth)/2
+      : el.offsetTop  - (track.clientHeight-el.offsetHeight)/2;
+    track.scrollTo(horiz?{left:to,behavior:smooth?"smooth":"auto"}:{top:to,behavior:smooth?"smooth":"auto"});
+    mark();
+  }
+
+  // 트랙 가운데에 가장 가까운 항목을 선택으로 본다.
+  function nearest(){
+    const mid = horiz
+      ? track.scrollLeft + track.clientWidth/2
+      : track.scrollTop + track.clientHeight/2;
+    let best=0, bd=Infinity;
+    els.forEach((el,i)=>{
+      const c = horiz ? el.offsetLeft+el.offsetWidth/2 : el.offsetTop+el.offsetHeight/2;
+      const d = Math.abs(c-mid);
+      if(d<bd){ bd=d; best=i; }
+    });
+    return best;
+  }
+
+  function mark(){
+    const n=nearest();
+    els.forEach((el,i)=>el.classList.toggle("active", i===n));
+    if(items[n] && items[n].id!==value){ value=items[n].id; onPick(value); }
+    idx=n;
+  }
+
+  let raf=null;
+  track.addEventListener("scroll",()=>{ if(raf) cancelAnimationFrame(raf); raf=requestAnimationFrame(mark); });
+
+  // 데스크톱 드래그
+  let down=false, start=0, from=0, moved=false;
+  track.addEventListener("pointerdown",(e)=>{
+    down=true; moved=false;
+    start = horiz ? e.clientX : e.clientY;
+    from  = horiz ? track.scrollLeft : track.scrollTop;
+    track.classList.add("dragging");
+    try{ track.setPointerCapture(e.pointerId); }catch(_e){}
+  });
+  track.addEventListener("pointermove",(e)=>{
+    if(!down) return;
+    const d = (horiz ? e.clientX : e.clientY) - start;
+    if(Math.abs(d)>3) moved=true;
+    if(horiz) track.scrollLeft = from - d; else track.scrollTop = from - d;
+  });
+  const up=()=>{ if(!down) return; down=false; track.classList.remove("dragging"); center(nearest(), true); };
+  track.addEventListener("pointerup",up);
+  track.addEventListener("pointercancel",up);
+  track.addEventListener("pointerleave",up);
+  // 드래그로 끝난 클릭이 항목 선택으로 이어지지 않게 한다
+  track.addEventListener("click",(e)=>{ if(moved){ e.stopPropagation(); e.preventDefault(); } }, true);
+
+  if(hint){ const h=document.createElement("div"); h.className="picker-hint"; h.textContent=hint; wrap.appendChild(h); }
+
+  // 레이아웃이 잡힌 뒤에 여백·초기 위치를 계산해야 한다
+  requestAnimationFrame(()=>{ pad(); center(idx,false); });
+  return wrap;
 }
 
 function stateLabel(id){ return (STATES.find(s=>s.id===id)||{}).label || id; }
@@ -636,7 +815,7 @@ function renderArchive(){
   const restart=document.createElement("button");
   restart.className="restart-btn"; restart.textContent="다시 한 문장 남기기";
   restart.onclick=()=>{
-    state = {step:"onboard", region:null, stateId:null, text:"", keywords:[], disclose:"익명", name:"", consent:false,
+    state = {step:"onboard", region:null, stateId:null, text:"", share:null, keywords:[], disclose:"익명", name:"", consent:false,
       filterState:state.filterState, filterRegion:state.filterRegion};
     render();
   };
@@ -686,7 +865,10 @@ const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 
 // 배 전체 크기 배율. 1.0이 GLB 원본 크기.
 // 흘수(SHIP_DRAFT)도 같이 곱해야 잠기는 "비율"이 유지된다 — 안 그러면 키울수록 더 깊이 잠긴다.
-const SHIP_SCALE = 1.3;
+const SHIP_SCALE = 2.6;
+
+// 선체 끝과 섬(Beachhouse) 사이에 둘 여유 거리. 눈으로 맞추는 값.
+const ISLAND_CLEARANCE = 0.55;
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
@@ -704,18 +886,60 @@ const fogRangeFor = (radius) => ({ near: radius + 0.3, far: radius + 4.3 });
 // 각도(yaw/pitch)는 어느 단계에서도 건드리지 않는다. 바뀌는 건 "무엇을 바라볼지(target)"와
 // "얼마나 떨어질지(radius)"뿐이다. 그래서 전환이 회전이 아니라 미끄러지는 이동으로 보인다.
 // target은 배 위치 기준 오프셋이라, 배가 움직여도 프레이밍이 유지된다.
-const CAM_DEFAULT = { target: [0.0, 0.08, 0.0], radius: 3.0 };
+const CAM_DEFAULT = { target: [0.0, 0.16, 0.0], radius: 9.5 };
 const CAM_STEPS = {
   // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
-  region:   { target: [0.40, 0.70, -0.25], radius: 5.4 },
-  // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 73%).
-  keywords: { target: [0.0, 0.20, 0.0], radius: 1.9 },
+  region:   { target: [1.30, 1.20, -0.30], radius: 12.0 },
+  // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
+  keywords: { target: [0.0, 0.35, 0.0], radius: 7.3 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
-  result:   { target: [0.0, 0.30, 0.0], radius: 5.5 },
+  result:   { target: [0.0, 0.45, 0.0], radius: 13.0 },
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+// ── 시간대 팔레트 ──────────────────────────────────────────────────────────
+// "이 마음을 몇 명에게 말해봤나요?" 답에 따라 하루의 시간이 바뀐다.
+// 많이 말했을수록 낮, 아무에게도 말하지 않았을수록 밤.
+// sky는 위→중간→아래 3단 그라디언트, sun/rim은 씬 조명, ocean/skyRefl은 물 셰이더 색이다.
+const TIME_OF_DAY = {
+  day: {
+    sky: ["#7ec3e0", "#bfe3ec", "#eaf5f1"],
+    fog: 0xbfe3ec,
+    ocean: 0x4bb2e0, skyRefl: 0xe8f7ff, exposure: 1.15,
+    sun: 0xfff6e0, sunI: 1.0, rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.75,
+    spec: 0xfffcf2, specI: 3.0,
+  },
+  afternoon: {
+    sky: ["#8cc2dd", "#d9dfe0", "#f6e6cf"],
+    fog: 0xe4dcc8,
+    ocean: 0x4aa6c8, skyRefl: 0xfff0d8, exposure: 1.18,
+    sun: 0xffe6b0, sunI: 1.05, rim: 0xd8dcea, rimI: 0.28, amb: 0xfff4e4, ambI: 0.72,
+    spec: 0xffe9c0, specI: 3.0,
+  },
+  evening: {
+    sky: ["#4a6b9c", "#c98a76", "#f3b183"],
+    fog: 0xd79a76,
+    ocean: 0x2f6f96, skyRefl: 0xffd0a0, exposure: 1.22,
+    sun: 0xff9c5a, sunI: 1.15, rim: 0x7d8fc4, rimI: 0.34, amb: 0xffd9c0, ambI: 0.60,
+    spec: 0xffb070, specI: 3.2,
+  },
+  night: {
+    sky: ["#0e1730", "#1e2b4f", "#33456e"],
+    fog: 0x2b3b60,
+    ocean: 0x14315c, skyRefl: 0x9fb6e6, exposure: 1.05,
+    sun: 0xa9c4ff, sunI: 0.45, rim: 0x5f74b0, rimI: 0.30, amb: 0x8fa2cc, ambI: 0.45,
+    spec: 0x9fc0ff, specI: 1.4,
+  },
+};
+
+// 시간 전환 곡선 — 시작·끝이 아주 완만하고 가운데가 급하다("hard ease in/out").
+// 지수를 올릴수록 변화가 가운데로 몰려서, 빠르게 바뀌고 잔상이 길게 남는 느낌이 된다.
+const TIME_MOVE_SEC = 2.6;
+const TMP_COLOR = new THREE.Color();
+const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
+
 
 // 프리셋들이 실제로 쓰는 카메라 거리의 최소/최대.
 // 프리셋을 고치면 안개 범위 자기검증도 자동으로 따라오도록 여기서 파생시킨다.
@@ -747,7 +971,7 @@ const KEYWORD_PROP = {
   "관계": "tube",
 };
 
-const ACTIVE_STEPS = ["onboard","region","state","sentence","keywords","consent","result"];
+const ACTIVE_STEPS = ["onboard","region","state","sentence","share","keywords","consent","result"];
 
 function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
 function easeOutBounce(x){
@@ -759,19 +983,28 @@ function easeOutBounce(x){
 }
 
 // 하늘 그라디언트 텍스처 (레퍼런스 사진처럼 위는 파랑, 아래는 뿌연 수평선)
+// 하늘 그라디언트. 시간대가 바뀌면 같은 캔버스에 다시 칠하고 needsUpdate만 올린다
+// (8x256짜리라 매 프레임 다시 그려도 비용이 없다시피 하다).
 function makeSkyTexture(){
   const c = document.createElement("canvas");
   c.width = 8; c.height = 256;
-  const ctx = c.getContext("2d");
-  const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, "#7ec3e0");
-  grad.addColorStop(0.55, "#bfe3ec");
-  grad.addColorStop(1, "#eaf5f1");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 8, 256);
   const tex = new THREE.CanvasTexture(c);
   if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.__canvas = c;
+  paintSky(tex, TIME_OF_DAY.day.sky.map((h) => new THREE.Color(h)));
   return tex;
+}
+
+function paintSky(tex, colors){
+  const c = tex.__canvas;
+  const ctx = c.getContext("2d");
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, "#" + colors[0].getHexString());
+  grad.addColorStop(0.55, "#" + colors[1].getHexString());
+  grad.addColorStop(1, "#" + colors[2].getHexString());
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 8, 256);
+  tex.needsUpdate = true;
 }
 
 class BottleScene {
@@ -812,13 +1045,15 @@ class BottleScene {
     // 망원렌즈 느낌: FOV를 좁혀서 시점을 돌려도 보이는 영역(특히 섬 배경)이 좁게 유지되도록 함
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.05, 30);
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    const sun = new THREE.DirectionalLight(0xfff6e0, 1.0);
-    sun.position.set(2.5, 3.5, 2);
-    this.scene.add(sun);
-    const rim = new THREE.DirectionalLight(0xbfe7ef, 0.3);
-    rim.position.set(-3, 1, -2);
-    this.scene.add(rim);
+    // 시간대에 따라 색·세기가 바뀌므로 인스턴스를 들고 있는다 (_applyTime 참고)
+    this.ambLight = new THREE.AmbientLight(0xffffff, 0.75);
+    this.scene.add(this.ambLight);
+    this.sunLight = new THREE.DirectionalLight(0xfff6e0, 1.0);
+    this.sunLight.position.set(2.5, 3.5, 2);
+    this.scene.add(this.sunLight);
+    this.rimLight = new THREE.DirectionalLight(0xbfe7ef, 0.3);
+    this.rimLight.position.set(-3, 1, -2);
+    this.scene.add(this.rimLight);
 
     this.world = new THREE.Group();
     this.scene.add(this.world);
@@ -833,7 +1068,11 @@ class BottleScene {
     // 비동기로 로드되는 실제 모델(Rock)이라 지오메트리와 무관하게 여기서 먼저 정해둠.
     // 배 앵커를 GLB의 Ship 자리로 옮겼으므로(SHIP_GLB_POS) 섬도 같은 만큼 밀어야
     // 블렌더에서 잡은 배↔섬 상대 배치가 그대로 유지된다.
-    this.islandRestX = -SHIP_GLB_POS.x;
+    // 배가 커진 만큼 섬을 더 밀어야 선체가 선착장을 뚫고 들어가지 않는다.
+    // 선체는 배 원점 기준 최대 +0.49(로컬)까지 뻗으므로 실제 반경은 0.49*SHIP_SCALE,
+    // Beachhouse는 자기 원점 기준 -0.479부터 시작한다. 둘 사이에 여유를 둔다.
+    // 값을 키우면 섬이 멀어지고, 줄이면 가까워진다.
+    this.islandRestX = 0.49 * SHIP_SCALE + 0.479 + ISLAND_CLEARANCE;
     this.islandGoneX = this.islandRestX + 2.45;
     this.islandGroup.position.z = -SHIP_GLB_POS.z;
 
@@ -871,6 +1110,13 @@ class BottleScene {
     this._camTo = null;
     this._camT = 1;
     this._setCamStep(null);
+
+    // 시간대 보간 상태. setTimeOfDay()가 목적지를 갈아끼운다.
+    this._timeKey = "day";
+    this._timeFrom = TIME_OF_DAY.day;
+    this._timeTo = TIME_OF_DAY.day;
+    this._timeT = 1;
+    this._skyColors = TIME_OF_DAY.day.sky.map((h) => new THREE.Color(h));
 
     // 드래그 오빗(카메라는 항상 배를 중심으로 둠)
     this.orbitYaw = 0;
@@ -947,8 +1193,10 @@ class BottleScene {
           uSpecOn: { value: 1.0 },
         // 반짝임 조절 손잡이. 지수가 낮을수록 넓게 퍼지고, 세기는 밝기다.
         // 물리값이 아니라 눈으로 맞추는 값이라 상수로 박지 않고 밖으로 빼둔다.
-        uSpecPower: { value: 90.0 },
-        uSpecStrength: { value: 2.4 },
+        uSpecPower: { value: 400.0 },
+        uSpecStrength: { value: 3.0 },
+        // 반짝임 색. 시간대에 따라 바뀐다 (낮 흰빛 → 노을 주황 → 밤 푸른 달빛)
+        uSpecColor: { value: new THREE.Color(0xfffcf2) },
         },
       ]),
       vertexShader: `
@@ -1011,6 +1259,7 @@ class BottleScene {
         uniform float uSpecOn;
         uniform float uSpecPower;
         uniform float uSpecStrength;
+        uniform vec3 uSpecColor;
         varying vec3 vWorldPos;
 
         vec3 hdr (vec3 color, float exposure) {
@@ -1034,7 +1283,7 @@ class BottleScene {
 
           vec3 reflectDir = reflect(-sunDir, normal);
           float spec = pow(max(dot(reflectDir, viewDir), 0.0), uSpecPower);
-          vec3 sparkle = vec3(1.0, 0.99, 0.95) * spec * uSpecStrength * uSpecOn;
+          vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
           gl_FragColor = vec4(hdr(color, uExposure), 0.92);
@@ -1049,7 +1298,7 @@ class BottleScene {
   _buildWater() {
     // 타일 반경(SIZE/2 = 7)은 "카메라~배 최대 거리(radius 5.5) + 안개 끝(4.8)"을 커버할 만큼만.
     // 타일이 배를 따라다니므로 이보다 더 키울 이유가 없고, 가장자리는 항상 안개 안에 묻힌다.
-    const SEGMENTS = 32, SIZE = 14;
+    const SEGMENTS = 68, SIZE = 30;
     const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
 
@@ -1308,8 +1557,69 @@ class BottleScene {
     }
     this.shoreTarget = (mode === "between" || mode === "unsure") ? 0 : 1;
 
-    const windByMode = { stay: 0.22, leaving: 0.55, returned: 0.75, between: 1, unsure: 0.1 };
+    // between이 1.0이면 파도가 너무 거칠어서 0.1('아직 모르겠음'과 같은 값)로 낮췄다.
+    // 진폭은 ampScale = 0.5 + 0.9*windT 이므로 1.4 -> 0.59, 약 58% 감소다.
+    // (0.5가 하한이라 이 공식으로 낼 수 있는 최저치는 1.4의 36%다)
+    const windByMode = { stay: 0.22, leaving: 0.55, returned: 0.75, between: 0.1, unsure: 0.1 };
     this.windTarget = windByMode[mode] ?? 0.3;
+  }
+
+  /**
+   * 시간대를 바꾼다. 같은 시간대면 다시 시작하지 않는다.
+   * 전환 곡선은 easeInOutQuint — 앞뒤가 아주 완만하고 가운데가 급해서,
+   * "확 바뀌고 잔상이 길게 남는" 느낌이 난다.
+   */
+  setTimeOfDay(key) {
+    const to = TIME_OF_DAY[key];
+    if (!to || this._timeKey === key) return;
+    this._timeFrom = this._snapshotTime();
+    this._timeTo = to;
+    this._timeKey = key;
+    this._timeT = 0;
+  }
+
+  /** 현재 화면에 실제로 적용돼 있는 값. 전환 중에 또 바꿔도 이어지도록 스냅숏을 뜬다. */
+  _snapshotTime() {
+    const wu = this.waterMesh.material.uniforms;
+    return {
+      sky: this._skyColors.map((c) => c.clone()),
+      fog: this.scene.fog.color.getHex(),
+      ocean: wu.uOceanColor.value.getHex(),
+      skyRefl: wu.uSkyColor.value.getHex(),
+      exposure: wu.uExposure.value,
+      sun: this.sunLight.color.getHex(), sunI: this.sunLight.intensity,
+      rim: this.rimLight.color.getHex(), rimI: this.rimLight.intensity,
+      amb: this.ambLight.color.getHex(), ambI: this.ambLight.intensity,
+      spec: wu.uSpecColor.value.getHex(), specI: wu.uSpecStrength.value,
+    };
+  }
+
+  /** from→to 사이 k(0~1) 지점의 색·세기를 실제 씬에 반영한다. */
+  _applyTime(k) {
+    const a = this._timeFrom, b = this._timeTo;
+    const wu = this.waterMesh.material.uniforms;
+    const mixHex = (target, from, to) => {
+      target.set(typeof from === "number" ? from : from.getHex());
+      target.lerp(TMP_COLOR.set(typeof to === "number" ? to : to.getHex()), k);
+    };
+    for (let i = 0; i < 3; i++) {
+      const fromC = a.sky[i] instanceof THREE.Color ? a.sky[i] : new THREE.Color(a.sky[i]);
+      const toC = b.sky[i] instanceof THREE.Color ? b.sky[i] : new THREE.Color(b.sky[i]);
+      this._skyColors[i].copy(fromC).lerp(toC, k);
+    }
+    paintSky(this.scene.background, this._skyColors);
+    mixHex(this.scene.fog.color, a.fog, b.fog);
+    mixHex(wu.uOceanColor.value, a.ocean, b.ocean);
+    mixHex(wu.uSkyColor.value, a.skyRefl, b.skyRefl);
+    mixHex(this.sunLight.color, a.sun, b.sun);
+    mixHex(this.rimLight.color, a.rim, b.rim);
+    mixHex(this.ambLight.color, a.amb, b.amb);
+    mixHex(wu.uSpecColor.value, a.spec, b.spec);
+    wu.uSpecStrength.value = a.specI + (b.specI - a.specI) * k;
+    wu.uExposure.value = a.exposure + (b.exposure - a.exposure) * k;
+    this.sunLight.intensity = a.sunI + (b.sunI - a.sunI) * k;
+    this.rimLight.intensity = a.rimI + (b.rimI - a.rimI) * k;
+    this.ambLight.intensity = a.ambI + (b.ambI - a.ambI) * k;
   }
 
   /**
@@ -1533,6 +1843,12 @@ class BottleScene {
     this._updateSmoke(dt);
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
+    // 시간대 전환
+    if (this._timeT < 1) {
+      this._timeT = Math.min(1, this._timeT + dt / TIME_MOVE_SEC);
+      this._applyTime(easeInOutQuint(this._timeT));
+    }
+
     // 단계 전환: 각도는 그대로 두고 목적지(target)와 거리(radius)만 ease-in-out으로 이동한다.
     if (this._camT < 1) {
       this._camT = Math.min(1, this._camT + dt / CAM_MOVE_SEC);
