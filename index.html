@@ -145,7 +145,7 @@
     transition:opacity .25s ease, transform .25s ease, filter .3s ease;
   }
   .picker.v .picker-item{ height:96px; padding:0 18px; }
-  .picker.h .picker-item{ width:72%; padding:26px 6px; }
+  .picker.h .picker-item{ padding:26px 6px; }   /* 폭은 layout()이 픽셀로 넣는다 */
 
   /* 가운데가 아닌 항목은 물러나게 */
   .picker-item{ opacity:.25; transform:scale(.86); }
@@ -668,10 +668,23 @@ function snapPicker(items, axis, value, onPick, hint){
     list.appendChild(el); return el;
   });
 
-  // 가로는 첫/마지막 항목도 가운데로 올 수 있어야 하므로 양끝에 여백을 준다.
+  /**
+   * 가로 피커의 폭과 여백을 픽셀로 확정한다.
+   *
+   * 퍼센트로 두면 항목 폭이 "리스트 콘텐츠 폭"을 기준으로 잡히는데, 그 콘텐츠 폭은
+   * 다시 우리가 넣는 좌우 여백에 따라 줄어든다. 서로를 참조하는 꼴이라 계산이 어긋났다.
+   *
+   * 선택 항목이 트랙 한가운데 오고 앞뒤 항목은 양옆으로 반쯤 걸쳐 나가도록,
+   * 항목 폭을 트랙의 72%로 잡고 남는 28%를 양끝에 절반씩 준다.
+   */
+  const ITEM_RATIO = 0.72;
   function layout(){
     if(!horiz) return;
-    const pad = Math.max(0, (track.clientWidth - els[0].offsetWidth)/2);
+    const trackW = track.clientWidth;
+    if(!trackW) return;
+    const itemW = Math.round(trackW * ITEM_RATIO);
+    for(const el of els){ el.style.width = itemW+"px"; }
+    const pad = Math.max(0, (trackW - itemW)/2);
     list.style.paddingLeft = pad+"px";
     list.style.paddingRight = pad+"px";
   }
@@ -740,11 +753,13 @@ function snapPicker(items, axis, value, onPick, hint){
   if(hint){ const h=document.createElement("div"); h.className="picker-hint"; h.textContent=hint; wrap.appendChild(h); }
 
   // 레이아웃이 잡힌 뒤에 여백과 초기 위치를 잡는다
-  requestAnimationFrame(()=>{
+  // 폰트·레이아웃이 확정된 뒤에 재야 폭이 정확하다. 두 프레임 뒤에 한 번 더 잡는다.
+  const settle=()=>{
     layout();
     scrollToIndex(Math.max(0, items.findIndex(it=>it.id===value)), false);
     mark();
-  });
+  };
+  requestAnimationFrame(()=>{ settle(); requestAnimationFrame(settle); });
   window.addEventListener("resize", ()=>{ layout(); scrollToIndex(nearest(), false); });
   return wrap;
 }
@@ -878,13 +893,6 @@ render();
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-// 거리에 따른 흐림(피사계 심도). 초점은 매 프레임 카메라가 바라보는 지점에 맞춘다.
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
-// 후처리를 거치면 렌더 타깃에 선형 색으로 남는다. 마지막에 sRGB로 되돌리지 않으면
-// 화면 전체가 어둡고 탁해진다. OutputPass가 톤매핑과 색공간 변환을 맡는다.
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 // 레포 구조 기준 상대경로 (index.html 은 루트, 모델은 assets/ 안)
 const MODEL_URL = "./assets/Scene.glb";
@@ -954,7 +962,7 @@ const TIME_OF_DAY = {
     ocean: 0x2fb3e6, skyRefl: 0xeafaff, exposure: 1.18,
     sun: 0xfff7e2, sunI: 1.05, sunPos: [2.5, 3.5, 2.0],
     rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.80,
-    spec: 0xfffcf2, specI: 3.0, shadow: 0.24,
+    spec: 0xfffcf2, specI: 3.0, shadow: 0.0,
   },
   afternoon: {
     sky: ["#5fb0dd", "#9fd0e4", "#ffd9a6", "#ffeed2"],
@@ -962,16 +970,16 @@ const TIME_OF_DAY = {
     ocean: 0x2f9fd4, skyRefl: 0xfff0d6, exposure: 1.22,
     sun: 0xffdca6, sunI: 1.15, sunPos: [2.8, 2.4, 1.4],
     rim: 0xd8dcea, rimI: 0.30, amb: 0xfff2df, ambI: 0.88,
-    spec: 0xffe6bc, specI: 3.0, shadow: 0.28,
+    spec: 0xffe6bc, specI: 3.0, shadow: 0.0,
   },
   evening: {
     // 위는 청록, 가운데는 노을, 지평선 바로 위에 자주색 띠, 바닥은 따뜻한 주황
     sky: ["#2f6f92", "#e2705f", "#a05a8c", "#ffc184"],
     fog: 0xdb9a86,
     ocean: 0x2a6d99, skyRefl: 0xffd2a6, exposure: 1.26,
-    sun: 0xffa063, sunI: 1.30, sunPos: [3.2, 1.1, -1.6],
+    sun: 0xffa063, sunI: 1.30, sunPos: [3.0, 1.8, -1.4],
     rim: 0x8f7fb8, rimI: 0.42, amb: 0xffd9bd, ambI: 0.82,
-    spec: 0xffb070, specI: 3.2, shadow: 0.30,
+    spec: 0xffb070, specI: 3.2, shadow: 0.34,
   },
   night: {
     sky: ["#0a1128", "#16264a", "#22345e", "#33507e"],
@@ -1103,12 +1111,14 @@ class BottleScene {
     this.scene.add(this.ambLight);
     this.sunLight = new THREE.DirectionalLight(0xfff6e0, 1.0);
     this.sunLight.position.set(2.5, 3.5, 2);
-    this.sunLight.castShadow = true;
-    // 512면 충분하다. 배와 섬만 담으면 되므로 절두체도 딱 그만큼만 잡는다.
-    this.sunLight.shadow.mapSize.set(512, 512);
+    // 그림자를 드리우는 건 배뿐이라 절두체를 배 주변으로 바짝 조인다.
+    // 좁을수록 같은 해상도에서 그림자가 또렷해지고 아크네도 줄어든다.
+    this.sunLight.castShadow = false;   // 저녁에만 켠다 (_applyTime 참고)
+    this.sunLight.shadow.mapSize.set(1024, 1024);
     const sc0 = this.sunLight.shadow.camera;
-    sc0.left = -7; sc0.right = 7; sc0.top = 7; sc0.bottom = -7;
-    sc0.near = 0.5; sc0.far = 22;
+    sc0.left = -5; sc0.right = 5; sc0.top = 5; sc0.bottom = -5;
+    sc0.near = 0.5; sc0.far = 18;
+    this.sunLight.shadow.bias = -0.0015;
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
     this.rimLight = new THREE.DirectionalLight(0xbfe7ef, 0.3);
@@ -1195,42 +1205,15 @@ class BottleScene {
     this.camDebugEl = document.getElementById("camDebug");
     if (this.debugCam && this.camDebugEl) this.camDebugEl.classList.add("show");
 
-    this._buildComposer();
-
     this.clock = new THREE.Clock();
     this._resize();
     window.addEventListener("resize", () => this._resize());
     this._animate();
   }
 
-  /**
-   * 거리에 따라 점점 흐려지게 하는 후처리.
-   * 초점(focus)은 _animate에서 매 프레임 "카메라가 바라보는 지점까지의 거리"로 갱신하므로,
-   * 줌인/줌아웃하거나 시점이 이동해도 배·섬 같은 주요 요소는 항상 선명하게 남는다.
-   * 저사양 기기에서는 성능 워치독이 이 패스를 통째로 끈다.
-   */
-  _buildComposer() {
-    this.composer = new EffectComposer(this.renderer);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    // aperture가 클수록 초점 밖이 빨리 흐려진다. maxblur는 흐림의 상한.
-    this.bokeh = new BokehPass(this.scene, this.camera, {
-      focus: 9.5, aperture: 0.002, maxblur: 0.01,
-    });
-    this.composer.addPass(this.bokeh);
-    this.composer.addPass(new OutputPass());
-    this.dofOn = true;
-  }
-
-  /** 후처리를 쓸 수 있으면 컴포저로, 아니면 그냥 렌더러로 그린다. */
-  _draw() {
-    if (this.dofOn && this.composer) this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
-  }
-
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
-    if (this.composer) this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -1435,13 +1418,11 @@ class BottleScene {
             this.rockMats.push(child.material);
           }
         });
-        rock.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.islandGroup.add(rock);
         if (this._pendingRegionHex !== undefined) this._applyRockColor(this._pendingRegionHex);
       }
 
       if (beachhouse) {
-        beachhouse.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.islandGroup.add(beachhouse);
       }
 
@@ -1520,7 +1501,10 @@ class BottleScene {
         ship.scale.setScalar(SHIP_SCALE);
         ship.position.set(0, SHIP_DRAFT * SHIP_SCALE, 0);
 
-        ship.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+        // 배만 그림자를 드리운다. 받지는 않는다 —
+        // 물체가 자기 그림자를 받으면 표면에 자글자글한 줄무늬(섀도 아크네)가 생긴다.
+        // 필요한 건 마스트·굴뚝·선체가 수면에 지는 그림자뿐이라 이걸로 충분하다.
+        ship.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = false; } });
         this.boat.add(ship);
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
       }
@@ -1543,10 +1527,14 @@ class BottleScene {
   _buildShadowCatcher() {
     const geo = new THREE.PlaneGeometry(24, 24);
     geo.rotateX(-Math.PI / 2);
-    this.shadowMat = new THREE.ShadowMaterial({ opacity: 0.24 });
+    // depthWrite를 끄고 파도 마루보다 위에 둔다. 그림자가 물결 사이로 잠겼다 나왔다 하면
+    // "물에 잠긴 그림자"처럼 보여 어색하다. 수면 위에 얹혀 있는 것처럼 보이는 게 목적이다.
+    this.shadowMat = new THREE.ShadowMaterial({ opacity: 0.34, depthWrite: false });
     const mesh = new THREE.Mesh(geo, this.shadowMat);
-    mesh.position.y = 0.012;   // 수면 바로 위. 파도에 묻히지 않을 만큼만 띄운다
+    mesh.position.y = 0.16;    // 파도 진폭(최대 약 0.14)보다 위
+    mesh.renderOrder = 2;
     mesh.receiveShadow = true;
+    mesh.visible = false;      // 저녁에만 보인다
     this.world.add(mesh);
     this.shadowCatcher = mesh;
   }
@@ -1737,7 +1725,13 @@ class BottleScene {
     for (let i = 0; i < 3; i++) {
       this._sunOffset.setComponent(i, a.sunPos[i] + (b.sunPos[i] - a.sunPos[i]) * k);
     }
-    if (this.shadowMat) this.shadowMat.opacity = a.shadow + (b.shadow - a.shadow) * k;
+    if (this.shadowMat) {
+      const op = a.shadow + (b.shadow - a.shadow) * k;
+      this.shadowMat.opacity = op;
+      // 그림자가 없는 시간대에는 그림자 맵 렌더 자체를 건너뛴다.
+      this.sunLight.castShadow = op > 0.001;
+      this.shadowCatcher.visible = op > 0.001;
+    }
     wu.uExposure.value = a.exposure + (b.exposure - a.exposure) * k;
     this.sunLight.intensity = a.sunI + (b.sunI - a.sunI) * k;
     this.rimLight.intensity = a.rimI + (b.rimI - a.rimI) * k;
@@ -1777,7 +1771,7 @@ class BottleScene {
   }
 
   capture() {
-    this._draw();
+    this.renderer.render(this.scene, this.camera);
     return this.canvas.toDataURL("image/png");
   }
 
@@ -1843,8 +1837,6 @@ class BottleScene {
         const avgDt = this._perfSamples.reduce((a, b) => a + b, 0) / this._perfSamples.length;
         if (avgDt > 0.03) {
           this.waterMesh.material.uniforms.uSpecOn.value = 0.0;
-          // 후처리(흐림)는 전체화면을 여러 번 훑으므로 저사양에서 가장 먼저 버린다.
-          this.dofOn = false;
           this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
         }
         this._perfSamples = null;
@@ -2021,19 +2013,12 @@ class BottleScene {
     this.camera.position.y = Math.max(this.camera.position.y, 0.16);
     this.camera.lookAt(tX, tY, tZ);
 
-    // 초점을 "바라보는 지점"에 붙여둔다. 이래야 줌·이동을 해도 주인공이 흐려지지 않고,
-    // 그보다 멀거나 가까운 것만 흐려진다.
-    if (this.bokeh) {
-      const dx = this.camera.position.x - tX, dy = this.camera.position.y - tY, dz = this.camera.position.z - tZ;
-      this.bokeh.uniforms.focus.value = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
         `yaw: ${yaw.toFixed(3)}\npitch: ${pitch.toFixed(3)}\nradius: ${radius.toFixed(2)}\n(드래그로 각도 잡고 이 값을 baseYaw/basePitch/radius에 붙여넣기)`;
     }
 
-    if (this.visible) this._draw();
+    if (this.visible) this.renderer.render(this.scene, this.camera);
   }
 }
 
