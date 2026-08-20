@@ -915,7 +915,7 @@ const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 const SHIP_SCALE = 2.6;
 
 // 선체 끝과 섬(Beachhouse) 사이에 둘 여유 거리. 눈으로 맞추는 값.
-const ISLAND_CLEARANCE = 0.55;
+const ISLAND_CLEARANCE = 0.20;
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
@@ -998,9 +998,13 @@ const TMP_COLOR = new THREE.Color();
 // 배를 감싸는 크기. 배(SHIP_SCALE 2.6)의 반지름이 약 0.70이라 여유를 두고 잡았다.
 const BOTTLE_SCALE = 1.9;
 const BOTTLE_Y = 0.42;                       // 배 몸통 한가운데 높이
-const BOTTLE_R = 0.70 * BOTTLE_SCALE;        // 병 안쪽 반지름 (X축이 중심축)
-const BOTTLE_X0 = -1.50 * BOTTLE_SCALE;      // 병 안쪽 X 범위
-const BOTTLE_X1 = 1.45 * BOTTLE_SCALE;
+// 병 옆면 프로파일 [축위치 u, 반지름]. LatheGeometry와 물 클리핑이 같은 값을 쓴다.
+// 반지름이 u에 따라 변하는데 클리핑을 상수 반지름으로 두면, 좁은 목 쪽에서 수면이
+// 병을 뚫고 나온다(직사각형으로 잘린 바다가 보이던 원인).
+const BOTTLE_PROFILE = [
+  [-1.55, 0.00], [-1.50, 0.62], [-0.90, 0.70], [1.00, 0.68],
+  [1.25, 0.60], [1.50, 0.24], [1.75, 0.20],
+];
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
 
@@ -1181,9 +1185,9 @@ class BottleScene {
 
     // 결과 화면: 살짝 줌 + 유리병이 풍경을 감싸는 리빌 연출
     this.bottleRevealed = false;
-    // 병이 나온 뒤 드래그하면 병의 긴 축(X)을 중심으로 시점이 굴러간다.
-    // 병 자체는 X축 회전체라 병만 돌리면 화면상 아무 변화가 없다 —
-    // 그래서 "병을 굴린다"는 건 병 둘레를 도는 것으로 구현한다. 360도 제한 없음.
+    // 병이 나온 뒤 드래그하면 세로축(Y)을 중심으로 병 둘레를 돈다.
+    // 병은 X축 회전체라 옆에서 보면 긴 몸통, 끝에서 보면 원이 되어 각도마다 모습이 다르다.
+    // 360도 제한 없음.
     this.bottleRoll = 0;
     this.bottleT = 0;
     this.bottleTarget = 0;
@@ -1298,9 +1302,10 @@ class BottleScene {
         // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
         uClipOn: { value: 0.0 },
         uClipCenter: { value: new THREE.Vector3(0, 0, 0) },
-        uClipR: { value: 999.0 },
-        uClipX0: { value: -999.0 },
-        uClipX1: { value: 999.0 },
+        uClipT: { value: 0.0 },
+        uClipScale: { value: BOTTLE_SCALE },
+        uProfU: { value: BOTTLE_PROFILE.map((p) => p[0]) },
+        uProfR: { value: BOTTLE_PROFILE.map((p) => p[1]) },
         },
       ]),
       vertexShader: `
@@ -1366,9 +1371,23 @@ class BottleScene {
         uniform vec3 uSpecColor;
         uniform float uClipOn;
         uniform vec3 uClipCenter;
-        uniform float uClipR;
-        uniform float uClipX0;
-        uniform float uClipX1;
+        uniform float uClipT;
+        uniform float uClipScale;
+        uniform float uProfU[7];
+        uniform float uProfR[7];
+
+        // 병 옆면의 반지름은 축을 따라 변한다. 축 위치 ax(스케일 전)에서의 반지름.
+        // 병 밖이면 0을 돌려주므로 그 구간의 물은 통째로 사라진다.
+        float bottleRadiusAt(float ax) {
+          if (ax <= uProfU[0] || ax >= uProfU[6]) return 0.0;
+          for (int i = 0; i < 6; i++) {
+            if (ax >= uProfU[i] && ax <= uProfU[i + 1]) {
+              float t = (ax - uProfU[i]) / max(1e-5, uProfU[i + 1] - uProfU[i]);
+              return mix(uProfR[i], uProfR[i + 1], t);
+            }
+          }
+          return 0.0;
+        }
         varying vec3 vWorldPos;
 
         vec3 hdr (vec3 color, float exposure) {
@@ -1379,8 +1398,13 @@ class BottleScene {
           // 병 안쪽(X축을 중심축으로 하는 원통)만 남기고 나머지 바다는 버린다.
           // 반지름과 X 범위를 크게 잡았다가 줄여오면 바다가 병 속으로 빨려드는 것처럼 보인다.
           if (uClipOn > 0.5) {
-            vec2 rel = vWorldPos.yz - uClipCenter.yz;
-            if (length(rel) > uClipR || vWorldPos.x < uClipX0 || vWorldPos.x > uClipX1) discard;
+            vec3 rel = vWorldPos - uClipCenter;
+            // LatheGeometry를 Z로 +90도 돌려 축을 X로 눕혔다. 그래서 로컬 축 좌표는 -x다.
+            float ax = -rel.x / uClipScale;
+            float rad = bottleRadiusAt(ax) * uClipScale;
+            // uClipT가 0이면 사실상 무제한, 1이면 병 안쪽 그대로. 그 사이를 오가며 조여든다.
+            float limit = mix(60.0, rad, uClipT);
+            if (length(rel.yz) > limit) discard;
           }
 
           // (예전엔 여기서 컨베이어 랩어라운드로 찢어진 트라이를 fwidth로 감지해 discard 했는데,
@@ -1599,15 +1623,7 @@ class BottleScene {
   }
 
   _buildBottleShell() {
-    const pts = [
-      new THREE.Vector2(0, -1.55),
-      new THREE.Vector2(0.62, -1.5),
-      new THREE.Vector2(0.7, -0.9),
-      new THREE.Vector2(0.68, 1.0),
-      new THREE.Vector2(0.6, 1.25),
-      new THREE.Vector2(0.24, 1.5),
-      new THREE.Vector2(0.2, 1.75),
-    ];
+    const pts = BOTTLE_PROFILE.map(([u, r]) => new THREE.Vector2(r, u));
     const geo = new THREE.LatheGeometry(pts, 40);
     geo.rotateZ(Math.PI / 2);
 
@@ -2040,9 +2056,7 @@ class BottleScene {
       const bx = this.boat.position.x;
       wc.uClipOn.value = 1.0;
       wc.uClipCenter.value.set(bx, BOTTLE_Y, 0);
-      wc.uClipR.value = THREE.MathUtils.lerp(40, BOTTLE_R, t);
-      wc.uClipX0.value = THREE.MathUtils.lerp(bx - 40, bx + BOTTLE_X0, t);
-      wc.uClipX1.value = THREE.MathUtils.lerp(bx + 40, bx + BOTTLE_X1, t);
+      wc.uClipT.value = t;
     } else {
       wc.uClipOn.value = 0.0;
     }
@@ -2071,17 +2085,15 @@ class BottleScene {
     this.camera.position.y = Math.max(this.camera.position.y, 0.16);
 
     if (this.bottleT > 0.01 && this.bottleRoll !== 0) {
-      // 병의 중심축(배 위치를 지나는 X축) 둘레로 카메라를 돌린다.
-      // up 벡터도 같이 돌려야 뒤집힌 각도에서도 화면이 따라 돈다(360도 전체 사용).
-      const cx = this.boat.position.x, cy = BOTTLE_Y;
+      // 세로축(Y) 둘레로 카메라를 돌린다. 높이는 그대로라 위아래가 뒤집히지 않고,
+      // up도 건드릴 필요가 없다. 병을 옆에서 보다가 끝에서 보는 각도까지 이어진다.
+      const cx = this.boat.position.x, cz = 0;
       const p = this.camera.position;
-      const ry = p.y - cy, rz = p.z;
+      const rx = p.x - cx, rz = p.z - cz;
       const c = Math.cos(this.bottleRoll), sn = Math.sin(this.bottleRoll);
-      p.set(p.x, cy + ry * c - rz * sn, ry * sn + rz * c);
-      this.camera.up.set(0, c, sn);
-      this.camera.lookAt(cx, cy, 0);
+      p.set(cx + rx * c + rz * sn, p.y, cz - rx * sn + rz * c);
+      this.camera.lookAt(cx, BOTTLE_Y, cz);
     } else {
-      this.camera.up.set(0, 1, 0);
       this.camera.lookAt(tX, tY, tZ);
     }
 
