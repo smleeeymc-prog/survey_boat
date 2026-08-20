@@ -36,6 +36,7 @@
   #app select,
   #app textarea,
   #app .consent-box label,
+  #app .picker-track,
   #app input{
     pointer-events:auto;
   }
@@ -43,13 +44,26 @@
   /* 선택지를 고를 때마다 render()가 화면을 통째로 다시 만드는 구조라, 여기에 등장 애니메이션을
      걸어두면 클릭할 때마다 UI 전체가 사라졌다 나타난다. 그래서 뺐다. */
   .screen{ display:flex; flex-direction:column; flex:1; }
+  /* 질문 화면: 위쪽은 비워 배를 보여주고, 입력과 버튼은 아래로 모은다 */
+  .step{ display:flex; flex-direction:column; flex:1; }
+  .step .grow{ flex:1 1 auto; min-height:10px; }
+
+  /* 하단 바 — 원형 뒤로가기 + 확인 버튼 */
+  .bottom-bar{ display:flex; gap:10px; align-items:stretch; margin-top:14px; }
+  .bottom-bar .next-btn{ margin-top:0; flex:1 1 auto; width:auto; }
+  .circle-btn{
+    flex:0 0 auto; width:54px; border-radius:50%;
+    background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    font-size:19px; line-height:1; cursor:pointer; font-family:var(--font);
+    display:flex; align-items:center; justify-content:center;
+  }
 
   /* progress */
   .progress-row{ display:flex; align-items:center; gap:10px; margin-bottom:28px; }
   .progress-bar{ flex:1; height:3px; background:rgba(227,221,208,.55); border-radius:2px; overflow:hidden; }
   .progress-fill{ height:100%; background:var(--gold); transition:width .4s ease; }
   .progress-label{ font-size:12px; color:var(--ink3); white-space:nowrap; }
-  .back-btn{ background:none; border:none; color:var(--ink3); font-size:13px; cursor:pointer; margin-bottom:14px; align-self:flex-start; }
 
   /* splash */
   .splash{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:18px; }
@@ -106,12 +120,12 @@
   .picker-track{
     display:flex; overflow:auto; scrollbar-width:none; -ms-overflow-style:none;
     scroll-snap-type:both mandatory; overscroll-behavior:contain;
-    cursor:grab; touch-action:pan-y;
+    cursor:grab;
   }
   .picker-track::-webkit-scrollbar{ display:none; }
   .picker-track.dragging{ cursor:grabbing; scroll-snap-type:none; }
-  .picker.v .picker-track{ flex-direction:column; height:96px; }
-  .picker.h .picker-track{ flex-direction:row; }
+  .picker.v .picker-track{ flex-direction:column; height:96px; touch-action:pan-y; }
+    .picker.h .picker-track{ flex-direction:row; touch-action:pan-x; }
 
   .picker-item{
     scroll-snap-align:center; flex:0 0 auto;
@@ -119,11 +133,14 @@
     transition:opacity .25s ease, transform .25s ease, color .25s ease;
   }
   .picker.v .picker-item{ height:96px; padding:0 18px; }
-  .picker.h .picker-item{ width:60%; padding:22px 10px; }
+  .picker.h .picker-item{ width:72%; padding:26px 6px; }
 
-  /* 가운데가 아닌 항목은 물러나게 — 사진처럼 양옆(위아래)이 흐리게 걸쳐 보인다 */
+  /* 가운데가 아닌 항목은 물러나게 — 양옆(위아래)이 흐리게 걸쳐 보인다 */
   .picker-item{ opacity:.25; transform:scale(.86); }
   .picker-item.active{ opacity:1; transform:scale(1); }
+  /* 가로 피커는 틀 대신 블러로 선택을 표시한다 */
+  .picker.h .picker-item{ opacity:.55; filter:blur(3px); transform:scale(.8); transition:opacity .3s ease, filter .3s ease, transform .3s ease; }
+  .picker.h .picker-item.active{ opacity:1; filter:none; transform:scale(1); }
 
   .picker-item .lab{ font-size:19px; font-weight:700; line-height:1.35; }
   .picker-item .desc{ font-size:12.5px; color:var(--ink3); margin-top:5px; line-height:1.5; }
@@ -136,7 +153,7 @@
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:14px;
   }
   .picker.v .picker-frame{ top:0; height:96px; }
-  .picker.h .picker-frame{ top:0; bottom:0; left:20%; right:20%; }
+  .picker.h .picker-frame{ display:none; }   /* 가로는 틀 없이 블러로만 구분 */
   .picker.v .picker-track{ position:relative; z-index:1; }
   .picker.h .picker-track{ position:relative; z-index:1; }
 
@@ -370,13 +387,27 @@ function progress(stepNum, total, label){
   return wrap;
 }
 
-function backBtn(prevStep){
-  const b = document.createElement("button");
-  b.className = "back-btn";
-  b.textContent = "← 이전으로";
-  b.onclick = () => { state.step = prevStep; render(); };
-  return b;
+/**
+ * 화면 하단 바. 원형 뒤로가기 버튼과 확인 버튼을 한 줄에 둔다.
+ * 상단의 "← 이전으로"를 여기로 옮긴 것 — 손가락이 닿는 자리에 모아두려는 것.
+ * 반환값의 next로 disabled를 조작한다.
+ */
+function bottomBar(prevStep, label, onNext){
+  const row=document.createElement("div"); row.className="bottom-bar";
+  const back=document.createElement("button");
+  back.className="circle-btn"; back.type="button";
+  back.setAttribute("aria-label","이전으로");
+  back.textContent="←";
+  back.onclick=()=>{ state.step=prevStep; render(); };
+  const next=document.createElement("button");
+  next.className="next-btn"; next.textContent=label;
+  next.onclick=onNext;
+  row.appendChild(back); row.appendChild(next);
+  return { row, next, back };
 }
+
+/** 위쪽을 비워 배를 보여주고 아래 내용을 바닥으로 미는 여백 */
+function grow(){ const g=document.createElement("div"); g.className="grow"; return g; }
 
 function renderSplash(){
   const d = document.createElement("div");
@@ -420,9 +451,9 @@ function renderOnboard(){
 }
 
 function renderRegion(){
-  const d = document.createElement("div");
-  d.appendChild(backBtn("onboard"));
+  const d = document.createElement("div"); d.className="step";
   d.appendChild(progress(1,6));
+  d.appendChild(grow());
   const h = document.createElement("h2"); h.className="q"; h.textContent="지금 활동하는 지역은 어디인가요?";
   d.appendChild(h);
   const p = document.createElement("p"); p.className="sub"; p.textContent="넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.";
@@ -433,17 +464,14 @@ function renderRegion(){
     REGIONS.map(r=>({id:r,label:r})), "v", state.region,
     (v)=>{ state.region=v; }, "굴려서 고르세요"
   ));
-  const next = document.createElement("button");
-  next.className="next-btn"; next.textContent="다음";
-  next.onclick = ()=>{ state.step="state"; render(); };
-  d.appendChild(next);
+  d.appendChild(bottomBar("onboard","다음",()=>{ state.step="state"; render(); }).row);
   return d;
 }
 
 function renderState(){
-  const d = document.createElement("div");
-  d.appendChild(backBtn("region"));
+  const d = document.createElement("div"); d.className="step";
   d.appendChild(progress(2,6));
+  d.appendChild(grow());
   const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신의 상태에 가장 가까운 것은?";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없습니다. 지금 느끼는 대로 골라주세요.";
@@ -453,17 +481,14 @@ function renderState(){
     STATES.map(x=>({id:x.id,label:x.label,desc:x.desc})), "v", state.stateId,
     (v)=>{ state.stateId=v; if(window.BottleScene) window.BottleScene.setMode(v); }, "굴려서 고르세요"
   ));
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent="다음";
-  next.onclick=()=>{ state.step="sentence"; render(); };
-  d.appendChild(next);
+  d.appendChild(bottomBar("region","다음",()=>{ state.step="sentence"; render(); }).row);
   return d;
 }
 
 function renderSentence(){
-  const d=document.createElement("div");
-  d.appendChild(backBtn("state"));
+  const d=document.createElement("div"); d.className="step";
   d.appendChild(progress(3,6));
+  d.appendChild(grow());
   const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신이 이곳에 머무르게 하는 것은 무엇인가요?";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없으며, 최대 80자까지 한 문장으로 남길 수 있습니다.";
@@ -474,19 +499,18 @@ function renderSentence(){
   const count=document.createElement("div"); count.className="char-count"; count.textContent=`${ta.value.length}/80`;
   ta.addEventListener("input",()=>{ state.text=ta.value; count.textContent=`${ta.value.length}/80`; next.disabled=ta.value.trim().length===0; });
   d.appendChild(ta); d.appendChild(count);
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="20px";
+  const bar=bottomBar("state","다음",()=>{ state.step="share"; render(); });
+  const next=bar.next;
   next.disabled = state.text.trim().length===0;
-  next.onclick=()=>{ state.step="share"; render(); };
-  d.appendChild(next);
+  d.appendChild(bar.row);
   return d;
 }
 
 function renderShare(){
-  const d=document.createElement("div");
-  d.appendChild(backBtn("sentence"));
+  const d=document.createElement("div"); d.className="step";
   d.appendChild(progress(4,6));
-  const h=document.createElement("h2"); h.className="q"; h.textContent="이 마음을 몇 명에게 말해봤나요?";
+  d.appendChild(grow());
+  const h=document.createElement("h2"); h.className="q"; h.textContent="이 마음을 몇 명과 나눠봤나요?";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="좌우로 넘겨서 골라주세요. 고른 만큼 하루의 시간이 바뀝니다.";
   d.appendChild(p);
@@ -503,22 +527,15 @@ function renderShare(){
     (v)=>{ state.share=v; applyTime(v); }, "← 좌우로 넘기기 →"
   ));
 
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="20px";
-  next.onclick=()=>{ state.step="keywords"; render(); };
-  d.appendChild(next);
+  d.appendChild(bottomBar("sentence","다음",()=>{ state.step="keywords"; render(); }).row);
   return d;
 }
 
 function renderKeywords(){
-  const d=document.createElement("div");
-  d.style.display="flex"; d.style.flexDirection="column"; d.style.flex="1";
-  d.appendChild(backBtn("share"));
+  const d=document.createElement("div"); d.className="step";
   d.appendChild(progress(5,6));
-
-  // 배가 화면 전체적으로 온전히 보이도록 선택지 묶음을 화면 하단으로 밀어냄
-  const bottomWrap=document.createElement("div");
-  bottomWrap.style.marginTop="auto";
+  d.appendChild(grow());
+  const bottomWrap=d;
 
   const h=document.createElement("h2"); h.className="q"; h.textContent="그 문장을 설명하는 키워드를 골라주세요";
   bottomWrap.appendChild(h);
@@ -538,19 +555,14 @@ function renderKeywords(){
     wrap.appendChild(t);
   });
   bottomWrap.appendChild(wrap);
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent="다음"; next.style.marginTop="4px";
-  next.onclick=()=>{ state.step="consent"; render(); };
-  bottomWrap.appendChild(next);
-
-  d.appendChild(bottomWrap);
+  bottomWrap.appendChild(bottomBar("share","다음",()=>{ state.step="consent"; render(); }).row);
   return d;
 }
 
 function renderConsent(){
-  const d=document.createElement("div");
-  d.appendChild(backBtn("keywords"));
+  const d=document.createElement("div"); d.className="step";
   d.appendChild(progress(6,6));
+  d.appendChild(grow());
   const h=document.createElement("h2"); h.className="q"; h.textContent="공개 방식과 활용 동의";
   d.appendChild(h);
   const p=document.createElement("p"); p.className="sub"; p.textContent="익명으로 남겨도 되고, 실명 대신 별칭을 적어도 괜찮아요.";
@@ -590,8 +602,8 @@ function renderConsent(){
   d.appendChild(box);
   box.querySelector("#consentChk").addEventListener("change",(e)=>{ state.consent=e.target.checked; updateNext(); });
 
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent="제출하기";
+  const bar=bottomBar("keywords","제출하기",()=>{});
+  const next=bar.next;
 
   // 별칭/실명을 골랐으면 이름이 실제로 적혀 있어야 한다.
   // 비워둔 채 제출되면 카드에 표시할 이름이 없는데 익명도 아닌 상태가 된다.
@@ -611,7 +623,7 @@ function renderConsent(){
     });
     state.step="result"; render();
   };
-  d.appendChild(next);
+  d.appendChild(bar.row);
   return d;
 }
 
