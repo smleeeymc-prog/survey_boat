@@ -112,50 +112,59 @@
   .char-count{ text-align:right; font-size:12px; color:var(--ink3); margin-top:6px; }
 
   /* ── 스냅 피커 ─────────────────────────────────────────────────────────────
-     선택지를 한 번에 하나만 보여주고 굴려서 고른다. 배가 선택지 목록에 가리지 않게 하려는 것.
-     스크롤 스냅을 쓰면 모바일 터치·데스크톱 휠이 브라우저 기본 동작으로 해결된다.
-     드래그만 따로 붙이면 된다(데스크톱은 스크롤바를 끌 수 없으므로).
-     axis에 따라 세로/가로 둘 다 같은 컴포넌트를 쓴다. */
+     선택지를 한 번에 하나만 보여주고 굴려서 고른다. 배가 목록에 가리지 않게 하려는 것.
+
+     스크롤·관성·스냅은 전부 네이티브에 맡긴다. 직접 구현하면 모바일 관성이 죽는다.
+     앞서 났던 문제들은 네이티브 탓이 아니라 네이티브와 싸우게 짜서 생긴 것이었다.
+       · scroll-snap-type을 both로 줘서 축이 섞였다 → 축을 명시한다
+       · 놓는 순간 브라우저 스냅과 우리 보정이 동시에 당겼다 → 보정을 없앤다
+       · 빠르게 밀면 여러 칸을 건너뛰었다 → scroll-snap-stop:always 로 한 칸씩 멈춘다 */
   .picker{ position:relative; margin-bottom:20px; }
   .picker-track{
-    display:flex; overflow:auto; scrollbar-width:none; -ms-overflow-style:none;
-    scroll-snap-type:both mandatory; overscroll-behavior:contain;
-    cursor:grab;
+    position:relative; overflow:auto; z-index:1; cursor:grab;
+    scrollbar-width:none; -ms-overflow-style:none;
+    overscroll-behavior:contain;              /* 끝에서 페이지가 같이 밀리지 않게 */
+    -webkit-overflow-scrolling:touch;
   }
   .picker-track::-webkit-scrollbar{ display:none; }
+  /* 마우스 드래그 중에만 스냅을 끈다. 놓으면 클래스를 떼는 것으로 끝 —
+     여기서 scrollTo를 또 부르면 브라우저 스냅과 겹쳐서 두 칸씩 튄다. */
   .picker-track.dragging{ cursor:grabbing; scroll-snap-type:none; }
-  .picker.v .picker-track{ flex-direction:column; height:96px; touch-action:pan-y; }
-    .picker.h .picker-track{ flex-direction:row; touch-action:pan-x; }
+  .picker.v .picker-track{ height:96px; touch-action:pan-y; scroll-snap-type:y mandatory; }
+  .picker.h .picker-track{ touch-action:pan-x; scroll-snap-type:x mandatory; }
+
+  .picker-list{ display:flex; }
+  .picker.v .picker-list{ flex-direction:column; }
+  .picker.h .picker-list{ flex-direction:row; }
 
   .picker-item{
-    scroll-snap-align:center; flex:0 0 auto;
+    flex:0 0 auto;
+    scroll-snap-align:center;
+    scroll-snap-stop:always;                  /* 한 번의 제스처로 한 칸만 넘어간다 */
     display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-    transition:opacity .25s ease, transform .25s ease, color .25s ease;
+    transition:opacity .25s ease, transform .25s ease, filter .3s ease;
   }
   .picker.v .picker-item{ height:96px; padding:0 18px; }
   .picker.h .picker-item{ width:72%; padding:26px 6px; }
 
-  /* 가운데가 아닌 항목은 물러나게 — 양옆(위아래)이 흐리게 걸쳐 보인다 */
+  /* 가운데가 아닌 항목은 물러나게 */
   .picker-item{ opacity:.25; transform:scale(.86); }
   .picker-item.active{ opacity:1; transform:scale(1); }
   /* 가로 피커는 틀 대신 블러로 선택을 표시한다 */
-  .picker.h .picker-item{ opacity:.55; filter:blur(3px); transform:scale(.8); transition:opacity .3s ease, filter .3s ease, transform .3s ease; }
+  .picker.h .picker-item{ opacity:.55; filter:blur(3px); transform:scale(.8); }
   .picker.h .picker-item.active{ opacity:1; filter:none; transform:scale(1); }
 
   .picker-item .lab{ font-size:19px; font-weight:700; line-height:1.35; }
   .picker-item .desc{ font-size:12.5px; color:var(--ink3); margin-top:5px; line-height:1.5; }
   .picker.h .picker-item .lab{ font-size:22px; }
 
-  /* 선택된 항목이 어디인지 알려주는 틀 */
+  /* 선택된 항목이 어디인지 알려주는 틀 (세로 전용) */
   .picker-frame{
-    position:absolute; left:0; right:0; pointer-events:none;
+    position:absolute; left:0; right:0; top:0; height:96px; pointer-events:none;
     border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.42);
     backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:14px;
   }
-  .picker.v .picker-frame{ top:0; height:96px; }
-  .picker.h .picker-frame{ display:none; }   /* 가로는 틀 없이 블러로만 구분 */
-  .picker.v .picker-track{ position:relative; z-index:1; }
-  .picker.h .picker-track{ position:relative; z-index:1; }
+  .picker.h .picker-frame{ display:none; }
 
   .picker-hint{ text-align:center; font-size:11.5px; color:var(--ink3); margin-top:8px; letter-spacing:.02em; }
 
@@ -629,10 +638,13 @@ function renderConsent(){
 
 /**
  * 스냅 피커 — 선택지를 한 번에 하나만 보여주고 굴려서 고른다.
- * 목록이 화면을 덮어 배를 가리는 걸 막으려는 것.
  *
- * 스크롤·스냅·관성은 브라우저 기본 동작에 맡긴다(모바일 터치, 데스크톱 휠 모두 공짜).
- * 데스크톱은 스크롤바를 끌 수 없으니 포인터 드래그만 따로 붙인다.
+ * 스크롤·관성·스냅은 전부 네이티브에 맡긴다. 이 함수는 두 가지만 한다.
+ *   1) 스크롤을 "읽어서" 지금 가운데 있는 항목을 알아낸다 (절대 되쓰지 않는다)
+ *   2) 마우스 드래그를 스크롤로 옮겨준다 (데스크톱은 스크롤바를 끌 수 없으므로)
+ *
+ * 터치는 손대지 않는다. 건드리면 네이티브 관성과 스냅이 죽는다.
+ * 놓는 순간에도 우리가 스크롤을 옮기지 않는다 — 브라우저 스냅에 맡겨야 두 칸씩 튀지 않는다.
  *
  * items  : [{id, label, desc}]
  * axis   : "v" | "h"
@@ -640,92 +652,100 @@ function renderConsent(){
  * onPick : 선택이 바뀔 때 호출 (render()를 부르지 않는다 — 다시 그리면 스크롤 위치가 날아간다)
  */
 function snapPicker(items, axis, value, onPick, hint){
+  const horiz = axis === "h";
   const wrap=document.createElement("div"); wrap.className="picker "+axis;
   const frame=document.createElement("div"); frame.className="picker-frame";
   const track=document.createElement("div"); track.className="picker-track";
-  wrap.appendChild(frame); wrap.appendChild(track);
+  const list=document.createElement("div"); list.className="picker-list";
+  track.appendChild(list); wrap.appendChild(frame); wrap.appendChild(track);
 
-  const horiz = axis==="h";
-  const els=items.map(it=>{
+  const els=items.map((it,i)=>{
     const el=document.createElement("div"); el.className="picker-item";
     el.innerHTML = it.desc
       ? `<div class="lab">${it.label}</div><div class="desc">${it.desc}</div>`
       : `<div class="lab">${it.label}</div>`;
-    el.onclick=()=>center(items.indexOf(it), true);
-    track.appendChild(el); return el;
+    el.addEventListener("click",()=>{ if(!moved) scrollToIndex(i, true); });
+    list.appendChild(el); return el;
   });
 
-  // 첫 항목과 마지막 항목도 가운데로 올 수 있어야 하므로 양끝에 여백을 둔다.
-  const pad=()=>{
-    const box = horiz ? track.clientWidth : track.clientHeight;
-    const item = horiz ? els[0].offsetWidth : els[0].offsetHeight;
-    const p = Math.max(0, (box-item)/2);
-    if(horiz){ track.style.paddingLeft=p+"px"; track.style.paddingRight=p+"px"; }
-    else { track.style.paddingTop=p+"px"; track.style.paddingBottom=p+"px"; }
-  };
-
-  let idx = Math.max(0, items.findIndex(it=>it.id===value));
-
-  function center(i, smooth){
-    idx=Math.max(0,Math.min(items.length-1,i));
-    const el=els[idx];
-    const to = horiz
-      ? el.offsetLeft - (track.clientWidth-el.offsetWidth)/2
-      : el.offsetTop  - (track.clientHeight-el.offsetHeight)/2;
-    track.scrollTo(horiz?{left:to,behavior:smooth?"smooth":"auto"}:{top:to,behavior:smooth?"smooth":"auto"});
-    mark();
+  // 가로는 첫/마지막 항목도 가운데로 올 수 있어야 하므로 양끝에 여백을 준다.
+  function layout(){
+    if(!horiz) return;
+    const pad = Math.max(0, (track.clientWidth - els[0].offsetWidth)/2);
+    list.style.paddingLeft = pad+"px";
+    list.style.paddingRight = pad+"px";
   }
 
-  // 트랙 가운데에 가장 가까운 항목을 선택으로 본다.
+  /** 트랙 가운데에 가장 가까운 항목. 스크롤을 읽기만 한다. */
   function nearest(){
-    const mid = horiz
-      ? track.scrollLeft + track.clientWidth/2
-      : track.scrollTop + track.clientHeight/2;
+    const mid = horiz ? track.scrollLeft + track.clientWidth/2
+                      : track.scrollTop  + track.clientHeight/2;
     let best=0, bd=Infinity;
-    els.forEach((el,i)=>{
-      const c = horiz ? el.offsetLeft+el.offsetWidth/2 : el.offsetTop+el.offsetHeight/2;
+    for(let i=0;i<els.length;i++){
+      const el=els[i];
+      const c = horiz ? el.offsetLeft + el.offsetWidth/2 : el.offsetTop + el.offsetHeight/2;
       const d = Math.abs(c-mid);
       if(d<bd){ bd=d; best=i; }
-    });
+    }
     return best;
   }
 
   function mark(){
     const n=nearest();
-    els.forEach((el,i)=>el.classList.toggle("active", i===n));
+    for(let i=0;i<els.length;i++) els[i].classList.toggle("active", i===n);
     if(items[n] && items[n].id!==value){ value=items[n].id; onPick(value); }
-    idx=n;
+  }
+
+  /** 프로그램에서 옮기는 유일한 경로 — 클릭과 최초 배치뿐이다. */
+  function scrollToIndex(i, smooth){
+    const el=els[Math.max(0,Math.min(els.length-1,i))];
+    const to = horiz ? el.offsetLeft - (track.clientWidth-el.offsetWidth)/2
+                     : el.offsetTop  - (track.clientHeight-el.offsetHeight)/2;
+    track.scrollTo(horiz ? {left:to, behavior:smooth?"smooth":"auto"}
+                         : {top:to,  behavior:smooth?"smooth":"auto"});
   }
 
   let raf=null;
-  track.addEventListener("scroll",()=>{ if(raf) cancelAnimationFrame(raf); raf=requestAnimationFrame(mark); });
+  track.addEventListener("scroll",()=>{
+    if(raf) cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(mark);
+  }, {passive:true});
 
-  // 데스크톱 드래그
-  let down=false, start=0, from=0, moved=false;
+  // ── 마우스/펜 드래그만 처리한다. 터치는 네이티브가 훨씬 잘한다. ──
+  let down=false, moved=false, startPos=0, startScroll=0;
+  const pos=(e)=> horiz ? e.clientX : e.clientY;
+
   track.addEventListener("pointerdown",(e)=>{
+    if(e.pointerType === "touch") return;      // 터치는 건드리지 않는다
     down=true; moved=false;
-    start = horiz ? e.clientX : e.clientY;
-    from  = horiz ? track.scrollLeft : track.scrollTop;
-    track.classList.add("dragging");
+    startPos=pos(e);
+    startScroll = horiz ? track.scrollLeft : track.scrollTop;
+    track.classList.add("dragging");           // 드래그 중에만 스냅을 끈다
     try{ track.setPointerCapture(e.pointerId); }catch(_e){}
   });
   track.addEventListener("pointermove",(e)=>{
     if(!down) return;
-    const d = (horiz ? e.clientX : e.clientY) - start;
+    const d = startPos - pos(e);
     if(Math.abs(d)>3) moved=true;
-    if(horiz) track.scrollLeft = from - d; else track.scrollTop = from - d;
+    if(horiz) track.scrollLeft = startScroll + d;
+    else      track.scrollTop  = startScroll + d;
   });
-  const up=()=>{ if(!down) return; down=false; track.classList.remove("dragging"); center(nearest(), true); };
-  track.addEventListener("pointerup",up);
-  track.addEventListener("pointercancel",up);
-  track.addEventListener("pointerleave",up);
+  // 놓을 때 하는 일은 클래스를 떼는 것뿐. 스냅은 브라우저가 알아서 한다.
+  const release=()=>{ if(!down) return; down=false; track.classList.remove("dragging"); };
+  track.addEventListener("pointerup",release);
+  track.addEventListener("pointercancel",release);
   // 드래그로 끝난 클릭이 항목 선택으로 이어지지 않게 한다
   track.addEventListener("click",(e)=>{ if(moved){ e.stopPropagation(); e.preventDefault(); } }, true);
 
   if(hint){ const h=document.createElement("div"); h.className="picker-hint"; h.textContent=hint; wrap.appendChild(h); }
 
-  // 레이아웃이 잡힌 뒤에 여백·초기 위치를 계산해야 한다
-  requestAnimationFrame(()=>{ pad(); center(idx,false); });
+  // 레이아웃이 잡힌 뒤에 여백과 초기 위치를 잡는다
+  requestAnimationFrame(()=>{
+    layout();
+    scrollToIndex(Math.max(0, items.findIndex(it=>it.id===value)), false);
+    mark();
+  });
+  window.addEventListener("resize", ()=>{ layout(); scrollToIndex(nearest(), false); });
   return wrap;
 }
 
@@ -858,6 +878,13 @@ render();
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+// 거리에 따른 흐림(피사계 심도). 초점은 매 프레임 카메라가 바라보는 지점에 맞춘다.
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { BokehPass } from "three/addons/postprocessing/BokehPass.js";
+// 후처리를 거치면 렌더 타깃에 선형 색으로 남는다. 마지막에 sRGB로 되돌리지 않으면
+// 화면 전체가 어둡고 탁해진다. OutputPass가 톤매핑과 색공간 변환을 맡는다.
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 // 레포 구조 기준 상대경로 (index.html 은 루트, 모델은 assets/ 안)
 const MODEL_URL = "./assets/Scene.glb";
@@ -1140,15 +1167,42 @@ class BottleScene {
     this.camDebugEl = document.getElementById("camDebug");
     if (this.debugCam && this.camDebugEl) this.camDebugEl.classList.add("show");
 
+    this._buildComposer();
+
     this.clock = new THREE.Clock();
     this._resize();
     window.addEventListener("resize", () => this._resize());
     this._animate();
   }
 
+  /**
+   * 거리에 따라 점점 흐려지게 하는 후처리.
+   * 초점(focus)은 _animate에서 매 프레임 "카메라가 바라보는 지점까지의 거리"로 갱신하므로,
+   * 줌인/줌아웃하거나 시점이 이동해도 배·섬 같은 주요 요소는 항상 선명하게 남는다.
+   * 저사양 기기에서는 성능 워치독이 이 패스를 통째로 끈다.
+   */
+  _buildComposer() {
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // aperture가 클수록 초점 밖이 빨리 흐려진다. maxblur는 흐림의 상한.
+    this.bokeh = new BokehPass(this.scene, this.camera, {
+      focus: 9.5, aperture: 0.002, maxblur: 0.01,
+    });
+    this.composer.addPass(this.bokeh);
+    this.composer.addPass(new OutputPass());
+    this.dofOn = true;
+  }
+
+  /** 후처리를 쓸 수 있으면 컴포저로, 아니면 그냥 렌더러로 그린다. */
+  _draw() {
+    if (this.dofOn && this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    if (this.composer) this.composer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -1667,7 +1721,7 @@ class BottleScene {
   }
 
   capture() {
-    this.renderer.render(this.scene, this.camera);
+    this._draw();
     return this.canvas.toDataURL("image/png");
   }
 
@@ -1733,6 +1787,8 @@ class BottleScene {
         const avgDt = this._perfSamples.reduce((a, b) => a + b, 0) / this._perfSamples.length;
         if (avgDt > 0.03) {
           this.waterMesh.material.uniforms.uSpecOn.value = 0.0;
+          // 후처리(흐림)는 전체화면을 여러 번 훑으므로 저사양에서 가장 먼저 버린다.
+          this.dofOn = false;
           this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
         }
         this._perfSamples = null;
@@ -1902,12 +1958,19 @@ class BottleScene {
     this.camera.position.y = Math.max(this.camera.position.y, 0.16);
     this.camera.lookAt(tX, tY, tZ);
 
+    // 초점을 "바라보는 지점"에 붙여둔다. 이래야 줌·이동을 해도 주인공이 흐려지지 않고,
+    // 그보다 멀거나 가까운 것만 흐려진다.
+    if (this.bokeh) {
+      const dx = this.camera.position.x - tX, dy = this.camera.position.y - tY, dz = this.camera.position.z - tZ;
+      this.bokeh.uniforms.focus.value = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
         `yaw: ${yaw.toFixed(3)}\npitch: ${pitch.toFixed(3)}\nradius: ${radius.toFixed(2)}\n(드래그로 각도 잡고 이 값을 baseYaw/basePitch/radius에 붙여넣기)`;
     }
 
-    if (this.visible) this.renderer.render(this.scene, this.camera);
+    if (this.visible) this._draw();
   }
 }
 
