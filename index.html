@@ -993,6 +993,14 @@ const TIME_OF_DAY = {
 
 const TIME_MOVE_SEC = 2.6;
 const TMP_COLOR = new THREE.Color();
+
+// ── 유리병 ────────────────────────────────────────────────────────────────
+// 배를 감싸는 크기. 배(SHIP_SCALE 2.6)의 반지름이 약 0.70이라 여유를 두고 잡았다.
+const BOTTLE_SCALE = 1.9;
+const BOTTLE_Y = 0.42;                       // 배 몸통 한가운데 높이
+const BOTTLE_R = 0.70 * BOTTLE_SCALE;        // 병 안쪽 반지름 (X축이 중심축)
+const BOTTLE_X0 = -1.50 * BOTTLE_SCALE;      // 병 안쪽 X 범위
+const BOTTLE_X1 = 1.45 * BOTTLE_SCALE;
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
 
@@ -1173,6 +1181,10 @@ class BottleScene {
 
     // 결과 화면: 살짝 줌 + 유리병이 풍경을 감싸는 리빌 연출
     this.bottleRevealed = false;
+    // 병이 나온 뒤 드래그하면 병의 긴 축(X)을 중심으로 시점이 굴러간다.
+    // 병 자체는 X축 회전체라 병만 돌리면 화면상 아무 변화가 없다 —
+    // 그래서 "병을 굴린다"는 건 병 둘레를 도는 것으로 구현한다. 360도 제한 없음.
+    this.bottleRoll = 0;
     this.bottleT = 0;
     this.bottleTarget = 0;
     // 단계 전환용 카메라 보간 상태 (_setCamStep에서 목적지를 갈아끼운다)
@@ -1233,8 +1245,13 @@ class BottleScene {
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
-      this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.0032));
-      this.orbitPitch = Math.max(-0.2, Math.min(0.55, this.orbitPitch + dy * 0.0024));
+      if (this.bottleT > 0.5) {
+        // 병이 떠 있는 동안에는 병을 굴린다. 한 바퀴를 넘어도 그대로 이어진다.
+        this.bottleRoll += dx * 0.006;
+      } else {
+        this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.0032));
+        this.orbitPitch = Math.max(-0.2, Math.min(0.55, this.orbitPitch + dy * 0.0024));
+      }
     });
     const end = () => { dragging = false; c.style.cursor = "grab"; };
     c.addEventListener("pointerup", end);
@@ -1245,6 +1262,9 @@ class BottleScene {
   _buildWaterMaterial() {
     return new THREE.ShaderMaterial({
       transparent: true,
+      // 병을 굴려 아래에서 올려다볼 수 있으므로 뒷면도 그린다.
+      // 평면 하나라 비용이 거의 없고, 노멀은 프래그먼트에서 어차피 뒤집어 쓴다.
+      side: THREE.DoubleSide,
       // [버그5] 바다에 안개가 안 먹던 문제 — scene.fog는 "안개를 쓰겠다고 선언한" 재질에만 적용된다.
       // 물은 커스텀 ShaderMaterial이라 그 선언이 없어서, 섬·배만 흐려지고 바다는 타일 끝까지
       // 원래 색을 유지한 채 하늘과 직선으로 잘렸다(수평선의 하드 경계). 볼륨 안개나 별도 모델을
@@ -1274,6 +1294,13 @@ class BottleScene {
         uSpecStrength: { value: 3.0 },
         // 반짝임 색. 시간대에 따라 바뀐다 (낮 흰빛 → 노을 주황 → 밤 푸른 달빛)
         uSpecColor: { value: new THREE.Color(0xfffcf2) },
+        // 유리병이 나타나면 바다를 병 안쪽으로 가둔다.
+        // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
+        uClipOn: { value: 0.0 },
+        uClipCenter: { value: new THREE.Vector3(0, 0, 0) },
+        uClipR: { value: 999.0 },
+        uClipX0: { value: -999.0 },
+        uClipX1: { value: 999.0 },
         },
       ]),
       vertexShader: `
@@ -1337,6 +1364,11 @@ class BottleScene {
         uniform float uSpecPower;
         uniform float uSpecStrength;
         uniform vec3 uSpecColor;
+        uniform float uClipOn;
+        uniform vec3 uClipCenter;
+        uniform float uClipR;
+        uniform float uClipX0;
+        uniform float uClipX1;
         varying vec3 vWorldPos;
 
         vec3 hdr (vec3 color, float exposure) {
@@ -1344,6 +1376,13 @@ class BottleScene {
         }
 
         void main () {
+          // 병 안쪽(X축을 중심축으로 하는 원통)만 남기고 나머지 바다는 버린다.
+          // 반지름과 X 범위를 크게 잡았다가 줄여오면 바다가 병 속으로 빨려드는 것처럼 보인다.
+          if (uClipOn > 0.5) {
+            vec2 rel = vWorldPos.yz - uClipCenter.yz;
+            if (length(rel) > uClipR || vWorldPos.x < uClipX0 || vWorldPos.x > uClipX1) discard;
+          }
+
           // (예전엔 여기서 컨베이어 랩어라운드로 찢어진 트라이를 fwidth로 감지해 discard 했는데,
           //  컨베이어 자체를 없앴으므로 찢어질 일이 없음. discard는 early-Z도 깨뜨려서 같이 제거)
           // 플랫 셰이딩: 픽셀별 스크린공간 미분으로 삼각형 "면" 노멀을 직접 계산 → 로우폴리 각진 느낌
@@ -1594,8 +1633,8 @@ class BottleScene {
 
     const group = new THREE.Group();
     group.add(rim, glass, cork);
-    group.scale.setScalar(1.9);
-    group.position.y = 0.18;
+    group.scale.setScalar(BOTTLE_SCALE);
+    group.position.set(0, BOTTLE_Y, 0);
     group.visible = false;
     this.scene.add(group);
     this.bottleGroup = group;
@@ -1767,6 +1806,7 @@ class BottleScene {
     if (step !== "result") {
       this.bottleTarget = 0;
       this.bottleRevealed = false;
+      this.bottleRoll = 0;   // 굴려둔 각도를 되돌린다
     }
   }
 
@@ -1988,6 +2028,24 @@ class BottleScene {
     this.bottleRimMat.opacity = 0.62 * this.bottleT;
     this.bottleCorkMat.opacity = 0.9 * this.bottleT;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
+    // 병은 scene에 직접 붙어 있어 배를 따라가지 않았다. '오가는 중'처럼 배가 이동하는
+    // 상태로 결과 화면에 오면 병만 원점에 남아 화면 밖으로 사라진다.
+    this.bottleGroup.position.x = this.boat.position.x;
+
+    // 바다를 병 안으로 가둔다. bottleT가 0→1로 가는 동안 반지름과 길이를 넓은 값에서
+    // 병 크기까지 좁혀와서, 바다가 병 속으로 빨려드는 것처럼 보이게 한다.
+    const wc = this.waterMesh.material.uniforms;
+    if (this.bottleT > 0.01) {
+      const t = Math.min(1, this.bottleT);
+      const bx = this.boat.position.x;
+      wc.uClipOn.value = 1.0;
+      wc.uClipCenter.value.set(bx, BOTTLE_Y, 0);
+      wc.uClipR.value = THREE.MathUtils.lerp(40, BOTTLE_R, t);
+      wc.uClipX0.value = THREE.MathUtils.lerp(bx - 40, bx + BOTTLE_X0, t);
+      wc.uClipX1.value = THREE.MathUtils.lerp(bx + 40, bx + BOTTLE_X1, t);
+    } else {
+      wc.uClipOn.value = 0.0;
+    }
 
     const boatPos = this.boat.position;
     const cam = this._camCur;
@@ -2011,7 +2069,21 @@ class BottleScene {
       tZ + radius * Math.cos(yaw) * Math.cos(pitch)
     );
     this.camera.position.y = Math.max(this.camera.position.y, 0.16);
-    this.camera.lookAt(tX, tY, tZ);
+
+    if (this.bottleT > 0.01 && this.bottleRoll !== 0) {
+      // 병의 중심축(배 위치를 지나는 X축) 둘레로 카메라를 돌린다.
+      // up 벡터도 같이 돌려야 뒤집힌 각도에서도 화면이 따라 돈다(360도 전체 사용).
+      const cx = this.boat.position.x, cy = BOTTLE_Y;
+      const p = this.camera.position;
+      const ry = p.y - cy, rz = p.z;
+      const c = Math.cos(this.bottleRoll), sn = Math.sin(this.bottleRoll);
+      p.set(p.x, cy + ry * c - rz * sn, ry * sn + rz * c);
+      this.camera.up.set(0, c, sn);
+      this.camera.lookAt(cx, cy, 0);
+    } else {
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(tX, tY, tZ);
+    }
 
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
