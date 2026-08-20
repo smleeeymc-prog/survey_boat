@@ -939,42 +939,50 @@ const CAM_MOVE_SEC = 1.1;
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
 // ── 시간대 팔레트 ──────────────────────────────────────────────────────────
-// "이 마음을 몇 명에게 말해봤나요?" 답에 따라 하루의 시간이 바뀐다.
-// 많이 말했을수록 낮, 아무에게도 말하지 않았을수록 밤.
-// sky는 위→중간→아래 3단 그라디언트, sun/rim은 씬 조명, ocean/skyRefl은 물 셰이더 색이다.
+// "이 마음을 몇 명과 나눠봤나요?" 답에 따라 하루의 시간이 바뀐다.
+// 많이 나눴을수록 낮, 아무와도 나누지 않았을수록 밤.
+//
+// sky는 위에서 아래로 4단 그라디언트다. 세 번째가 "지평선 바로 위 띠" 자리라,
+// 저녁에는 여기에 자주색을 넣어 노을 아래 자줏빛이 깔리게 했다.
+// amb(환경광)는 물체가 얼마나 어두워지지 않는지를 좌우한다 — 배가 시커멓게 죽지 않도록
+// 해가 약한 시간대일수록 오히려 넉넉히 준다.
+// shadow는 그림자 짙기(0이면 그림자 없음).
 const TIME_OF_DAY = {
   day: {
-    sky: ["#7ec3e0", "#bfe3ec", "#eaf5f1"],
-    fog: 0xbfe3ec,
-    ocean: 0x4bb2e0, skyRefl: 0xe8f7ff, exposure: 1.15,
-    sun: 0xfff6e0, sunI: 1.0, rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.75,
-    spec: 0xfffcf2, specI: 3.0,
+    sky: ["#3fa9d6", "#8fd6e8", "#bfe9ef", "#e9f7f2"],
+    fog: 0xbfe9ef,
+    ocean: 0x2fb3e6, skyRefl: 0xeafaff, exposure: 1.18,
+    sun: 0xfff7e2, sunI: 1.05, sunPos: [2.5, 3.5, 2.0],
+    rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.80,
+    spec: 0xfffcf2, specI: 3.0, shadow: 0.24,
   },
   afternoon: {
-    sky: ["#8cc2dd", "#d9dfe0", "#f6e6cf"],
-    fog: 0xe4dcc8,
-    ocean: 0x4aa6c8, skyRefl: 0xfff0d8, exposure: 1.18,
-    sun: 0xffe6b0, sunI: 1.05, rim: 0xd8dcea, rimI: 0.28, amb: 0xfff4e4, ambI: 0.72,
-    spec: 0xffe9c0, specI: 3.0,
+    sky: ["#5fb0dd", "#9fd0e4", "#ffd9a6", "#ffeed2"],
+    fog: 0xf0dcbc,
+    ocean: 0x2f9fd4, skyRefl: 0xfff0d6, exposure: 1.22,
+    sun: 0xffdca6, sunI: 1.15, sunPos: [2.8, 2.4, 1.4],
+    rim: 0xd8dcea, rimI: 0.30, amb: 0xfff2df, ambI: 0.88,
+    spec: 0xffe6bc, specI: 3.0, shadow: 0.28,
   },
   evening: {
-    sky: ["#4a6b9c", "#c98a76", "#f3b183"],
-    fog: 0xd79a76,
-    ocean: 0x2f6f96, skyRefl: 0xffd0a0, exposure: 1.22,
-    sun: 0xff9c5a, sunI: 1.15, rim: 0x7d8fc4, rimI: 0.34, amb: 0xffd9c0, ambI: 0.60,
-    spec: 0xffb070, specI: 3.2,
+    // 위는 청록, 가운데는 노을, 지평선 바로 위에 자주색 띠, 바닥은 따뜻한 주황
+    sky: ["#2f6f92", "#e2705f", "#a05a8c", "#ffc184"],
+    fog: 0xdb9a86,
+    ocean: 0x2a6d99, skyRefl: 0xffd2a6, exposure: 1.26,
+    sun: 0xffa063, sunI: 1.30, sunPos: [3.2, 1.1, -1.6],
+    rim: 0x8f7fb8, rimI: 0.42, amb: 0xffd9bd, ambI: 0.82,
+    spec: 0xffb070, specI: 3.2, shadow: 0.30,
   },
   night: {
-    sky: ["#0e1730", "#1e2b4f", "#33456e"],
-    fog: 0x2b3b60,
-    ocean: 0x14315c, skyRefl: 0x9fb6e6, exposure: 1.05,
-    sun: 0xa9c4ff, sunI: 0.45, rim: 0x5f74b0, rimI: 0.30, amb: 0x8fa2cc, ambI: 0.45,
-    spec: 0x9fc0ff, specI: 1.4,
+    sky: ["#0a1128", "#16264a", "#22345e", "#33507e"],
+    fog: 0x2a3f68,
+    ocean: 0x16345f, skyRefl: 0xa8c2ee, exposure: 1.12,
+    sun: 0xb6cdff, sunI: 0.60, sunPos: [-2.0, 3.0, 1.2],
+    rim: 0x6d84c4, rimI: 0.38, amb: 0x9fb3dc, ambI: 0.68,
+    spec: 0xaecbff, specI: 1.6, shadow: 0.0,
   },
 };
 
-// 시간 전환 곡선 — 시작·끝이 아주 완만하고 가운데가 급하다("hard ease in/out").
-// 지수를 올릴수록 변화가 가운데로 몰려서, 빠르게 바뀌고 잔상이 길게 남는 느낌이 된다.
 const TIME_MOVE_SEC = 2.6;
 const TMP_COLOR = new THREE.Color();
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
@@ -1038,9 +1046,11 @@ function paintSky(tex, colors){
   const c = tex.__canvas;
   const ctx = c.getContext("2d");
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  // 세 번째 정지점(0.78)이 "지평선 바로 위 띠" 자리다. 저녁에 자주색이 여기 깔린다.
   grad.addColorStop(0, "#" + colors[0].getHexString());
-  grad.addColorStop(0.55, "#" + colors[1].getHexString());
-  grad.addColorStop(1, "#" + colors[2].getHexString());
+  grad.addColorStop(0.48, "#" + colors[1].getHexString());
+  grad.addColorStop(0.78, "#" + colors[2].getHexString());
+  grad.addColorStop(1, "#" + colors[3].getHexString());
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 8, 256);
   tex.needsUpdate = true;
@@ -1056,6 +1066,10 @@ class BottleScene {
     // 반투명 평면이라, 픽셀비가 커질수록 비용이 거의 제곱으로 늘어남(레티나 2x/3x 기기에서 특히 큼).
     // 로우폴리 스타일이라 1.5로도 체감 화질 차이는 크지 않음.
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    // 그림자는 가장 싼 방식(BasicShadowMap)만 쓴다. 가장자리가 각지지만
+    // 로우폴리 스타일과 오히려 어울리고, 부드럽게 만들 이유가 없다.
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
     // 프레임 성능 워치독: 초반 ~2초간 평균 프레임타임이 계속 느리면(약 33fps 미만)
     // 자동으로 스펙큘러 반짝임을 끄고 픽셀비를 1로 더 낮춰 저사양 기기에서 렉을 줄임.
     // (한 번만 판단하고 다시는 되돌리지 않음 — 매 프레임 체크하는 비용도 없음)
@@ -1089,7 +1103,14 @@ class BottleScene {
     this.scene.add(this.ambLight);
     this.sunLight = new THREE.DirectionalLight(0xfff6e0, 1.0);
     this.sunLight.position.set(2.5, 3.5, 2);
+    this.sunLight.castShadow = true;
+    // 512면 충분하다. 배와 섬만 담으면 되므로 절두체도 딱 그만큼만 잡는다.
+    this.sunLight.shadow.mapSize.set(512, 512);
+    const sc0 = this.sunLight.shadow.camera;
+    sc0.left = -7; sc0.right = 7; sc0.top = 7; sc0.bottom = -7;
+    sc0.near = 0.5; sc0.far = 22;
     this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
     this.rimLight = new THREE.DirectionalLight(0xbfe7ef, 0.3);
     this.rimLight.position.set(-3, 1, -2);
     this.scene.add(this.rimLight);
@@ -1116,6 +1137,7 @@ class BottleScene {
     this.islandGroup.position.z = -SHIP_GLB_POS.z;
 
     this._buildWater();
+    this._buildShadowCatcher();
     this._buildBoat();
     this._buildSmokePool();
     this._buildBottleShell();
@@ -1156,6 +1178,12 @@ class BottleScene {
     this._timeTo = TIME_OF_DAY.day;
     this._timeT = 1;
     this._skyColors = TIME_OF_DAY.day.sky.map((h) => new THREE.Color(h));
+    // 해는 절대 좌표가 아니라 "배 기준 오프셋"으로 들고 있는다.
+    // '오가는 중'에서 배가 멀리 이동하면 그림자 절두체(±7)를 벗어나 그림자가 사라지기 때문.
+    this._sunOffset = new THREE.Vector3().fromArray(TIME_OF_DAY.day.sunPos);
+    // 시작 시점에 한 번 적용한다. _applyTime은 전환 중(_timeT<1)에만 도는데,
+    // 처음엔 이미 1이라 이 호출이 없으면 낮 팔레트가 화면에 반영되지 않는다.
+    this._applyTime(1);
 
     // 드래그 오빗(카메라는 항상 배를 중심으로 둠)
     this.orbitYaw = 0;
@@ -1407,11 +1435,13 @@ class BottleScene {
             this.rockMats.push(child.material);
           }
         });
+        rock.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.islandGroup.add(rock);
         if (this._pendingRegionHex !== undefined) this._applyRockColor(this._pendingRegionHex);
       }
 
       if (beachhouse) {
+        beachhouse.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.islandGroup.add(beachhouse);
       }
 
@@ -1490,6 +1520,7 @@ class BottleScene {
         ship.scale.setScalar(SHIP_SCALE);
         ship.position.set(0, SHIP_DRAFT * SHIP_SCALE, 0);
 
+        ship.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
         this.boat.add(ship);
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
       }
@@ -1501,6 +1532,23 @@ class BottleScene {
   _applyRockColor(hex) {
     if (!this.rockMats) { this._pendingRegionHex = hex; return; }
     this.rockMats.forEach((m) => m.color.setHex(hex));
+  }
+
+  /**
+   * 그림자만 받는 평면. 물 표면 바로 위에 깔린다.
+   * 물은 커스텀 셰이더라 그림자를 받게 하려면 셰이더에 조명·그림자 청크를 통째로
+   * 끌어와야 한다. ShadowMaterial 평면 하나를 대신 깔면 물 셰이더를 건드리지 않고도
+   * 배와 섬의 그림자가 수면에 떨어진다. 비용도 거의 없다.
+   */
+  _buildShadowCatcher() {
+    const geo = new THREE.PlaneGeometry(24, 24);
+    geo.rotateX(-Math.PI / 2);
+    this.shadowMat = new THREE.ShadowMaterial({ opacity: 0.24 });
+    const mesh = new THREE.Mesh(geo, this.shadowMat);
+    mesh.position.y = 0.012;   // 수면 바로 위. 파도에 묻히지 않을 만큼만 띄운다
+    mesh.receiveShadow = true;
+    this.world.add(mesh);
+    this.shadowCatcher = mesh;
   }
 
   _buildBoat() {
@@ -1657,6 +1705,8 @@ class BottleScene {
       rim: this.rimLight.color.getHex(), rimI: this.rimLight.intensity,
       amb: this.ambLight.color.getHex(), ambI: this.ambLight.intensity,
       spec: wu.uSpecColor.value.getHex(), specI: wu.uSpecStrength.value,
+      sunPos: this._sunOffset.toArray(),
+      shadow: this.shadowMat ? this.shadowMat.opacity : 0,
     };
   }
 
@@ -1668,7 +1718,7 @@ class BottleScene {
       target.set(typeof from === "number" ? from : from.getHex());
       target.lerp(TMP_COLOR.set(typeof to === "number" ? to : to.getHex()), k);
     };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const fromC = a.sky[i] instanceof THREE.Color ? a.sky[i] : new THREE.Color(a.sky[i]);
       const toC = b.sky[i] instanceof THREE.Color ? b.sky[i] : new THREE.Color(b.sky[i]);
       this._skyColors[i].copy(fromC).lerp(toC, k);
@@ -1682,6 +1732,12 @@ class BottleScene {
     mixHex(this.ambLight.color, a.amb, b.amb);
     mixHex(wu.uSpecColor.value, a.spec, b.spec);
     wu.uSpecStrength.value = a.specI + (b.specI - a.specI) * k;
+    // 해의 위치도 함께 움직인다 — 저녁엔 낮게 깔려 그림자가 길어진다.
+    // 실제 배치는 _animate에서 배 위치를 더해 적용한다.
+    for (let i = 0; i < 3; i++) {
+      this._sunOffset.setComponent(i, a.sunPos[i] + (b.sunPos[i] - a.sunPos[i]) * k);
+    }
+    if (this.shadowMat) this.shadowMat.opacity = a.shadow + (b.shadow - a.shadow) * k;
     wu.uExposure.value = a.exposure + (b.exposure - a.exposure) * k;
     this.sunLight.intensity = a.sunI + (b.sunI - a.sunI) * k;
     this.rimLight.intensity = a.rimI + (b.rimI - a.rimI) * k;
@@ -1800,6 +1856,13 @@ class BottleScene {
     // [버그1] 무한 바다의 전부: 타일을 매 프레임 배 위치로 재중심.
     // 배는 언제나 타일 한가운데에 있고, 파도 위상은 셰이더가 월드좌표로 계산하므로 이음매가 없다.
     this.waterMesh.position.x = this.boat.position.x;
+    if (this.shadowCatcher) this.shadowCatcher.position.x = this.boat.position.x;
+    // 해와 그림자 절두체를 배에 붙여 둔다 (배가 어디로 가든 그림자가 유지되도록)
+    this.sunLight.position.set(
+      this.boat.position.x + this._sunOffset.x, this._sunOffset.y, this._sunOffset.z
+    );
+    this.sunLight.target.position.set(this.boat.position.x, 0, 0);
+    this.sunLight.target.updateMatrixWorld();
 
     // 나아가는 느낌이 강한 상태일수록 파도의 시간축을 빠르게 (전환 시 뚝 끊기지 않게 보간)
     const flowBoostTarget = this.mode === "between" ? 2.0 : (this.mode === "leaving" || this.mode === "returned" ? 0.5 : 0);
