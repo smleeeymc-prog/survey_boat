@@ -1013,13 +1013,16 @@ const TMP_COLOR = new THREE.Color();
 // ── 굴뚝 연기 ──────────────────────────────────────────────────────────────
 // 크기는 전부 SHIP_SCALE에 곱해져서, 배를 키우면 연기도 같이 커진다.
 const SMOKE_COUNT = 20;        // 동시에 떠 있을 수 있는 덩어리 수
-const SMOKE_INTERVAL = 0.13;   // 뿜는 간격(초). 짧아야 덩어리끼리 겹친다
-const SMOKE_LIFE = 2.6;        // 한 덩어리가 사라질 때까지(초)
-const SMOKE_START = 0.055;     // 나올 때 크기
-const SMOKE_END = 0.28;        // 사라질 때 크기
-const SMOKE_RISE = 0.42;       // 올라가는 속도
-const SMOKE_LEAN = 0.10;       // 옆으로 기우는 정도
-const SMOKE_OPACITY = 0.85;
+const SMOKE_INTERVAL = 0.16;   // 뿜는 간격(초). 짧아야 덩어리끼리 겹친다
+const SMOKE_LIFE = 3.2;        // 한 덩어리가 사라질 때까지(초)
+const SMOKE_START = 0.039;     // 나올 때 크기
+const SMOKE_END = 0.196;       // 사라질 때 크기
+const SMOKE_RISE = 0.24;       // 올라가는 속도
+const SMOKE_LEAN = 0.07;       // 옆으로 기우는 정도
+// 수명의 이 지점까지는 불투명하게 두고, 그 뒤부터만 투명해진다.
+// 반투명 덩어리가 여러 겹 겹치면 겹친 만큼 알파가 쌓여서 안쪽 실루엣 선이 드러난다
+// ("지저분해진다"는 게 이것). 불투명하면 서로 가려서 하나의 덩어리로 보인다.
+const SMOKE_SOLID_UNTIL = 0.68;
 
 const BOTTLE_SCALE = 1.9;
 const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
@@ -1030,6 +1033,48 @@ const BOTTLE_PROFILE = [
   [-1.55, 0.00], [-1.50, 0.62], [-0.90, 0.70], [1.00, 0.68],
   [1.25, 0.60], [1.50, 0.24], [1.75, 0.20],
 ];
+/**
+ * CSS의 cubic-bezier(x1,y1,x2,y2)와 같은 곡선.
+ * 시작점(0,0)과 끝점(1,1)은 고정이고, 중간 제어점 두 개로 모양을 정한다.
+ *
+ * 블렌더 그래프 에디터에서 F-커브 핸들을 잡아 만든 곡선을 그대로 옮길 수 있다.
+ * 옮기는 법: 키프레임 두 개(시작/끝)만 두고 핸들 위치를 읽은 뒤,
+ *   x1 = (왼쪽 핸들 프레임 - 시작 프레임) / 전체 프레임수
+ *   y1 = (왼쪽 핸들 값     - 시작 값)     / 전체 값차이
+ *   x2, y2 = 오른쪽 핸들을 끝점 기준으로 같은 방식 (끝점에서 뺀 뒤 1을 더함)
+ * 즉 프레임과 값을 각각 0~1로 정규화한 좌표 네 개면 된다.
+ *
+ * 뉴턴법으로 x에 해당하는 t를 찾은 뒤 y를 돌려준다.
+ */
+function cubicBezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sampleX = (t) => ((ax * t + bx) * t + cx) * t;
+  const sampleY = (t) => ((ay * t + by) * t + cy) * t;
+  const slopeX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return function (x) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 6; i++) {
+      const d = sampleX(t) - x;
+      if (Math.abs(d) < 1e-5) break;
+      const sl = slopeX(t);
+      if (Math.abs(sl) < 1e-6) break;
+      t -= d / sl;
+    }
+    return sampleY(Math.max(0, Math.min(1, t)));
+  };
+}
+
+/**
+ * 섬(땅·바위·오두막)이 다가오고 멀어질 때의 곡선.
+ * 예전엔 지수 감쇠라 시작이 제일 빠르고 끝이 늘어졌다 — ease-in이 없었다.
+ * 이 값만 바꾸면 움직임이 바뀐다. 블렌더에서 잡은 곡선을 그대로 넣어도 된다.
+ */
+const SHORE_EASE = cubicBezier(0.45, 0.02, 0.25, 1.0);
+const SHORE_MOVE_SEC = 1.5;
+
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
 
@@ -1197,6 +1242,8 @@ class BottleScene {
     this.mode = "stay";
     this.shoreBlend = 1;
     this.shoreTarget = 1;
+    this._shoreFrom = 1;
+    this._shoreT = 1;
     this.introPlaying = false;
     this.introDone = false;
     this.visible = false;
@@ -1665,8 +1712,10 @@ class BottleScene {
       { p: [-0.45, 0.3, -0.25], s: 0.62 },
     ];
     for (let i = 0; i < SMOKE_COUNT; i++) {
+      // depthWrite를 켠다. 이래야 앞의 덩어리가 뒤의 덩어리를 가려서 겹친 부분에
+      // 안쪽 윤곽이 비치지 않는다. 알파를 낮게 깔면서 depthWrite를 끄면 겹칠수록 탁해진다.
       const mat = new THREE.MeshLambertMaterial({
-        color: 0xf2f2f0, transparent: true, opacity: 0, depthWrite: false,
+        color: 0xf2f2f0, transparent: true, opacity: 0, depthWrite: true,
       });
       const group = new THREE.Group();
       for (const b of BLOBS) {
@@ -1776,7 +1825,12 @@ class BottleScene {
       this.boat.position.x = this.returnStartX;
       this._boatEaseX = this.returnStartX;
     }
-    this.shoreTarget = (mode === "between" || mode === "unsure") ? 0 : 1;
+    const nextShore = (mode === "between" || mode === "unsure") ? 0 : 1;
+    if (nextShore !== this.shoreTarget) {
+      this._shoreFrom = this.shoreBlend;   // 지금 있는 자리에서 이어서 움직인다
+      this._shoreT = 0;
+    }
+    this.shoreTarget = nextShore;
 
     // between이 1.0이면 파도가 너무 거칠어서 0.1('아직 모르겠음'과 같은 값)로 낮췄다.
     // 진폭은 ampScale = 0.5 + 0.9*windT 이므로 1.4 -> 0.59, 약 58% 감소다.
@@ -1925,7 +1979,8 @@ class BottleScene {
 
     free.active = true; free.age = 0;
     free.mesh.visible = true;
-    free.mat.opacity = SMOKE_OPACITY;
+    free.mat.opacity = 1;
+    free.mat.color.setHex(0xf2f2f0);
     free.mesh.scale.setScalar(SMOKE_START * SHIP_SCALE);
     free.mesh.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
     free.spin = (Math.random() - 0.5) * 0.9;      // 알갱이마다 다른 회전 — 모양이 변하는 느낌
@@ -1952,8 +2007,16 @@ class BottleScene {
       // 처음엔 빠르게, 나중엔 천천히 커진다
       const grow = SMOKE_START + (SMOKE_END - SMOKE_START) * Math.pow(life, 0.65);
       s.mesh.scale.setScalar(grow * SHIP_SCALE);
-      // 끝에서만 사라지게 — 중간까지는 또렷해야 기둥이 끊기지 않는다
-      s.mat.opacity = SMOKE_OPACITY * (1 - Math.pow(life, 2.2));
+      // 대부분의 수명 동안 불투명하게 둔다(겹쳐도 지저분해지지 않는 이유).
+      // 마지막 구간에서만 투명해지는데, 그때는 덩어리가 크고 흩어져 있어 겹침이 적다.
+      // 색도 안개색 쪽으로 밀어서 알파가 빠지기 전에 이미 하늘에 녹아든 것처럼 보이게 한다.
+      if (life > SMOKE_SOLID_UNTIL) {
+        const tail = (life - SMOKE_SOLID_UNTIL) / (1 - SMOKE_SOLID_UNTIL);
+        s.mat.opacity = 1 - tail * tail;
+        s.mat.color.setHex(0xf2f2f0).lerp(this.scene.fog.color, tail * 0.85);
+      } else {
+        s.mat.opacity = 1;
+      }
 
       if (s.age >= SMOKE_LIFE) { s.active = false; s.mesh.visible = false; }
     }
@@ -2038,7 +2101,14 @@ class BottleScene {
       // 정작 프레임에 들어오는 구간에서 느려져서 "늦게 나타난다"는 인상을 줬다. 등장 거리
       // 자체를 줄이면 가로 화면(FOV가 훨씬 넓음)에서 '무한한 바다'에 섬이 새어 보이므로,
       // 거리는 그대로 두고 속도만 올린다.
-      this.shoreBlend += (this.shoreTarget - this.shoreBlend) * Math.min(1, dt * 3.2);
+      // 시간 기반 이징. 지수 감쇠는 ease-out만 되어 출발이 툭 튀었다.
+      if (this._shoreT < 1) {
+        this._shoreT = Math.min(1, this._shoreT + dt / SHORE_MOVE_SEC);
+        this.shoreBlend = this._shoreFrom
+          + (this.shoreTarget - this._shoreFrom) * SHORE_EASE(this._shoreT);
+      } else {
+        this.shoreBlend = this.shoreTarget;
+      }
       this.islandGroup.position.x = THREE.MathUtils.lerp(this.islandGoneX, this.islandRestX, this.shoreBlend);
       // [버그4] 섬이 "짠" 하고 나타나던 문제 — 예전 임계값이 0.5라 슬라이드가 절반이나 진행된
       // 뒤에야 visible이 켜졌다(= 화면 중앙 근처에서 갑자기 팝인). visible은 완전히 사라졌을 때
@@ -2086,7 +2156,9 @@ class BottleScene {
       const waveY = this._waveHeightAt(boatX, 0, t, this._flowPhase);
       const waveSlope = this._waveHeightAt(boatX + 0.12, 0, t, this._flowPhase) - this._waveHeightAt(boatX - 0.12, 0, t, this._flowPhase);
 
-      const headingTarget = this.mode === "returned" ? 0 : Math.PI;
+      // '아직 모르겠음'은 '돌아온 사람'과 같은 방향을 본다.
+      // 땅과 바위(islandGroup)는 shoreTarget이 0이라 미끄러져 나가므로 화면에 남지 않는다.
+      const headingTarget = (this.mode === "returned" || this.mode === "unsure") ? 0 : Math.PI;
       if (this.headingY === undefined) this.headingY = headingTarget;
       let headingDiff = headingTarget - this.headingY;
       headingDiff = ((headingDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
