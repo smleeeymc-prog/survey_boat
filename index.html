@@ -1012,11 +1012,11 @@ const TMP_COLOR = new THREE.Color();
 // 배를 감싸는 크기. 배(SHIP_SCALE 2.6)의 반지름이 약 0.70이라 여유를 두고 잡았다.
 // ── 굴뚝 연기 ──────────────────────────────────────────────────────────────
 // 크기는 전부 SHIP_SCALE에 곱해져서, 배를 키우면 연기도 같이 커진다.
-const SMOKE_COUNT = 20;        // 동시에 떠 있을 수 있는 덩어리 수
-const SMOKE_INTERVAL = 0.16;   // 뿜는 간격(초). 짧아야 덩어리끼리 겹친다
-const SMOKE_LIFE = 3.2;        // 한 덩어리가 사라질 때까지(초)
-const SMOKE_START = 0.039;     // 나올 때 크기
-const SMOKE_END = 0.196;       // 사라질 때 크기
+const SMOKE_COUNT = 12;        // 동시에 떠 있을 수 있는 덩어리 수
+const SMOKE_INTERVAL = 0.26;   // 뿜는 간격(초). 짧아야 덩어리끼리 겹친다
+const SMOKE_LIFE = 2.7;        // 한 덩어리가 사라질 때까지(초)
+const SMOKE_START = 0.020;     // 나올 때 크기
+const SMOKE_END = 0.098;       // 사라질 때 크기
 const SMOKE_RISE = 0.24;       // 올라가는 속도
 const SMOKE_LEAN = 0.07;       // 옆으로 기우는 정도
 // 수명의 이 지점까지는 불투명하게 두고, 그 뒤부터만 투명해진다.
@@ -1073,7 +1073,7 @@ function cubicBezier(x1, y1, x2, y2) {
  * 이 값만 바꾸면 움직임이 바뀐다. 블렌더에서 잡은 곡선을 그대로 넣어도 된다.
  */
 const SHORE_EASE = cubicBezier(0.45, 0.02, 0.25, 1.0);
-const SHORE_MOVE_SEC = 1.5;
+const SHORE_MOVE_SEC = 2.2;
 
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
@@ -1225,7 +1225,9 @@ class BottleScene {
     // Beachhouse는 자기 원점 기준 -0.479부터 시작한다. 둘 사이에 여유를 둔다.
     // 값을 키우면 섬이 멀어지고, 줄이면 가까워진다.
     this.islandRestX = 0.49 * SHIP_SCALE + 0.479 + ISLAND_CLEARANCE;
-    this.islandGoneX = this.islandRestX + 2.45;
+    // 2.45로는 아직 또렷하게 보이는 중에 사라져 버렸다.
+    // 안개가 삼킬 만큼 멀리 보낸다(안개 끝이 카메라 거리+7이므로 그보다 더 가야 한다).
+    this.islandGoneX = this.islandRestX + 12;
     this.islandGroup.position.z = -SHIP_GLB_POS.z;
 
     this._buildWater();
@@ -1572,6 +1574,17 @@ class BottleScene {
         this.islandGroup.add(beachhouse);
       }
 
+      // 멀어질 때 서서히 지우려면 재질을 투명하게 다룰 수 있어야 한다.
+      // 안개만으로는 '안개색 덩어리'가 남아 하늘과 어긋나 보인다(바다 경계와 같은 문제).
+      this.islandMats = [];
+      this.islandGroup.traverse((c) => {
+        if (!c.isMesh || !c.material) return;
+        if (this.islandMats.indexOf(c.material) === -1) {
+          c.material.transparent = true;
+          this.islandMats.push(c.material);
+        }
+      });
+
       if (ship) {
         // Seagull(갈매기)·Tube(구명튜브)는 GLB상 Ship과 형제 노드지만, 실제 좌표는
         // 배 바로 위(갈매기)와 뱃전(튜브)이다. attach()는 월드 변환을 유지한 채 부모만 바꾸므로
@@ -1706,10 +1719,12 @@ class BottleScene {
     this.smokePool = [];
     const geo = new THREE.IcosahedronGeometry(1, 0);
     // 덩어리를 이루는 세 조각의 상대 위치와 크기. 살짝씩 어긋나게 겹쳐 둔다.
+    // 오프셋이 크면 조각들이 밖으로 삐져나와 우글거려 보인다.
+    // 반지름보다 한참 작게 어긋내서 서로 깊이 파고들게 한다.
     const BLOBS = [
       { p: [0, 0, 0], s: 1.0 },
-      { p: [0.55, 0.35, 0.2], s: 0.72 },
-      { p: [-0.45, 0.3, -0.25], s: 0.62 },
+      { p: [0.34, 0.20, 0.12], s: 0.74 },
+      { p: [-0.28, 0.16, -0.14], s: 0.66 },
     ];
     for (let i = 0; i < SMOKE_COUNT; i++) {
       // depthWrite를 켠다. 이래야 앞의 덩어리가 뒤의 덩어리를 가려서 겹친 부분에
@@ -2114,6 +2129,12 @@ class BottleScene {
       // 뒤에야 visible이 켜졌다(= 화면 중앙 근처에서 갑자기 팝인). visible은 완전히 사라졌을 때
       // 렌더를 건너뛰려는 용도일 뿐이므로 0에 가깝게 두면 화면 밖에서부터 미끄러져 들어온다.
       this.islandGroup.visible = this.shoreBlend > 0.002;
+      // 여정의 뒤쪽 절반에서만 투명해진다. 앞쪽은 또렷한 채로 멀어지고,
+      // 멀어질수록 안개가 옅게 덮은 위에 알파가 빠지면서 자연스럽게 지워진다.
+      if (this.islandMats) {
+        const fade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, 0.5);
+        for (const m of this.islandMats) m.opacity = fade;
+      }
 
       let rotZ = 0;
       let targetX = 0;
