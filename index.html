@@ -922,10 +922,10 @@ const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 
 // 배 전체 크기 배율. 1.0이 GLB 원본 크기.
 // 흘수(SHIP_DRAFT)도 같이 곱해야 잠기는 "비율"이 유지된다 — 안 그러면 키울수록 더 깊이 잠긴다.
-const SHIP_SCALE = 2.6;
+const SHIP_SCALE = 3.38;   // 2.6의 130%
 
 // 선체 끝과 섬(Beachhouse) 사이에 둘 여유 거리. 눈으로 맞추는 값.
-const ISLAND_CLEARANCE = 0.20;
+const ISLAND_CLEARANCE = 0.12;   // 뱃머리와 오두막 사이 여유. 닿기 직전까지 붙였다
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
@@ -937,20 +937,22 @@ const SHIP_DRAFT = 0.17;
 // 주인공(배·섬)까지 안개에 묻혀버린다. 배 바로 뒤(+0.3)에서 시작해 4.0을 더 가서 완전히 짙어짐 —
 // 바다 타일 끝(배 기준 반경 7)에 시선이 닿기 전에 끝나야 경계가 안 드러난다.
 // 안개가 너무 옅다/짙다 싶으면 다른 데 손대지 말고 이 두 숫자만 조절할 것.
-const fogRangeFor = (radius) => ({ near: radius + 0.3, far: radius + 4.3 });
+// 안개는 배 한참 뒤에서 시작해야 주인공이 뿌옇게 뜨지 않는다.
+// far까지 가면 완전히 하늘색이 되고, 그 지점에서 바다 자체를 투명하게 지운다(uFade*).
+const fogRangeFor = (radius) => ({ near: radius + 2.5, far: radius + 7.0 });
 
 // ── 질문 단계별 카메라 ─────────────────────────────────────────────────────
 // 각도(yaw/pitch)는 어느 단계에서도 건드리지 않는다. 바뀌는 건 "무엇을 바라볼지(target)"와
 // "얼마나 떨어질지(radius)"뿐이다. 그래서 전환이 회전이 아니라 미끄러지는 이동으로 보인다.
 // target은 배 위치 기준 오프셋이라, 배가 움직여도 프레이밍이 유지된다.
-const CAM_DEFAULT = { target: [0.0, 0.16, 0.0], radius: 8.4 };
+const CAM_DEFAULT = { target: [0.0, 0.22, 0.0], radius: 9.7 };
 const CAM_STEPS = {
   // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
-  region:   { target: [1.30, 1.20, -0.30], radius: 10.6 },
+  region:   { target: [1.30, 1.35, -0.30], radius: 12.2 },
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
-  keywords: { target: [0.0, 0.35, 0.0], radius: 7.3 },
+  keywords: { target: [0.0, 0.45, 0.0], radius: 8.4 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
-  result:   { target: [0.0, 0.45, 0.0], radius: 11.5 },
+  result:   { target: [0.0, 0.58, 0.0], radius: 13.2 },
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
@@ -1008,8 +1010,19 @@ const TMP_COLOR = new THREE.Color();
 
 // ── 유리병 ────────────────────────────────────────────────────────────────
 // 배를 감싸는 크기. 배(SHIP_SCALE 2.6)의 반지름이 약 0.70이라 여유를 두고 잡았다.
+// ── 굴뚝 연기 ──────────────────────────────────────────────────────────────
+// 크기는 전부 SHIP_SCALE에 곱해져서, 배를 키우면 연기도 같이 커진다.
+const SMOKE_COUNT = 20;        // 동시에 떠 있을 수 있는 덩어리 수
+const SMOKE_INTERVAL = 0.13;   // 뿜는 간격(초). 짧아야 덩어리끼리 겹친다
+const SMOKE_LIFE = 2.6;        // 한 덩어리가 사라질 때까지(초)
+const SMOKE_START = 0.055;     // 나올 때 크기
+const SMOKE_END = 0.28;        // 사라질 때 크기
+const SMOKE_RISE = 0.42;       // 올라가는 속도
+const SMOKE_LEAN = 0.10;       // 옆으로 기우는 정도
+const SMOKE_OPACITY = 0.85;
+
 const BOTTLE_SCALE = 1.9;
-const BOTTLE_Y = 0.42;                       // 배 몸통 한가운데 높이
+const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
 // 병 옆면 프로파일 [축위치 u, 반지름]. LatheGeometry와 물 클리핑이 같은 값을 쓴다.
 // 반지름이 u에 따라 변하는데 클리핑을 상수 반지름으로 두면, 좁은 목 쪽에서 수면이
 // 병을 뚫고 나온다(직사각형으로 잘린 바다가 보이던 원인).
@@ -1197,10 +1210,6 @@ class BottleScene {
 
     // 결과 화면: 살짝 줌 + 유리병이 풍경을 감싸는 리빌 연출
     this.bottleRevealed = false;
-    // 병이 나온 뒤 드래그하면 세로축(Y)을 중심으로 병 둘레를 돈다.
-    // 병은 X축 회전체라 옆에서 보면 긴 몸통, 끝에서 보면 원이 되어 각도마다 모습이 다르다.
-    // 360도 제한 없음.
-    this.bottleRoll = 0;
     this.bottleT = 0;
     this.bottleTarget = 0;
     // 단계 전환용 카메라 보간 상태 (_setCamStep에서 목적지를 갈아끼운다)
@@ -1260,11 +1269,13 @@ class BottleScene {
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
       if (this.bottleT > 0.5) {
-        // 병이 떠 있는 동안에는 병을 굴린다. 한 바퀴를 넘어도 그대로 이어진다.
-        this.bottleRoll += dx * 0.006;
+        // 병이 뜬 뒤에는 각도 제한을 풀고, 지금 보고 있던 각도에서 그대로 이어서
+        // 병 둘레를 아크로 돈다. 좌우는 끝없이, 위아래는 뒤집히지 않게만 막는다.
+        this.orbitYaw -= dx * 0.005;
+        this.orbitPitch = Math.max(-1.45, Math.min(1.45, this.orbitPitch + dy * 0.004));
       } else {
+        // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
         this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.0032));
         this.orbitPitch = Math.max(-0.2, Math.min(0.55, this.orbitPitch + dy * 0.0024));
       }
@@ -1312,6 +1323,8 @@ class BottleScene {
         uSpecColor: { value: new THREE.Color(0xfffcf2) },
         // 유리병이 나타나면 바다를 병 안쪽으로 가둔다.
         // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
+        uFadeNear: { value: 100.0 },
+        uFadeFar: { value: 120.0 },
         uClipOn: { value: 0.0 },
         uClipCenter: { value: new THREE.Vector3(0, 0, 0) },
         uClipT: { value: 0.0 },
@@ -1381,6 +1394,10 @@ class BottleScene {
         uniform float uSpecPower;
         uniform float uSpecStrength;
         uniform vec3 uSpecColor;
+        // 먼 바다를 아예 투명하게 지운다. 안개만으로는 '안개색 판'이 남아서
+        // 하늘과 만나는 자리에 경계선이 보인다. 알파를 0으로 빼면 하늘이 그대로 비쳐 경계가 없다.
+        uniform float uFadeNear;
+        uniform float uFadeFar;
         uniform float uClipOn;
         uniform vec3 uClipCenter;
         uniform float uClipT;
@@ -1443,7 +1460,9 @@ class BottleScene {
           vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
-          gl_FragColor = vec4(hdr(color, uExposure), 0.92 * clipA);
+          // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
+          float edgeFade = 1.0 - smoothstep(uFadeNear, uFadeFar, length(cameraPosition - vWorldPos));
+          gl_FragColor = vec4(hdr(color, uExposure), 0.92 * clipA * edgeFade);
           // 안개는 색을 다 계산한 뒤 마지막에 섞는다 — 멀어질수록 바다가 하늘색으로 녹아
           // 타일 경계(가장자리)가 눈에 띄기 전에 사라진다.
           #include <fog_fragment>
@@ -1626,15 +1645,43 @@ class BottleScene {
     this.boat = boat;
   }
 
+  /**
+   * 굴뚝 연기. 뭉게뭉게 겹치는 로우폴리 덩어리로 만든다.
+   *
+   * 한 알갱이가 구 하나면 아무리 키워도 "공이 떠간다"로만 보인다.
+   * 그래서 알갱이 하나를 서로 어긋나게 겹친 정이십면체 세 개로 만들어, 처음부터
+   * 울퉁불퉁한 덩어리가 되게 했다. 여기에 알갱이마다 다른 속도로 회전을 주면
+   * 올라가면서 모양이 계속 바뀌는 것처럼 보인다(실제로 정점을 건드리지는 않는다 — 훨씬 싸다).
+   *
+   * 정이십면체는 면이 20개뿐이라 각진 로우폴리 느낌이 그대로 살고, 구보다도 가볍다.
+   */
   _buildSmokePool() {
     this.smokePool = [];
-    const geo = new THREE.SphereGeometry(0.045, 8, 8);
-    for (let i = 0; i < 8; i++) {
-      const mat = new THREE.MeshBasicMaterial({ color: 0xe9e9e9, transparent: true, opacity: 0 });
-      const m = new THREE.Mesh(geo, mat);
-      m.visible = false;
-      this.world.add(m);
-      this.smokePool.push({ mesh: m, age: 0, active: false });
+    const geo = new THREE.IcosahedronGeometry(1, 0);
+    // 덩어리를 이루는 세 조각의 상대 위치와 크기. 살짝씩 어긋나게 겹쳐 둔다.
+    const BLOBS = [
+      { p: [0, 0, 0], s: 1.0 },
+      { p: [0.55, 0.35, 0.2], s: 0.72 },
+      { p: [-0.45, 0.3, -0.25], s: 0.62 },
+    ];
+    for (let i = 0; i < SMOKE_COUNT; i++) {
+      const mat = new THREE.MeshLambertMaterial({
+        color: 0xf2f2f0, transparent: true, opacity: 0, depthWrite: false,
+      });
+      const group = new THREE.Group();
+      for (const b of BLOBS) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(b.p[0], b.p[1], b.p[2]);
+        m.scale.setScalar(b.s);
+        group.add(m);
+      }
+      group.visible = false;
+      group.renderOrder = 5;
+      this.world.add(group);
+      this.smokePool.push({
+        mesh: group, mat, age: 0, active: false,
+        spin: 0, drift: 0, wobble: 0,
+      });
     }
     this.smokeSpawnTimer = 0;
   }
@@ -1839,7 +1886,7 @@ class BottleScene {
     if (step !== "result") {
       this.bottleTarget = 0;
       this.bottleRevealed = false;
-      this.bottleRoll = 0;   // 굴려둔 각도를 되돌린다
+      this.orbitYaw = 0; this.orbitPitch = 0;   // 둘러보던 각도를 되돌린다
     }
   }
 
@@ -1870,31 +1917,46 @@ class BottleScene {
   _spawnSmoke(dt) {
     if (!this.smokeAnchor) return;
     this.smokeSpawnTimer -= dt;
-    if (this.smokeSpawnTimer <= 0) {
-      this.smokeSpawnTimer = 0.35;
-      const free = this.smokePool.find((s) => !s.active);
-      if (free) {
-        free.active = true; free.age = 0;
-        free.mesh.visible = true;
-        free.mesh.material.opacity = 0.55;
-        free.mesh.scale.setScalar(0.6);
-        const wp = new THREE.Vector3();
-        this.smokeAnchor.getWorldPosition(wp);
-        free.mesh.position.copy(wp);
-      }
-    }
+    if (this.smokeSpawnTimer > 0) return;
+    // 간격이 짧아야 덩어리끼리 겹쳐서 하나의 기둥으로 보인다.
+    this.smokeSpawnTimer = SMOKE_INTERVAL;
+    const free = this.smokePool.find((s) => !s.active);
+    if (!free) return;
+
+    free.active = true; free.age = 0;
+    free.mesh.visible = true;
+    free.mat.opacity = SMOKE_OPACITY;
+    free.mesh.scale.setScalar(SMOKE_START * SHIP_SCALE);
+    free.mesh.rotation.set(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28);
+    free.spin = (Math.random() - 0.5) * 0.9;      // 알갱이마다 다른 회전 — 모양이 변하는 느낌
+    free.drift = (Math.random() - 0.5) * 0.12;    // 옆으로 흩어지는 정도
+    free.wobble = Math.random() * 6.28;           // 흔들림 위상
+    const wp = new THREE.Vector3();
+    this.smokeAnchor.getWorldPosition(wp);
+    free.mesh.position.copy(wp);
   }
 
   _updateSmoke(dt) {
-    this.smokePool.forEach((s) => {
-      if (!s.active) return;
+    for (const s of this.smokePool) {
+      if (!s.active) continue;
       s.age += dt;
-      s.mesh.position.y += dt * 0.25;
-      s.mesh.position.x += dt * 0.03;
-      s.mesh.scale.setScalar(0.6 + s.age * 0.6);
-      s.mesh.material.opacity = Math.max(0, 0.55 - s.age * 0.5);
-      if (s.age > 1.1) { s.active = false; s.mesh.visible = false; }
-    });
+      const life = s.age / SMOKE_LIFE;            // 0 → 1
+
+      s.mesh.position.y += dt * SMOKE_RISE * SHIP_SCALE;
+      // 올라갈수록 옆으로 퍼지고 살짝 흔들린다
+      s.mesh.position.x += dt * (SMOKE_LEAN + s.drift) * SHIP_SCALE;
+      s.mesh.position.z += dt * Math.sin(s.wobble + s.age * 1.6) * 0.06 * SHIP_SCALE;
+      s.mesh.rotation.y += dt * s.spin;
+      s.mesh.rotation.x += dt * s.spin * 0.6;
+
+      // 처음엔 빠르게, 나중엔 천천히 커진다
+      const grow = SMOKE_START + (SMOKE_END - SMOKE_START) * Math.pow(life, 0.65);
+      s.mesh.scale.setScalar(grow * SHIP_SCALE);
+      // 끝에서만 사라지게 — 중간까지는 또렷해야 기둥이 끊기지 않는다
+      s.mat.opacity = SMOKE_OPACITY * (1 - Math.pow(life, 2.2));
+
+      if (s.age >= SMOKE_LIFE) { s.active = false; s.mesh.visible = false; }
+    }
   }
 
   _animate() {
@@ -2087,6 +2149,10 @@ class BottleScene {
     const fogRange = fogRangeFor(radius);
     this.scene.fog.near = fogRange.near;
     this.scene.fog.far = fogRange.far;
+    // 안개가 거의 다 낀 지점부터 지우기 시작해서, 안개가 완전히 낀 지점에서 사라진다.
+    const wuFade = this.waterMesh.material.uniforms;
+    wuFade.uFadeNear.value = fogRange.far * 0.80;
+    wuFade.uFadeFar.value = fogRange.far;
     // 기본 시점: 좌측 상단에서 내려다보는 아이소메트릭. yaw가 음수면 카메라가 배 왼쪽으로,
     // pitch 0.60rad(≈34°)은 정아이소메트릭(35.26°)에 가까운 내려다보기 각도.
     // 바라보는 지점(lookAt)은 그대로 배 — 카메라 위치만 옮긴 것.
@@ -2094,22 +2160,22 @@ class BottleScene {
     const baseYaw = -0.45, basePitch = 0.60;
     const yaw = baseYaw + this.orbitYaw;
     const pitch = basePitch + this.orbitPitch;
+    // 병이 뜬 뒤에는 병 중심을 축으로 돈다. 그래야 아크가 병 주위를 정확히 감싼다.
+    const orbT = this.bottleT > 0.01;
+    const oX = orbT ? this.boat.position.x : tX;
+    const oY = orbT ? BOTTLE_Y : tY;
+    const oZ = orbT ? 0 : tZ;
     this.camera.position.set(
-      tX + radius * Math.sin(yaw) * Math.cos(pitch),
-      tY + radius * Math.sin(pitch),
-      tZ + radius * Math.cos(yaw) * Math.cos(pitch)
+      oX + radius * Math.sin(yaw) * Math.cos(pitch),
+      oY + radius * Math.sin(pitch),
+      oZ + radius * Math.cos(yaw) * Math.cos(pitch)
     );
-    this.camera.position.y = Math.max(this.camera.position.y, 0.16);
+    // 병을 둘러볼 때는 수면 아래로도 내려갈 수 있어야 아래에서 올려다보는 각이 나온다.
+    if (!orbT) this.camera.position.y = Math.max(this.camera.position.y, 0.16);
 
-    if (this.bottleT > 0.01 && this.bottleRoll !== 0) {
-      // 세로축(Y) 둘레로 카메라를 돌린다. 높이는 그대로라 위아래가 뒤집히지 않고,
-      // up도 건드릴 필요가 없다. 병을 옆에서 보다가 끝에서 보는 각도까지 이어진다.
-      const cx = this.boat.position.x, cz = 0;
-      const p = this.camera.position;
-      const rx = p.x - cx, rz = p.z - cz;
-      const c = Math.cos(this.bottleRoll), sn = Math.sin(this.bottleRoll);
-      p.set(cx + rx * c + rz * sn, p.y, cz - rx * sn + rz * c);
-      this.camera.lookAt(cx, BOTTLE_Y, cz);
+    // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
+    if (this.bottleT > 0.01) {
+      this.camera.lookAt(this.boat.position.x, BOTTLE_Y, 0);
     } else {
       this.camera.lookAt(tX, tY, tZ);
     }
