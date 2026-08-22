@@ -1136,10 +1136,16 @@ function paintSky(tex, colors){
   const c = tex.__canvas;
   const ctx = c.getContext("2d");
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  // 세 번째 정지점(0.78)이 "지평선 바로 위 띠" 자리다. 저녁에 자주색이 여기 깔린다.
+  // 정지점은 월드 좌표가 아니라 "화면 세로 위치"다 (배경 텍스처가 화면에 늘려 붙기 때문, 11장).
+  // 실측 결과 바다가 화면 세로 11%부터 배경을 덮기 시작해 21%면 절반, 44%면 거의 다 가린다.
+  // 예전 정지점(0.48 / 0.78)은 그 아래라 두 번째·세 번째 색이 화면에 거의 나타나지 못했고,
+  // 저녁 노을(#e2705f)과 자주색 띠(#a05a8c)가 통째로 묻혀 하늘이 탁한 청회색으로만 보였다.
+  // 그래서 네 색을 하늘이 실제로 드러나는 위쪽 구간으로 몰아넣는다.
   grad.addColorStop(0, "#" + colors[0].getHexString());
-  grad.addColorStop(0.48, "#" + colors[1].getHexString());
-  grad.addColorStop(0.78, "#" + colors[2].getHexString());
+  grad.addColorStop(0.09, "#" + colors[1].getHexString());
+  grad.addColorStop(0.16, "#" + colors[2].getHexString());
+  grad.addColorStop(0.24, "#" + colors[3].getHexString());
+  // 아래쪽은 바다에 가려 안 보이지만, 마지막 색으로 채워 그라디언트를 닫는다.
   grad.addColorStop(1, "#" + colors[3].getHexString());
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 8, 256);
