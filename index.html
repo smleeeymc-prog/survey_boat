@@ -945,14 +945,42 @@ const fogRangeFor = (radius) => ({ near: radius + 2.5, far: radius + 7.0 });
 // 각도(yaw/pitch)는 어느 단계에서도 건드리지 않는다. 바뀌는 건 "무엇을 바라볼지(target)"와
 // "얼마나 떨어질지(radius)"뿐이다. 그래서 전환이 회전이 아니라 미끄러지는 이동으로 보인다.
 // target은 배 위치 기준 오프셋이라, 배가 움직여도 프레이밍이 유지된다.
-const CAM_DEFAULT = { target: [0.0, 0.22, 0.0], radius: 9.7 };
+// 예전엔 배율 하나(1.9)를 축·반경에 똑같이 곱했다. 그런데 이 프로파일은 길쭉해서
+// (길이/지름 2.36) 섬 바위를 담을 만큼 굵히려면 병이 터무니없이 길어졌다.
+// 실측하니 바위 하나(pCube29)가 병축에서 반경 2.01까지 뻗어 굵기를 혼자 결정하고 있었다
+// (나머지는 전부 1.61 이하). 그래서 축과 반경 배율을 분리해, 필요한 만큼만 굵히고
+// 길이는 덜 늘렸다. 물 클리핑 셰이더도 같은 두 값을 쓴다.
+const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
+const BOTTLE_SCALE_R = 3.1;                  // 반경(굵기) 배율
+// 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
+const BOTTLE_SHIFT_X = 1.70;
+// 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
+const BOTTLE_CENTER_X = BOTTLE_SHIFT_X + ((-1.75 + 1.55) / 2) * BOTTLE_SCALE_X;
+const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
+
+// 프리셋 값은 가로가 넉넉한 화면(비율 1.6) 기준으로 잡은 것이다. 세로 FOV가 고정이라
+// 화면이 좁아질수록 같은 radius에서 배가 화면 폭을 넘친다 — 실측으로 세로 390x844에서
+// 기본 92%, 키워드 98%까지 차서 좌우가 잘렸다. FOV를 건드리면 기기마다 화각이 달라지므로
+// radius만 화면 비율에 맞춰 늘려 "가로 프레이밍"을 일정하게 유지한다.
+const CAM_REF_ASPECT = 1.6;
+const CAM_MAX_WIDEN = 1.25;   // 너무 멀어져 배가 점이 되지 않도록 상한을 둔다
+// 결과 화면만 상한이 다르다. 담아야 하는 게 배(길이 약 3)가 아니라 병 전체(길이 8.1)라,
+// 같은 상한을 쓰면 세로 화면에서 병 좌우가 잘렸다(실측 가로 점유 100%).
+const CAM_MAX_WIDEN_RESULT = 1.9;
+const radiusForAspect = (radius, aspect, maxWiden) =>
+  radius * Math.min(maxWiden || CAM_MAX_WIDEN, Math.max(1, CAM_REF_ASPECT / aspect));
+
+// target은 배 위치 기준 오프셋. 예전엔 (0, 0.22, 0)이라 배 원점을 봤는데, 배의 실제
+// 부피 중심은 (0.21, 0.55, -0.01)이라 화면에서 배가 오른쪽으로 치우쳤다(가로 화면 +2.4%,
+// 세로 화면 +6.4%). 부피 중심을 바라보게 해서 화면 비율과 무관하게 가운데 오도록 했다.
+const CAM_DEFAULT = { target: [0.21, 0.55, -0.01], radius: 9.7 };
 const CAM_STEPS = {
   // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
   region:   { target: [1.30, 1.35, -0.30], radius: 12.2 },
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
-  keywords: { target: [0.0, 0.45, 0.0], radius: 8.4 },
+  keywords: { target: [0.21, 0.62, -0.01], radius: 8.4 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
-  result:   { target: [0.0, 0.58, 0.0], radius: 13.2 },
+  result:   { target: [BOTTLE_CENTER_X, BOTTLE_Y, 0.0], radius: 18.6, widen: CAM_MAX_WIDEN_RESULT },
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
@@ -1024,8 +1052,6 @@ const SMOKE_LEAN = 0.07;       // 옆으로 기우는 정도
 // ("지저분해진다"는 게 이것). 불투명하면 서로 가려서 하나의 덩어리로 보인다.
 const SMOKE_SOLID_UNTIL = 0.68;
 
-const BOTTLE_SCALE = 1.9;
-const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
 // 병 옆면 프로파일 [축위치 u, 반지름]. LatheGeometry와 물 클리핑이 같은 값을 쓴다.
 // 반지름이 u에 따라 변하는데 클리핑을 상수 반지름으로 두면, 좁은 목 쪽에서 수면이
 // 병을 뚫고 나온다(직사각형으로 잘린 바다가 보이던 원인).
@@ -1082,7 +1108,10 @@ const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-
 // 프리셋을 고치면 안개 범위 자기검증도 자동으로 따라오도록 여기서 파생시킨다.
 const CAM_RADIUS = (function () {
   const all = [CAM_DEFAULT.radius].concat(Object.keys(CAM_STEPS).map((k) => CAM_STEPS[k].radius));
-  return { near: Math.min.apply(null, all), far: Math.max.apply(null, all) };
+  // 좁은 화면에서는 radiusForAspect가 최대 CAM_MAX_WIDEN배까지 밀어내므로 그것까지 감안한다.
+  const widest = [CAM_DEFAULT].concat(Object.keys(CAM_STEPS).map((k) => CAM_STEPS[k]))
+    .reduce((m, p) => Math.max(m, p.radius * (p.widen || CAM_MAX_WIDEN)), 0);
+  return { near: Math.min.apply(null, all), far: widest };
 })();
 
 const REGION_SAND = {
@@ -1164,6 +1193,8 @@ class BottleScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     // 그림자는 가장 싼 방식(BasicShadowMap)만 쓴다. 가장자리가 각지지만
     // 로우폴리 스타일과 오히려 어울리고, 부드럽게 만들 이유가 없다.
+    // 병 안 물 덩어리를 수평면으로 자르는 데 쓴다 (_buildBottleWater).
+    this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
     // 프레임 성능 워치독: 초반 ~2초간 평균 프레임타임이 계속 느리면(약 33fps 미만)
@@ -1192,7 +1223,10 @@ class BottleScene {
     this.scene.fog = new THREE.Fog(0xbfe3ec, fog0.near, fog0.far);
 
     // 망원렌즈 느낌: FOV를 좁혀서 시점을 돌려도 보이는 영역(특히 섬 배경)이 좁게 유지되도록 함
-    this.camera = new THREE.PerspectiveCamera(34, 1, 0.05, 30);
+    // far는 가장 멀리 빠졌을 때의 안개 끝보다 뒤에 있어야 한다. 그러지 않으면 안개가
+    // 바다를 다 지우기 전에 far 평면이 먼저 잘라 타일 경계가 드러난다.
+    // (결과 프리셋이 병이 커지며 18.6까지 멀어져 예전 고정값 30으로는 모자랐다.)
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.05, fogRangeFor(CAM_RADIUS.far).far + 6);
 
     // 시간대에 따라 색·세기가 바뀌므로 인스턴스를 들고 있는다 (_applyTime 참고)
     this.ambLight = new THREE.AmbientLight(0xffffff, 0.75);
@@ -1241,6 +1275,7 @@ class BottleScene {
     this._buildBoat();
     this._buildSmokePool();
     this._buildBottleShell();
+    this._buildBottleWater();
     // Rock/Beachhouse/Ship 실제 블렌더 모델은 GLB에서 비동기로 로드 — 로드 완료 전엔
     // 그 자리만 비어있고(섬 슬라이드·파도·카메라 등 나머지는 그대로 정상 동작),
     // 로드되는 즉시 islandGroup·boat 안에 그대로 꽂아 넣는 방식.
@@ -1369,6 +1404,8 @@ class BottleScene {
         // 반사가 카메라로 오도록 방위각을 -z 쪽으로 돌렸다.
         // y는 원래 값(0.74)에 가깝게 유지 — 이 성분이 물의 확산광 밝기를 결정해서, 낮추면 바다가 어두워진다.
         uSunDirection: { value: new THREE.Vector3(0.30, 0.72, -0.62).normalize() },
+        // 반짝임 전용 태양 방향. 확산광(uSunDirection)과 분리해 카메라와 같이 돌린다.
+        uSpecSunDir: { value: new THREE.Vector3(0.30, 0.72, -0.62).normalize() },
           uExposure: { value: 1.15 },
           uTime: { value: 0 },
           uBoatX: { value: 0 },
@@ -1389,7 +1426,8 @@ class BottleScene {
         uClipOn: { value: 0.0 },
         uClipCenter: { value: new THREE.Vector3(0, 0, 0) },
         uClipT: { value: 0.0 },
-        uClipScale: { value: BOTTLE_SCALE },
+        uClipScaleX: { value: BOTTLE_SCALE_X },
+        uClipScaleR: { value: BOTTLE_SCALE_R },
         uProfU: { value: BOTTLE_PROFILE.map((p) => p[0]) },
         uProfR: { value: BOTTLE_PROFILE.map((p) => p[1]) },
         },
@@ -1450,6 +1488,7 @@ class BottleScene {
         uniform vec3 uOceanColor;
         uniform vec3 uSkyColor;
         uniform vec3 uSunDirection;
+        uniform vec3 uSpecSunDir;
         uniform float uExposure;
         uniform float uSpecOn;
         uniform float uSpecPower;
@@ -1462,7 +1501,8 @@ class BottleScene {
         uniform float uClipOn;
         uniform vec3 uClipCenter;
         uniform float uClipT;
-        uniform float uClipScale;
+        uniform float uClipScaleX;
+        uniform float uClipScaleR;
         uniform float uProfU[7];
         uniform float uProfR[7];
 
@@ -1493,8 +1533,8 @@ class BottleScene {
           if (uClipOn > 0.5) {
             vec3 rel = vWorldPos - uClipCenter;
             // LatheGeometry를 Z로 +90도 돌려 축을 X로 눕혔다. 그래서 로컬 축 좌표는 -x다.
-            float ax = -rel.x / uClipScale;
-            float rad = bottleRadiusAt(ax) * uClipScale;
+            float ax = -rel.x / uClipScaleX;
+            float rad = bottleRadiusAt(ax) * uClipScaleR;
             // 병 안쪽이면 1, 바깥이면 0. 경계는 살짝 부드럽게 이어준다.
             float inside = 1.0 - smoothstep(rad - 0.08, rad + 0.08, length(rel.yz));
             // uClipT가 0이면 전부 그대로 보이고, 1이면 병 바깥이 완전히 사라진다.
@@ -1516,7 +1556,8 @@ class BottleScene {
           float diffuse = clamp(dot(normal, sunDir), 0.0, 1.0);
           vec3 water = (1.0 - fresnel) * uOceanColor * diffuse;
 
-          vec3 reflectDir = reflect(-sunDir, normal);
+          // 반짝임만 별도의 태양 방향을 쓴다 (아래 _updateSpecAnchor 참고).
+          vec3 reflectDir = reflect(-normalize(uSpecSunDir), normal);
           float spec = pow(max(dot(reflectDir, viewDir), 0.0), uSpecPower);
           vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
@@ -1789,11 +1830,34 @@ class BottleScene {
 
     const group = new THREE.Group();
     group.add(rim, glass, cork);
-    group.scale.setScalar(BOTTLE_SCALE);
-    group.position.set(0, BOTTLE_Y, 0);
+    group.scale.set(BOTTLE_SCALE_X, BOTTLE_SCALE_R, BOTTLE_SCALE_R);
+    group.position.set(BOTTLE_SHIFT_X, BOTTLE_Y, 0);
     group.visible = false;
     this.scene.add(group);
     this.bottleGroup = group;
+  }
+
+  /**
+   * 병 안 수면 아래를 채우는 물 덩어리.
+   * 파도 메쉬는 "표면" 한 장뿐이라, 병을 아래에서 올려다보면 수심이 통째로 비어 보였다.
+   * 병 안쪽 프로파일을 살짝 줄여 같은 모양으로 만들고, 월드 기준 수평면으로 잘라
+   * 수면 아래만 남긴다. 색은 시간대별 바다색을 따라간다(_applyTime).
+   */
+  _buildBottleWater() {
+    const pts = BOTTLE_PROFILE.map(([u, r]) => new THREE.Vector2(r * 0.985, u));
+    const geo = new THREE.LatheGeometry(pts, 40);
+    geo.rotateZ(Math.PI / 2);
+    // 자를 높이는 파도 골(진폭 약 0.14)보다 조금 아래다. 마루에서는 표면이 덮고,
+    // 골에서도 덩어리 윗면이 드러나지 않는 선을 실측으로 잡았다.
+    this.bottleWaterMat = new THREE.MeshBasicMaterial({
+      color: 0x2fb3e6, transparent: true, opacity: 0,
+      side: THREE.FrontSide, depthWrite: true,
+      clippingPlanes: [new THREE.Plane(new THREE.Vector3(0, -1, 0), -0.05)],
+    });
+    const mesh = new THREE.Mesh(geo, this.bottleWaterMat);
+    mesh.renderOrder = 18;      // 유리(20)·테두리(19)보다 먼저
+    this.bottleWater = mesh;
+    this.bottleGroup.add(mesh);
   }
 
   playIntro(onSettled) {
@@ -1898,6 +1962,29 @@ class BottleScene {
     };
   }
 
+  /**
+   * 반짝임 띠를 처음 시점에서 잡은 자리에 붙들어 둔다.
+   *
+   * 반짝임은 reflect(태양, 파면)과 시선이 얼마나 맞는지로 정해진다. 태양이 월드에
+   * 고정돼 있으면 카메라를 돌릴수록 그 조건을 만족하는 자리가 화면 밖으로 밀려난다.
+   * 실측하면 orbitYaw를 -0.8에서 +0.8로 돌릴 때 반짝임 중심이 화면 가로 10%에서 92%로
+   * 쓸려가고, 화면 점유도 7.8%에서 1.7%로 줄어 배 주변이 텅 비었다.
+   *
+   * 그래서 반짝임에 쓰는 태양 방향만 카메라 yaw만큼 같이 돌린다. 반짝임이 생기는
+   * "자리"는 화면에 머물고, 파면이 바뀌는 대로 반짝이는 각도만 달라진다.
+   * 물의 확산광은 원래 태양 방향(uSunDirection)을 그대로 써서 전체 음영은 흔들리지 않는다.
+   */
+  _updateSpecAnchor() {
+    const wu = this.waterMesh.material.uniforms;
+    const base = wu.uSunDirection.value;
+    const c = Math.cos(this.orbitYaw), s = Math.sin(this.orbitYaw);
+    wu.uSpecSunDir.value.set(
+      base.x * c + base.z * s,
+      base.y,
+      -base.x * s + base.z * c
+    );
+  }
+
   /** from→to 사이 k(0~1) 지점의 색·세기를 실제 씬에 반영한다. */
   _applyTime(k) {
     const a = this._timeFrom, b = this._timeTo;
@@ -1914,6 +2001,11 @@ class BottleScene {
     paintSky(this.scene.background, this._skyColors);
     mixHex(this.scene.fog.color, a.fog, b.fog);
     mixHex(wu.uOceanColor.value, a.ocean, b.ocean);
+    // 병 안 물 덩어리도 같은 바다색을 쓰되, 표면이 하늘을 반사해 조금 밝은 걸 감안해 섞는다.
+    if (this.bottleWaterMat) {
+      this.bottleWaterMat.color.copy(wu.uOceanColor.value)
+        .lerp(TMP_COLOR.set(wu.uSkyColor.value.getHex()), 0.18);
+    }
     mixHex(wu.uSkyColor.value, a.skyRefl, b.skyRefl);
     mixHex(this.sunLight.color, a.sun, b.sun);
     mixHex(this.rimLight.color, a.rim, b.rim);
@@ -1944,10 +2036,10 @@ class BottleScene {
    */
   _setCamStep(step) {
     const p = CAM_STEPS[step] || CAM_DEFAULT;
-    const to = { tx: p.target[0], ty: p.target[1], tz: p.target[2], radius: p.radius };
+    const to = { tx: p.target[0], ty: p.target[1], tz: p.target[2], radius: p.radius, widen: p.widen || CAM_MAX_WIDEN };
     if (!this._camCur) { this._camCur = { ...to }; this._camFrom = { ...to }; this._camTo = to; this._camT = 1; return; }
     const cur = this._camTo;
-    if (cur && cur.tx === to.tx && cur.ty === to.ty && cur.tz === to.tz && cur.radius === to.radius) return;
+    if (cur && cur.tx === to.tx && cur.ty === to.ty && cur.tz === to.tz && cur.radius === to.radius && cur.widen === to.widen) return;
     this._camFrom = { ...this._camCur };
     this._camTo = to;
     this._camT = 0;
@@ -2222,22 +2314,26 @@ class BottleScene {
         ty: a.ty + (b.ty - a.ty) * k,
         tz: a.tz + (b.tz - a.tz) * k,
         radius: a.radius + (b.radius - a.radius) * k,
+        // widen도 같이 이어줘야 한다. 빼먹으면 전환이 끝난 뒤 _camCur에 widen이 없어
+        // 결과 화면이 기본 상한으로 되돌아가 병이 다시 잘린다.
+        widen: a.widen + (b.widen - a.widen) * k,
       };
     }
     this.bottleMat.opacity = 0.28 * this.bottleT;
     this.bottleRimMat.opacity = 0.62 * this.bottleT;
     this.bottleCorkMat.opacity = 0.9 * this.bottleT;
+    this.bottleWaterMat.opacity = 0.9 * this.bottleT;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
     // 병은 scene에 직접 붙어 있어 배를 따라가지 않았다. '오가는 중'처럼 배가 이동하는
     // 상태로 결과 화면에 오면 병만 원점에 남아 화면 밖으로 사라진다.
-    this.bottleGroup.position.x = this.boat.position.x;
+    this.bottleGroup.position.x = this.boat.position.x + BOTTLE_SHIFT_X;
 
     // 바다를 병 안으로 가둔다. bottleT가 0→1로 가는 동안 반지름과 길이를 넓은 값에서
     // 병 크기까지 좁혀와서, 바다가 병 속으로 빨려드는 것처럼 보이게 한다.
     const wc = this.waterMesh.material.uniforms;
     if (this.bottleT > 0.01) {
       const t = Math.min(1, this.bottleT);
-      const bx = this.boat.position.x;
+      const bx = this.boat.position.x + BOTTLE_SHIFT_X;
       wc.uClipOn.value = 1.0;
       wc.uClipCenter.value.set(bx, BOTTLE_Y, 0);
       wc.uClipT.value = t;
@@ -2247,7 +2343,7 @@ class BottleScene {
 
     const boatPos = this.boat.position;
     const cam = this._camCur;
-    const radius = cam.radius;
+    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen);
     // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
     const tX = boatPos.x + cam.tx, tY = cam.ty, tZ = cam.tz;
     // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
@@ -2264,10 +2360,11 @@ class BottleScene {
     // ?debug=1 로 접속해 드래그로 각도를 잡은 뒤, HUD에 찍히는 값을 여기 붙여넣으면 된다.
     const baseYaw = -0.45, basePitch = 0.60;
     const yaw = baseYaw + this.orbitYaw;
+    this._updateSpecAnchor();
     const pitch = basePitch + this.orbitPitch;
     // 병이 뜬 뒤에는 병 중심을 축으로 돈다. 그래야 아크가 병 주위를 정확히 감싼다.
     const orbT = this.bottleT > 0.01;
-    const oX = orbT ? this.boat.position.x : tX;
+    const oX = orbT ? this.boat.position.x + BOTTLE_CENTER_X : tX;
     const oY = orbT ? BOTTLE_Y : tY;
     const oZ = orbT ? 0 : tZ;
     this.camera.position.set(
@@ -2280,7 +2377,7 @@ class BottleScene {
 
     // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
     if (this.bottleT > 0.01) {
-      this.camera.lookAt(this.boat.position.x, BOTTLE_Y, 0);
+      this.camera.lookAt(this.boat.position.x + BOTTLE_CENTER_X, BOTTLE_Y, 0);
     } else {
       this.camera.lookAt(tX, tY, tZ);
     }
