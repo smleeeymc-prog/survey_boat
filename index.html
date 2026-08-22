@@ -961,7 +961,7 @@ const fogRangeFor = (radius) => ({ near: radius + 2.5, far: radius + 7.0 });
 // (나머지는 전부 1.61 이하). 그래서 축과 반경 배율을 분리해, 필요한 만큼만 굵히고
 // 길이는 덜 늘렸다. 물 클리핑 셰이더도 같은 두 값을 쓴다.
 const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
-const BOTTLE_SCALE_R = 2.48;                 // 반경(굵기) 배율 (3.1의 80%)
+const BOTTLE_SCALE_R = 2.8;                  // 반경(굵기) 배율
 // 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
 const BOTTLE_SHIFT_X = 1.70;
 // 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
@@ -994,6 +994,10 @@ const CAM_STEPS = {
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
+// 아카이브에서 "다시 한 문장 남기기"로 돌아올 때의 줌인.
+// 기본 시점의 몇 배 거리에서 시작해 몇 초에 걸쳐 당겨올지.
+const REENTER_ZOOM_FROM = 1.7;
+const REENTER_ZOOM_SEC = 1.8;
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
 // ── 시간대 팔레트 ──────────────────────────────────────────────────────────
@@ -1046,7 +1050,7 @@ const TIME_OF_DAY = {
   },
 };
 
-const TIME_MOVE_SEC = 2.6;
+const TIME_MOVE_SEC = 2.0;
 const TMP_COLOR = new THREE.Color();
 // 배경 하늘을 칠할 때 쓰는 작업용 색 네 개 (_refreshSky). 매 프레임 새로 만들지 않는다.
 const TMP_SKY = [0, 0, 0, 0].map(() => new THREE.Color());
@@ -1319,17 +1323,19 @@ class BottleScene {
     this._camCur = null;
     this._camFrom = null;
     this._camTo = null;
+    this._camDur = CAM_MOVE_SEC;
     this._camT = 1;
     this._setCamStep(null);
 
     // 시간대 보간 상태. setTimeOfDay()가 목적지를 갈아끼운다.
-    this._timeKey = "day";
+    this._timeKey = INITIAL_TIME_KEY;
     this._timeFrom = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeTo = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeT = 1;
     this._skyColors = TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h));
-    // 병에 들어간 뒤 배경이 되돌아갈 하늘. 처음 화면과 같은 팔레트를 그대로 참조한다.
-    this._initialSky = TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h));
+    // 병에 들어간 뒤 배경이 될 색. 처음 화면의 단색 배경을 CSS에서 그때그때 읽어온다.
+    this.bgFallback = document.getElementById("bgFallback");
+    this._splashColor = new THREE.Color();
     this._skyBlend = 0;
     // 해는 절대 좌표가 아니라 "배 기준 오프셋"으로 들고 있는다.
     // '오가는 중'에서 배가 멀리 이동하면 그림자 절두체(±7)를 벗어나 그림자가 사라지기 때문.
@@ -1984,15 +1990,18 @@ class BottleScene {
   /**
    * 배경 하늘을 그린다.
    *
-   * 병이 떠오르면 배경만 처음 화면의 하늘로 되돌린다. 병 안(빛·물·반짝임)은 고른 시간대를
-   * 그대로 유지하므로, 내가 고른 시간이 병 속에 봉해지고 그 병이 처음 그 하늘 위에
-   * 놓인 것처럼 보인다. 되돌아갈 색은 INITIAL_TIME_KEY 하나로 처음 화면과 묶여 있어
-   * 나중에 처음 화면 색을 바꿔도 따로 손댈 필요가 없다.
+   * 병이 떠오르면 배경이 처음 화면(#bgFallback)의 단색으로 수렴한다. 병 안(빛·물·반짝임)은
+   * 고른 시간대를 그대로 유지하므로, 내가 고른 시간이 병 속에 봉해지고 그 병이 처음 그
+   * 배경 위에 놓인 것처럼 보인다. 색은 CSS에서 매번 읽어오니 --cream 을 바꾸면 따라온다.
    */
   _refreshSky() {
     const bt = Math.min(1, Math.max(0, this.bottleT));
+    if (bt > 0.001 && this.bgFallback) {
+      // 값을 여기 옮겨 적지 않고 CSS에서 읽는다. 나중에 --cream 을 바꾸면 이 배경도 따라온다.
+      this._splashColor.setStyle(getComputedStyle(this.bgFallback).backgroundColor);
+    }
     for (let i = 0; i < 4; i++) {
-      TMP_SKY[i].copy(this._skyColors[i]).lerp(this._initialSky[i], bt);
+      TMP_SKY[i].copy(this._skyColors[i]).lerp(this._splashColor, bt);
     }
     paintSky(this.scene.background, TMP_SKY);
     this._skyBlend = bt;
@@ -2079,6 +2088,7 @@ class BottleScene {
     this._camFrom = { ...this._camCur };
     this._camTo = to;
     this._camT = 0;
+    this._camDur = CAM_MOVE_SEC;
   }
 
   show(step, appState) {
@@ -2108,19 +2118,35 @@ class BottleScene {
     // 같은 1.1초 안에 오려면 50 가까이를 가로질러야 한다. 수식으로는 끊김 없이 이어지지만
     // (프레임당 이동이 종 모양으로 오르내린다) 화면에는 확 낚아채는 줌인으로 보였다.
     // 무대가 어차피 0.7초 동안 페이드 인하므로, 이미 자리를 잡은 채 떠오르는 편이 자연스럽다.
-    if (!wasVisible) this._snapCamera();
+    if (!wasVisible) this._reenter();
   }
 
-  /** 카메라·둘러보기·병을 전환 없이 목적지 값으로 세운다. 화면에 안 보일 때만 쓴다. */
-  _snapCamera() {
-    this._camFrom = { ...this._camTo };
-    this._camCur = { ...this._camTo };
-    this._camT = 1;
+  /**
+   * 씬이 숨은 사이에 처음 상태로 되돌려 놓고, 다시 나타날 때는 줌인만 보여준다.
+   *
+   * 결과 화면의 카메라는 병을 담느라 멀리 물러난 데다 둘러보던 각도까지 남아 있다.
+   * 그대로 이징하면 1.1초 동안 50 가까이를 가로지르며 시선까지 휘어 들어와 뒤틀려 보였다.
+   * 각도·병·시간대는 안 보이는 동안 처음 값으로 되돌리고 거리만 뒤에서 당겨온다.
+   * 방향이 이미 맞아 있으니 화면에는 깨끗한 줌인만 남는다.
+   */
+  _reenter() {
     this.orbitYaw = 0; this.orbitPitch = 0;
     this._orbitFrom = { yaw: 0, pitch: 0 };
     this._orbitT = 1;
     this.bottleT = this.bottleTarget;
-    this._refreshSky();
+
+    // 시간대도 처음 값으로 되돌린다. 앞사람이 고른 시간이 다음 사람 첫 화면에 남지 않게.
+    this._timeKey = INITIAL_TIME_KEY;
+    this._timeFrom = TIME_OF_DAY[INITIAL_TIME_KEY];
+    this._timeTo = TIME_OF_DAY[INITIAL_TIME_KEY];
+    this._timeT = 1;
+    this._applyTime(1);
+
+    // 목적지(각도·바라보는 지점)는 이미 맞춰져 있고, 거리만 뒤에서 시작한다.
+    this._camFrom = { ...this._camTo, radius: this._camTo.radius * REENTER_ZOOM_FROM };
+    this._camCur = { ...this._camFrom };
+    this._camT = 0;
+    this._camDur = REENTER_ZOOM_SEC;
   }
 
   capture() {
@@ -2376,7 +2402,7 @@ class BottleScene {
       this.orbitPitch = this._orbitFrom.pitch * k;
     }
     if (this._camT < 1) {
-      this._camT = Math.min(1, this._camT + dt / CAM_MOVE_SEC);
+      this._camT = Math.min(1, this._camT + dt / this._camDur);
       const k = easeInOutCubic(this._camT);
       const a = this._camFrom, b = this._camTo;
       this._camCur = {
