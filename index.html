@@ -14,6 +14,8 @@
     --font:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
   }
   html,body{height:100%;}
+  /* 가로 피커가 100vw로 화면 끝까지 나가므로, 그 때문에 페이지가 옆으로 밀리지 않게 막는다. */
+  body{overflow-x:hidden;}
   body{
     font-family:var(--font); background:transparent; color:var(--ink);
     min-height:100vh; display:flex; flex-direction:column; align-items:center;
@@ -81,7 +83,8 @@
   .chat-btn:hover{ transform:translateY(-2px); }
   .chat-btn span.arrow{ color:var(--gold2); font-size:18px; }
 
-  .onboard-line{ font-size:16px; line-height:1.8; text-align:center; padding:40px 10px; color:var(--ink2); flex:1; display:flex; align-items:center; justify-content:center; }
+  /* 인트로에서 배경이 빈 하늘뿐이라 흰 글자로 띄운다. */
+  .onboard-line{ font-size:16px; line-height:1.8; text-align:center; padding:40px 10px; color:#FFFFFF; flex:1; display:flex; align-items:center; justify-content:center; }
 
   .fade-stage{ opacity:0; transform:translateY(8px); transition:opacity .8s ease, transform .8s ease; }
   .fade-stage.show{ opacity:1; transform:translateY(0); }
@@ -132,8 +135,22 @@
   .picker-track.dragging{ cursor:grabbing; scroll-snap-type:none; }
   .picker.v .picker-track{ height:96px; touch-action:pan-y; scroll-snap-type:y mandatory; }
   .picker.h .picker-track{ touch-action:pan-x; scroll-snap-type:x mandatory; }
+  /* 가로 피커만 #app의 좌우 여백을 뚫고 화면 끝까지 나간다.
+     예전엔 앱 폭(최대 520px) 안에 갇혀 양끝 선택지가 잘린 채로 끝났다. */
+  .picker.h{ width:100vw; margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw); }
 
-  .picker-list{ display:flex; }
+  .picker-list{ display:flex; position:relative; }
+  /* 눈금자. 선택지와 함께 스크롤해야 눈금과 선택지가 어긋나지 않으므로 list 안에 둔다.
+     굵은 눈금이 선택지 한가운데, 그 사이를 5등분해 가는 눈금 4개가 들어간다. */
+  .picker-ruler{
+    position:absolute; left:0; bottom:0; height:20px; pointer-events:none;
+    background-repeat:repeat-x; background-position:0 bottom, 0 bottom;
+  }
+  /* 눈금자 뒤에 옅게 깔아 3D 위에서도 눈금이 읽히게 한다. */
+  .picker.h .picker-fade{
+    position:absolute; left:0; right:0; bottom:0; height:64px; pointer-events:none; z-index:0;
+    background:linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,.42) 55%, rgba(255,255,255,.66) 100%);
+  }
   .picker.v .picker-list{ flex-direction:column; }
   .picker.h .picker-list{ flex-direction:row; }
 
@@ -145,7 +162,8 @@
     transition:opacity .25s ease, transform .25s ease, filter .3s ease;
   }
   .picker.v .picker-item{ height:96px; padding:0 18px; }
-  .picker.h .picker-item{ padding:26px 6px; }   /* 폭은 layout()이 픽셀로 넣는다 */
+  /* 눈금자 자리를 아래에 비워 둔다 */
+  .picker.h .picker-item{ padding:26px 6px 34px; position:relative; z-index:1; }   /* 폭은 layout()이 픽셀로 넣는다 */
   /* 양끝 여백용 빈 항목. 스냅 대상이 아니어야 해서 snap-align을 주지 않는다. */
   .picker-pad{ flex:0 0 auto; align-self:stretch; pointer-events:none; }
 
@@ -445,11 +463,21 @@ function renderOnboard(){
   const btn = document.createElement("button");
   btn.className = "chat-btn fade-stage";
   btn.innerHTML = `한 문장 남기러 가기 <span class="arrow">→</span>`;
-  btn.onclick = () => { state.step="region"; render(); };
+  btn.onclick = () => {
+    if(btn.disabled) return;
+    btn.disabled = true;
+    // 문장과 버튼을 먼저 걷어내고, 카메라가 내려앉는 동안 화면을 비워 둔다.
+    line.classList.remove("show"); btn.classList.remove("show");
+    if(window.BottleScene){
+      window.BottleScene.introDescend(()=>{
+        // 배가 자리를 잡고 0.5초 머문 뒤에 다음 질문이 올라온다.
+        setTimeout(()=>{ state.step="region"; render(); }, 500);
+      });
+    } else { state.step="region"; render(); }
+  };
   d.appendChild(btn);
 
-  // 배가 화면 중앙에 뽁 하고 등장해 물가로 떨어져 정착한 뒤,
-  // 문장 → 버튼 순서로 페이드인
+  // 시점이 하늘까지 올라가 아무것도 남지 않으면, 문장 → 버튼 순서로 페이드인
   if(window.BottleScene){
     window.BottleScene.playIntro(()=>{
       requestAnimationFrame(()=> line.classList.add("show"));
@@ -473,7 +501,8 @@ function renderRegion(){
   if(!state.region) state.region = REGIONS[0];
   d.appendChild(snapPicker(
     REGIONS.map(r=>({id:r,label:r})), "v", state.region,
-    (v)=>{ state.region=v; }, "굴려서 고르세요"
+    // 예전엔 상태만 바꿔서, 씬은 다음 단계로 넘어갈 때 show()가 불릴 때에야 색이 반영됐다.
+    (v)=>{ state.region=v; if(window.BottleScene) window.BottleScene.applyRegion(v); }, "굴려서 고르세요"
   ));
   d.appendChild(bottomBar("onboard","다음",()=>{ state.step="state"; render(); }).row);
   return d;
@@ -653,13 +682,18 @@ function renderConsent(){
  * value  : 현재 선택된 id
  * onPick : 선택이 바뀔 때 호출 (render()를 부르지 않는다 — 다시 그리면 스크롤 위치가 날아간다)
  */
+// 눈금 색 — 검정 55%
+const TICK_COLOR = "rgba(0,0,0,.55)";
+
 function snapPicker(items, axis, value, onPick, hint){
   const horiz = axis === "h";
   const wrap=document.createElement("div"); wrap.className="picker "+axis;
   const frame=document.createElement("div"); frame.className="picker-frame";
   const track=document.createElement("div"); track.className="picker-track";
   const list=document.createElement("div"); list.className="picker-list";
-  track.appendChild(list); wrap.appendChild(frame); wrap.appendChild(track);
+  track.appendChild(list); wrap.appendChild(frame);
+  if(horiz){ const fade=document.createElement("div"); fade.className="picker-fade"; wrap.appendChild(fade); }
+  wrap.appendChild(track);
 
   // 양끝 여백은 "빈 항목"으로 준다.
   // 예전엔 첫/마지막 항목의 margin으로 줬는데, 브라우저가 마지막 flex 항목의 바깥 여백을
@@ -668,7 +702,8 @@ function snapPicker(items, axis, value, onPick, hint){
   // 빈 항목은 진짜 폭을 가진 flex 항목이라 어느 브라우저에서나 스크롤 범위에 잡힌다.
   const padStart=document.createElement("div"); padStart.className="picker-pad";
   const padEnd=document.createElement("div"); padEnd.className="picker-pad";
-  if(horiz) list.appendChild(padStart);
+  const ruler=document.createElement("div"); ruler.className="picker-ruler";
+  if(horiz){ list.appendChild(padStart); list.appendChild(ruler); }
 
   const els=items.map((it,i)=>{
     const el=document.createElement("div"); el.className="picker-item";
@@ -691,7 +726,9 @@ function snapPicker(items, axis, value, onPick, hint){
    * 예전 72%에서는 이웃이 자기 폭의 19%만 비쳐서, 고르고 나면 다른 선택지가
    * 아예 없는 것처럼 보였다. 58%면 이웃이 36%씩 걸쳐 좌우에 뭐가 더 있는지 보인다.
    */
-  const ITEM_RATIO = 0.58;
+  // 트랙이 #app(최대 520px)이 아니라 화면 폭 전체를 쓰게 되면서 기준이 달라졌다.
+  // 항목 간격을 예전보다 10% 좁혀 양옆 선택지가 중심에 더 가까이 붙는다.
+  const ITEM_RATIO = 0.47;
   function layout(){
     if(!horiz) return;
     const trackW = track.clientWidth;
@@ -705,6 +742,17 @@ function snapPicker(items, axis, value, onPick, hint){
     }
     padStart.style.width = pad+"px";
     padEnd.style.width = pad+"px";
+    // 눈금자: 굵은 눈금은 항목 간격(itemW)마다, 가는 눈금은 그 1/5마다.
+    // 첫 항목 중심이 pad + itemW/2 이므로 거기서부터 반복시킨다.
+    const minor = itemW / 5;
+    const originMajor = pad + itemW / 2 - 1;
+    const originMinor = pad + itemW / 2 - 0.5;
+    ruler.style.width = (pad * 2 + itemW * els.length) + "px";
+    ruler.style.backgroundImage =
+      `repeating-linear-gradient(to right, ${TICK_COLOR} 0 2px, transparent 2px ${itemW}px),` +
+      `repeating-linear-gradient(to right, ${TICK_COLOR} 0 1px, transparent 1px ${minor}px)`;
+    ruler.style.backgroundSize = `100% 20px, 100% 11px`;
+    ruler.style.backgroundPosition = `${originMajor}px bottom, ${originMinor}px bottom`;
     list.style.paddingLeft = "0px";
     list.style.paddingRight = "0px";
   }
@@ -935,7 +983,9 @@ const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
 const SHIP_SCALE = 3.38;   // 2.6의 130%
 
 // 선체 끝과 섬(Beachhouse) 사이에 둘 여유 거리. 눈으로 맞추는 값.
-const ISLAND_CLEARANCE = 0.12;   // 뱃머리와 오두막 사이 여유. 닿기 직전까지 붙였다
+// 섬을 옆(-z)으로 비켜 놓았으므로 배가 집 정면을 파고들 걱정이 줄었다.
+// 그만큼 x로 더 붙여 배가 선착장에 정박한 것처럼 보이게 한다.
+const ISLAND_CLEARANCE = -0.9;   // 뱃머리와 오두막 사이 여유. 닿기 직전까지 붙였다
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
@@ -964,8 +1014,22 @@ const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
 const BOTTLE_SCALE_R = 2.8;                  // 반경(굵기) 배율
 // 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
 const BOTTLE_SHIFT_X = 1.70;
+// 섬을 옆(-z)으로 비켜 놓으면서 내용물의 z 중심이 0에서 -1.54로 옮겨갔다.
+// 병 축이 z=0에 그대로 있으면 섬이 통째로 유리 밖으로 나간다(실측 여유 -1.70).
+// 내용물 중심 쪽으로 옮겨 같은 굵기로 최대한 담는다.
+const BOTTLE_SHIFT_Z = -1.40;
 // 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
 const BOTTLE_CENTER_X = BOTTLE_SHIFT_X + ((-1.75 + 1.55) / 2) * BOTTLE_SCALE_X;
+// 셰이더의 bottleRadiusAt과 같은 계산. 연기를 병 안에 가두는 데 쓴다(_updateSmoke).
+// u는 병 로컬 축 좌표 — 월드 x에서 u = -(x - 병중심x) / BOTTLE_SCALE_X 로 얻는다.
+function bottleRadiusAtU(u) {
+  if (u <= BOTTLE_PROFILE[0][0] || u >= BOTTLE_PROFILE[BOTTLE_PROFILE.length - 1][0]) return 0;
+  for (let i = 0; i < BOTTLE_PROFILE.length - 1; i++) {
+    const [u0, r0] = BOTTLE_PROFILE[i], [u1, r1] = BOTTLE_PROFILE[i + 1];
+    if (u >= u0 && u <= u1) return r0 + (r1 - r0) * ((u - u0) / (u1 - u0));
+  }
+  return 0;
+}
 const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
 
 // 프리셋 값은 가로가 넉넉한 화면(비율 1.6) 기준으로 잡은 것이다. 세로 FOV가 고정이라
@@ -986,7 +1050,10 @@ const radiusForAspect = (radius, aspect, maxWiden) =>
 const CAM_DEFAULT = { target: [0.21, 0.55, -0.01], radius: 9.7 };
 const CAM_STEPS = {
   // 지역: 오두막과 지형 쪽으로 넘어가 화면을 채우고, 지붕이 보이도록 시점을 올린다.
-  region:   { target: [1.30, 1.35, -0.30], radius: 12.2 },
+  // 이 단계만 둘러보던 각도를 무시하고 정해진 시점으로 간다(벗어나면 원래 시점으로 돌아온다).
+  // 실측으로 배+섬 세로 중심이 화면 56%(중앙보다 아래)였다. 바라보는 지점을 낮추면
+  // 화면에서는 내용물이 위로 올라온다. 섬을 옆으로 옮긴 만큼 z도 따라 잡았다.
+  region:   { target: [1.30, 0.80, -1.10], radius: 12.2, orbit: { yaw: 0, pitch: 0 } },
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
   keywords: { target: [0.21, 0.62, -0.01], radius: 8.4 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
@@ -994,8 +1061,22 @@ const CAM_STEPS = {
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
+// 카메라가 배를 따라가는 속도 상한(월드 단위/초).
+// 상태를 바꾸면 배가 순간이동한다 — '돌아온 사람'은 -2.4로, '오가는 중'에서 나오면 0으로.
+// 카메라가 그대로 따라붙으면 월드에 고정된 바다 전체가 한 프레임에 그 거리만큼 훑고 지나가
+// 파도가 요동치는 것처럼 보인다. 상한을 두면 순간이동만 흡수되고, 순항 속도(1.2/초)는
+// 상한보다 낮아 그대로 통과하므로 배는 화면 한가운데에 그대로 있는다.
+const CAM_FOLLOW_MAX_SPEED = 4.0;
 // 아카이브에서 "다시 한 문장 남기기"로 돌아올 때의 줌인.
 // 기본 시점의 몇 배 거리에서 시작해 몇 초에 걸쳐 당겨올지.
+// 인트로: 시작하기를 누르면 기본 시점에서 이만큼 수직 상승해 하늘만 남기고,
+// 한 문장 남기러 가기를 누르면 같은 높이를 그대로 내려온다.
+// 높이는 "바다가 안개 너머로 완전히 밀려나는 지점"으로 잡았다 — 더 올려도 그림은 같다.
+// 실측: 10만 올라가도 바다가 안개 너머로 완전히 밀려나 하늘만 남는다. 여유만 두고 15로 잡았다.
+const INTRO_LIFT = 15;
+const INTRO_RISE_SEC = 1.6;
+const INTRO_FALL_SEC = 2.0;
+
 const REENTER_ZOOM_FROM = 1.7;
 const REENTER_ZOOM_SEC = 1.8;
 const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -1051,6 +1132,17 @@ const TIME_OF_DAY = {
 };
 
 const TIME_MOVE_SEC = 2.0;
+
+// 3D 전체 밝기 배수. 조명 세기와 물 노출에 함께 곱해진다.
+const SCENE_BRIGHTNESS = 1.1;
+// 카메라 기본 각도. 셰이더 앵커(_updateSpecAnchor)와 드래그 제한이 같은 값을 봐야 한다.
+const BASE_YAW = -0.45, BASE_PITCH = 0.60;
+const basePitchOf = () => BASE_PITCH;
+// 상하로 둘러볼 때 반짝임이 카메라를 따라가는 비율.
+// 실측: 0이면 반짝임 중심이 세로로 63%p 쓸려가고, 0.7이면 17%p — 예전 움직임의 27%다.
+const SPEC_PITCH_FOLLOW = 0.7;
+// 상태별 배 출렁임 배수 (바다 파도 자체는 건드리지 않는다)
+const BOAT_BOB_BY_MODE = { between: 1.5 };
 const TMP_COLOR = new THREE.Color();
 // 배경 하늘을 칠할 때 쓰는 작업용 색 네 개 (_refreshSky). 매 프레임 새로 만들지 않는다.
 const TMP_SKY = [0, 0, 0, 0].map(() => new THREE.Color());
@@ -1117,8 +1209,10 @@ function cubicBezier(x1, y1, x2, y2) {
  * 예전엔 지수 감쇠라 시작이 제일 빠르고 끝이 늘어졌다 — ease-in이 없었다.
  * 이 값만 바꾸면 움직임이 바뀐다. 블렌더에서 잡은 곡선을 그대로 넣어도 된다.
  */
-const SHORE_EASE = cubicBezier(0.45, 0.02, 0.25, 1.0);
-const SHORE_MOVE_SEC = 2.2;
+// 첫 제어점을 (0,0)으로 내려 출발의 ease-in을 없앴다. 시작하자마자 최고 속도로 들어와
+// 끝에서만 감속한다 — '돌아온 사람'에서 집이 뜸들이지 않고 바로 들어온다.
+const SHORE_EASE = cubicBezier(0.0, 0.0, 0.25, 1.0);
+const SHORE_MOVE_SEC = 1.83;   // 2.2에서 20% 단축
 
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
@@ -1282,10 +1376,13 @@ class BottleScene {
     // Beachhouse는 자기 원점 기준 -0.479부터 시작한다. 둘 사이에 여유를 둔다.
     // 값을 키우면 섬이 멀어지고, 줄이면 가까워진다.
     this.islandRestX = 0.49 * SHIP_SCALE + 0.479 + ISLAND_CLEARANCE;
+    // 집이 바라보는 정면(+x를 향해 보는 시점) 기준으로 왼쪽 = -z.
+    // 섬 전체(바위 포함)를 배 반지름만큼 그쪽으로 밀어, 배가 집 정면을 막고 서지 않게 한다.
+    this.islandSideShift = -(0.49 * SHIP_SCALE);
     // 2.45로는 아직 또렷하게 보이는 중에 사라져 버렸다.
     // 안개가 삼킬 만큼 멀리 보낸다(안개 끝이 카메라 거리+7이므로 그보다 더 가야 한다).
     this.islandGoneX = this.islandRestX + 12;
-    this.islandGroup.position.z = -SHIP_GLB_POS.z;
+    this.islandGroup.position.z = -SHIP_GLB_POS.z + this.islandSideShift;
 
     this._buildWater();
     this._buildShadowCatcher();
@@ -1306,6 +1403,14 @@ class BottleScene {
     this._shoreT = 1;
     this.introPlaying = false;
     this.introDone = false;
+    // 인트로 수직 이동 (카메라와 바라보는 지점을 함께 올린다)
+    this._lift = 0;
+    this._liftFrom = 0;
+    this._liftTarget = 0;
+    this._liftT = 1;
+    this._liftDur = 1;
+    this._liftEase = easeOutCubic;
+    this._onLiftDone = null;
     this.visible = false;
     // getElapsedTime()과 getDelta()를 같은 프레임에 함께 부르면 서로 델타를 잡아먹어
     // dt가 항상 0에 가까워진다(연기가 멈춰있던 원인) → getDelta()만 쓰고 elapsed는 직접 누적
@@ -1348,7 +1453,10 @@ class BottleScene {
     this.orbitYaw = 0;
     this.orbitPitch = 0;
     this._orbitFrom = { yaw: 0, pitch: 0 };
+    this._orbitTo = { yaw: 0, pitch: 0 };
     this._orbitT = 1;
+    this._orbitOverridden = false;
+    this._orbitSaved = { yaw: 0, pitch: 0 };
     this._bindDrag();
 
     // 카메라 각도 튜닝용: ?debug=1로 접속하면 현재 yaw/pitch/radius를 화면에 실시간 표시
@@ -1388,7 +1496,10 @@ class BottleScene {
         // 병이 뜬 뒤에는 각도 제한을 풀고, 지금 보고 있던 각도에서 그대로 이어서
         // 병 둘레를 아크로 돈다. 좌우는 끝없이, 위아래는 뒤집히지 않게만 막는다.
         this.orbitYaw -= dx * 0.005;
-        this.orbitPitch = Math.max(-1.45, Math.min(1.45, this.orbitPitch + dy * 0.004));
+        // 제한은 orbitPitch가 아니라 "실제 시선각(basePitch + orbitPitch)"에 걸어야 한다.
+        // 예전처럼 orbitPitch를 ±1.45로 묶으면 basePitch 0.60이 더해져 아래로는 -0.85(-49도)까지밖에
+        // 못 내려가, 병 바닥을 올려다볼 수 없었다. 이제 위아래로 ±1.45(±83도)까지 균등하게 열린다.
+        this.orbitPitch = Math.max(-1.45 - basePitchOf(), Math.min(1.45 - basePitchOf(), this.orbitPitch + dy * 0.004));
       } else {
         // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
         this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.0032));
@@ -1856,7 +1967,7 @@ class BottleScene {
     const group = new THREE.Group();
     group.add(rim, glass, cork);
     group.scale.set(BOTTLE_SCALE_X, BOTTLE_SCALE_R, BOTTLE_SCALE_R);
-    group.position.set(BOTTLE_SHIFT_X, BOTTLE_Y, 0);
+    group.position.set(BOTTLE_SHIFT_X, BOTTLE_Y, BOTTLE_SHIFT_Z);
     group.visible = false;
     this.scene.add(group);
     this.bottleGroup = group;
@@ -1885,11 +1996,28 @@ class BottleScene {
     this.bottleGroup.add(mesh);
   }
 
+  /**
+   * 시작하기를 누른 직후. 기본 시점 그대로 수직으로 올라가 하늘만 남는다.
+   * (예전엔 배가 뽁 튀어올라 물에 떨어지는 연출이었다.)
+   */
   playIntro(onSettled) {
     if (this.introDone) { onSettled && onSettled(); return; }
-    this.introPlaying = true;
-    this.introStart = this.elapsed;
-    this._onSettled = onSettled;
+    this.introDone = true;
+    this._liftTo(INTRO_LIFT, INTRO_RISE_SEC, easeInOutCubic, onSettled);
+  }
+
+  /** 온보딩에서 다음으로 넘어갈 때. 올라간 높이를 그대로 내려온다 — 감속만 있고 가속은 없다. */
+  introDescend(onDone) {
+    this._liftTo(0, INTRO_FALL_SEC, easeOutCubic, onDone);
+  }
+
+  _liftTo(to, dur, ease, onDone) {
+    this._liftFrom = this._lift;
+    this._liftTarget = to;
+    this._liftT = 0;
+    this._liftDur = dur;
+    this._liftEase = ease;
+    this._onLiftDone = onDone || null;
   }
 
   revealBottle(onDone) {
@@ -1978,9 +2106,11 @@ class BottleScene {
       ocean: wu.uOceanColor.value.getHex(),
       skyRefl: wu.uSkyColor.value.getHex(),
       exposure: wu.uExposure.value,
-      sun: this.sunLight.color.getHex(), sunI: this.sunLight.intensity,
-      rim: this.rimLight.color.getHex(), rimI: this.rimLight.intensity,
-      amb: this.ambLight.color.getHex(), ambI: this.ambLight.intensity,
+      // 팔레트 값으로 되돌려 담는다 — _applyTime이 다시 SCENE_BRIGHTNESS를 곱하므로
+      // 여기서 곱해진 값을 그대로 넣으면 전환할 때마다 밝기가 누적된다.
+      sun: this.sunLight.color.getHex(), sunI: this.sunLight.intensity / SCENE_BRIGHTNESS,
+      rim: this.rimLight.color.getHex(), rimI: this.rimLight.intensity / SCENE_BRIGHTNESS,
+      amb: this.ambLight.color.getHex(), ambI: this.ambLight.intensity / SCENE_BRIGHTNESS,
       spec: wu.uSpecColor.value.getHex(), specI: wu.uSpecStrength.value,
       sunPos: this._sunOffset.toArray(),
       shadow: this.shadowMat ? this.shadowMat.opacity : 0,
@@ -2023,10 +2153,22 @@ class BottleScene {
     const wu = this.waterMesh.material.uniforms;
     const base = wu.uSunDirection.value;
     const c = Math.cos(this.orbitYaw), s = Math.sin(this.orbitYaw);
+    // 좌우: 카메라가 도는 만큼 태양도 같이 돌려 반짝임 자리를 붙들어 둔다.
+    const x = base.x * c + base.z * s;
+    const y = base.y;
+    const z = -base.x * s + base.z * c;
+    // 상하: 완전히 붙들면 파도를 훑는 느낌까지 죽는다. 카메라가 위아래로 움직인 만큼의
+    // 70%만 따라 돌려서, 반짝임이 움직이는 정도를 예전의 30%로 남긴다.
+    const yaw = BASE_YAW + this.orbitYaw;
+    const ax = Math.cos(yaw), az = -Math.sin(yaw);        // 카메라 오른쪽 축(수평)
+    // 부호: +가 맞다. 반대로 걸면 오히려 반짝임이 더 크게 쓸려간다(실측 63%p → 75%p).
+    const a = SPEC_PITCH_FOLLOW * this.orbitPitch;
+    const ca = Math.cos(a), sa = Math.sin(a), t = 1 - ca;
+    // 임의 축(ax, 0, az) 둘레 회전 — 로드리게스 공식
     wu.uSpecSunDir.value.set(
-      base.x * c + base.z * s,
-      base.y,
-      -base.x * s + base.z * c
+      x * (t * ax * ax + ca) + y * (-sa * az)          + z * (t * ax * az),
+      x * (sa * az)          + y * (ca)                + z * (-sa * ax),
+      x * (t * ax * az)      + y * (sa * ax)           + z * (t * az * az + ca)
     );
   }
 
@@ -2069,10 +2211,11 @@ class BottleScene {
       this.sunLight.castShadow = op > 0.001;
       this.shadowCatcher.visible = op > 0.001;
     }
-    wu.uExposure.value = a.exposure + (b.exposure - a.exposure) * k;
-    this.sunLight.intensity = a.sunI + (b.sunI - a.sunI) * k;
-    this.rimLight.intensity = a.rimI + (b.rimI - a.rimI) * k;
-    this.ambLight.intensity = a.ambI + (b.ambI - a.ambI) * k;
+    wu.uExposure.value = (a.exposure + (b.exposure - a.exposure) * k) * SCENE_BRIGHTNESS;
+    // 전체 밝기는 팔레트 네 벌을 다 고치지 않고 여기 한 곳에서 곱한다.
+    this.sunLight.intensity = (a.sunI + (b.sunI - a.sunI) * k) * SCENE_BRIGHTNESS;
+    this.rimLight.intensity = (a.rimI + (b.rimI - a.rimI) * k) * SCENE_BRIGHTNESS;
+    this.ambLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS;
   }
 
   /**
@@ -2106,10 +2249,25 @@ class BottleScene {
     if (step !== "result") {
       this.bottleTarget = 0;
       this.bottleRevealed = false;
-      // 둘러보던 각도를 한 프레임에 0으로 되돌리면, 카메라 위치는 1.1초에 걸쳐 이징으로
-      // 움직이는데 각도만 즉시 튀어 시점이 뒤틀린다. 위치와 같은 시간·같은 곡선으로 같이 돌린다.
-      this._orbitFrom = { yaw: this.orbitYaw, pitch: this.orbitPitch };
-      this._orbitT = (this.orbitYaw === 0 && this.orbitPitch === 0) ? 1 : 0;
+      // 병을 둘러볼 때만 열리는 넓은 각도가 다음 단계로 새어 나가지 않게 일반 범위로 접는다.
+      this._easeOrbitTo(
+        Math.max(-0.85, Math.min(0.85, this.orbitYaw)),
+        Math.max(-0.2, Math.min(0.55, this.orbitPitch))
+      );
+    }
+
+    // 둘러보던 시점은 단계를 넘어가도 그대로 둔다 — 줌인·패닝(프리셋의 target/radius)만 바뀐다.
+    // 예외로 프리셋에 orbit이 지정된 단계(지역)는 그 시점으로 갈아타고, 벗어나면 원래 시점으로 돌아온다.
+    const override = (CAM_STEPS[step] || {}).orbit;
+    if (override) {
+      if (!this._orbitOverridden) {
+        this._orbitSaved = { yaw: this.orbitYaw, pitch: this.orbitPitch };
+        this._orbitOverridden = true;
+      }
+      this._easeOrbitTo(override.yaw, override.pitch);
+    } else if (this._orbitOverridden) {
+      this._orbitOverridden = false;
+      this._easeOrbitTo(this._orbitSaved.yaw, this._orbitSaved.pitch);
     }
 
     // 씬이 숨어 있다가 다시 나타나는 길 — 아카이브에서 "다시 한 문장 남기기"를 누르는 경우다.
@@ -2130,10 +2288,18 @@ class BottleScene {
    * 방향이 이미 맞아 있으니 화면에는 깨끗한 줌인만 남는다.
    */
   _reenter() {
+    // 스플래시 → 온보딩 첫 진입에서는 인트로가 이미 시점을 올리는 중이다.
+    // 그때 여기서 높이를 0으로 되돌리고 줌인까지 걸면 인트로가 통째로 지워진다.
+    const introRunning = this._liftT < 1;
+
     this.orbitYaw = 0; this.orbitPitch = 0;
     this._orbitFrom = { yaw: 0, pitch: 0 };
+    this._orbitTo = { yaw: 0, pitch: 0 };
     this._orbitT = 1;
+    this._orbitOverridden = false;
+    this._orbitSaved = { yaw: 0, pitch: 0 };
     this.bottleT = this.bottleTarget;
+    if (!introRunning) { this._lift = 0; this._liftT = 1; this._onLiftDone = null; }
 
     // 시간대도 처음 값으로 되돌린다. 앞사람이 고른 시간이 다음 사람 첫 화면에 남지 않게.
     this._timeKey = INITIAL_TIME_KEY;
@@ -2142,6 +2308,13 @@ class BottleScene {
     this._timeT = 1;
     this._applyTime(1);
 
+    if (introRunning) {
+      // 인트로가 시점을 올렸다 내리는 것으로 등장을 대신하므로 줌인은 걸지 않는다.
+      this._camFrom = { ...this._camTo };
+      this._camCur = { ...this._camTo };
+      this._camT = 1;
+      return;
+    }
     // 목적지(각도·바라보는 지점)는 이미 맞춰져 있고, 거리만 뒤에서 시작한다.
     this._camFrom = { ...this._camTo, radius: this._camTo.radius * REENTER_ZOOM_FROM };
     this._camCur = { ...this._camFrom };
@@ -2149,9 +2322,41 @@ class BottleScene {
     this._camDur = REENTER_ZOOM_SEC;
   }
 
+  /**
+   * 아카이브 카드에 남길 스냅샷.
+   *
+   * 예전엔 버튼을 누른 그 순간의 화면을 그대로 떠서, 둘러보다 누르면 기울어진 각도가
+   * 그대로 남았다. 둘러보던 각도를 잠깐 0으로 되돌린 기본 구도로 찍고 원래대로 돌려놓는다.
+   * 배경(하늘)·그림자·바다를 잠시 끄면 알파가 뚫려 병과 그 안만 남은 그림이 나온다.
+   */
   capture() {
+    const saved = {
+      yaw: this.orbitYaw, pitch: this.orbitPitch,
+      bg: this.scene.background,
+      shadow: this.shadowCatcher ? this.shadowCatcher.visible : false,
+      clearAlpha: this.renderer.getClearAlpha(),
+      fogNear: this.scene.fog.near, fogFar: this.scene.fog.far,
+    };
+
+    this.orbitYaw = 0; this.orbitPitch = 0;
+    this.scene.background = null;
+    if (this.shadowCatcher) this.shadowCatcher.visible = false;
+    this.renderer.setClearAlpha(0);
+    // 안개는 색을 섞을 뿐 알파를 비우지 않는다. 배경을 없앤 채로 두면 병 밖 바다가
+    // 안개색으로 칠해진 채 남으므로, 찍는 동안만 안개를 멀리 밀어 둔다.
+    this.scene.fog.near = 1e6; this.scene.fog.far = 1e7;
+
+    this._placeCamera();
     this.renderer.render(this.scene, this.camera);
-    return this.canvas.toDataURL("image/png");
+    const url = this.canvas.toDataURL("image/png");
+
+    this.orbitYaw = saved.yaw; this.orbitPitch = saved.pitch;
+    this.scene.background = saved.bg;
+    if (this.shadowCatcher) this.shadowCatcher.visible = saved.shadow;
+    this.renderer.setClearAlpha(saved.clearAlpha);
+    this.scene.fog.near = saved.fogNear; this.scene.fog.far = saved.fogFar;
+    this._placeCamera();
+    return url;
   }
 
   _wrapWave(x) {
@@ -2223,8 +2428,83 @@ class BottleScene {
         s.mat.opacity = 1;
       }
 
+      // [버그] 병이 풍경을 감싼 뒤에도 굴뚝 연기는 유리를 뚫고 밖으로 흘러나갔다.
+      // 물처럼 셰이더로 자르지 않고, 덩어리가 병 벽에 다가갈수록 흐려지다 벽에 닿으면 지운다.
+      if (this.bottleT > 0.01) {
+        const cx = this.boat.position.x + BOTTLE_SHIFT_X;
+        const u = -(s.mesh.position.x - cx) / BOTTLE_SCALE_X;
+        const rad = bottleRadiusAtU(u) * BOTTLE_SCALE_R;
+        const dist = Math.hypot(s.mesh.position.y - BOTTLE_Y, s.mesh.position.z - BOTTLE_SHIFT_Z) + s.mesh.scale.x;
+        const slack = rad - dist;
+        if (slack <= 0) { s.active = false; s.mesh.visible = false; continue; }
+        // 벽에 닿기 직전 구간에서만 흐려진다 — 갑자기 사라지지 않게
+        const near = Math.min(1, slack / (0.30 * BOTTLE_SCALE_R));
+        s.mat.opacity *= (1 - this.bottleT) + this.bottleT * near;
+      }
+
       if (s.age >= SMOKE_LIFE) { s.active = false; s.mesh.visible = false; }
     }
+  }
+
+  /** 둘러보던 각도를 카메라 전환과 같은 곡선으로 목적지까지 옮긴다. */
+  _easeOrbitTo(yaw, pitch) {
+    if (Math.abs(yaw - this.orbitYaw) < 1e-4 && Math.abs(pitch - this.orbitPitch) < 1e-4) {
+      this._orbitT = 1;
+      return;
+    }
+    this._orbitFrom = { yaw: this.orbitYaw, pitch: this.orbitPitch };
+    this._orbitTo = { yaw, pitch };
+    this._orbitT = 0;
+  }
+
+  /** 카메라를 지금 상태(단계 프리셋·둘러보기 각도·병·인트로 높이)에 맞춰 놓는다. */
+  _placeCamera() {
+    const cam = this._camCur;
+    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen);
+    // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
+    const tX = (this._camFollowX ?? this.boat.position.x) + cam.tx, tY = cam.ty, tZ = cam.tz;
+    // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
+    const fogRange = fogRangeFor(radius);
+    this.scene.fog.near = fogRange.near;
+    this.scene.fog.far = fogRange.far;
+    // 안개가 거의 다 낀 지점부터 지우기 시작해서, 안개가 완전히 낀 지점에서 사라진다.
+    const wuFade = this.waterMesh.material.uniforms;
+    wuFade.uFadeNear.value = fogRange.far * 0.80;
+    wuFade.uFadeFar.value = fogRange.far;
+    // 기본 시점: 좌측 상단에서 내려다보는 아이소메트릭. yaw가 음수면 카메라가 배 왼쪽으로,
+    // pitch 0.60rad(≈34°)은 정아이소메트릭(35.26°)에 가까운 내려다보기 각도.
+    // 바라보는 지점(lookAt)은 그대로 배 — 카메라 위치만 옮긴 것.
+    // ?debug=1 로 접속해 드래그로 각도를 잡은 뒤, HUD에 찍히는 값을 여기 붙여넣으면 된다.
+    const yaw = BASE_YAW + this.orbitYaw;
+    this._updateSpecAnchor();
+    const pitch = BASE_PITCH + this.orbitPitch;
+    // 병이 뜬 뒤에는 병 중심을 축으로 돈다. 그래야 아크가 병 주위를 정확히 감싼다.
+    // 예전엔 bottleT가 0.01을 넘는 순간 회전 중심이 배에서 병으로 한 프레임에 갈아탔다.
+    // 결과 화면을 빠져나올 때 그 지점에서 시점이 툭 튀는 원인이었다. bottleT로 이어준다.
+    const bt = Math.min(1, Math.max(0, this.bottleT));
+    const bX = this.boat.position.x + BOTTLE_CENTER_X;
+    const oX = tX + (bX - tX) * bt;
+    const oY = tY + (BOTTLE_Y - tY) * bt;
+    const oZ = tZ + (BOTTLE_SHIFT_Z - tZ) * bt;
+    this.camera.position.set(
+      oX + radius * Math.sin(yaw) * Math.cos(pitch),
+      oY + radius * Math.sin(pitch),
+      oZ + radius * Math.cos(yaw) * Math.cos(pitch)
+    );
+    // 병을 둘러볼 때는 수면 아래로도 내려갈 수 있어야 아래에서 올려다보는 각이 나온다.
+    // 수면 아래로 내려가는 건 병을 둘러볼 때만 허용한다. 바닥을 bt로 풀어줘야
+    // 병에서 빠져나오는 동안 카메라가 갑자기 위로 튀지 않는다.
+    this.camera.position.y = Math.max(this.camera.position.y, 0.16 * (1 - bt));
+    // 인트로: 시점을 통째로 수직 이동시킨다. 카메라와 바라보는 지점을 같은 양만큼 올리므로
+    // 각도는 그대로고 프레임만 위로 미끄러진다. 충분히 올라가면 바다가 안개 너머로 밀려나
+    // 하늘만 남는다(수면 제한보다 뒤에 더해야 올라간 높이가 깎이지 않는다).
+    this.camera.position.y += this._lift;
+
+    // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
+    // oX/oY/oZ가 이미 bottleT로 이어져 있어서, 병이 없으면 그대로 배를 본다.
+    this.camera.lookAt(oX, oY + this._lift, oZ);
+
+    return { yaw, pitch, radius };
   }
 
   _animate() {
@@ -2282,26 +2562,7 @@ class BottleScene {
     wu.uAmpScale.value = 0.5 + 0.9 * this.windT;
     wu.uFlowPhase.value = this._flowPhase;
 
-    if (this.introPlaying) {
-      const et = t - this.introStart;
-      const popDur = 0.5, fallDur = 0.85;
-      if (et < popDur) {
-        const p = et / popDur;
-        this.boat.scale.setScalar(Math.min(1, p * 1.5));
-        this.boat.position.y = 0.95;
-        this.boat.position.x = 0;
-      } else if (et < popDur + fallDur) {
-        const p = (et - popDur) / fallDur;
-        this.boat.scale.setScalar(1);
-        this.boat.position.y = THREE.MathUtils.lerp(0.95, 0.0, easeOutBounce(p));
-      } else {
-        this.boat.scale.setScalar(1);
-        this.boat.position.y = 0.0;
-        this.introPlaying = false;
-        this.introDone = true;
-        this._onSettled && this._onSettled();
-      }
-    } else {
+    {
       // 2.2 → 3.2: 섬이 화면 밖(x≈3.05)에서 출발하는데 지수 감쇠라 초반에만 빨리 움직이고
       // 정작 프레임에 들어오는 구간에서 느려져서 "늦게 나타난다"는 인상을 줬다. 등장 거리
       // 자체를 줄이면 가로 화면(FOV가 훨씬 넓음)에서 '무한한 바다'에 섬이 새어 보이므로,
@@ -2375,13 +2636,30 @@ class BottleScene {
       headingDiff = ((headingDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
       this.headingY += headingDiff * Math.min(1, dt * 1.5);
 
+      // '오가는 중'은 파도를 잔잔하게 두면서도(windTarget 0.1) 배는 더 흔들려야
+      // 나아가는 느낌이 산다. 바다가 아니라 배에만 곱한다.
+      const bob = BOAT_BOB_BY_MODE[this.mode] ?? 1;
       this.boat.position.x = boatX;
-      this.boat.position.y = 0.0 + waveY;
-      this.boat.rotation.z = rotZ + waveSlope * 0.9;
+      this.boat.position.y = 0.0 + waveY * bob;
+      this.boat.rotation.z = rotZ + waveSlope * 0.9 * bob;
       this.boat.rotation.y = this.headingY + Math.sin(t * 0.5) * 0.08;
     }
 
     this._updateSmoke(dt);
+
+    // 카메라가 배를 따라가는 지점 — 순간이동은 상한 속도로 흡수한다 (CAM_FOLLOW_MAX_SPEED 참고)
+    if (this._camFollowX === undefined) this._camFollowX = this.boat.position.x;
+    {
+      const d = this.boat.position.x - this._camFollowX;
+      const step = CAM_FOLLOW_MAX_SPEED * dt;
+      this._camFollowX += Math.abs(d) <= step ? d : Math.sign(d) * step;
+    }
+
+    if (this._liftT < 1) {
+      this._liftT = Math.min(1, this._liftT + dt / this._liftDur);
+      this._lift = this._liftFrom + (this._liftTarget - this._liftFrom) * this._liftEase(this._liftT);
+      if (this._liftT >= 1) { const cb = this._onLiftDone; this._onLiftDone = null; cb && cb(); }
+    }
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
     // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
@@ -2397,9 +2675,9 @@ class BottleScene {
     // 결과에서 빠져나올 때 둘러보던 각도를 카메라 전환과 같은 곡선으로 되돌린다.
     if (this._orbitT < 1) {
       this._orbitT = Math.min(1, this._orbitT + dt / CAM_MOVE_SEC);
-      const k = 1 - easeInOutCubic(this._orbitT);
-      this.orbitYaw = this._orbitFrom.yaw * k;
-      this.orbitPitch = this._orbitFrom.pitch * k;
+      const k = easeInOutCubic(this._orbitT);
+      this.orbitYaw = this._orbitFrom.yaw + (this._orbitTo.yaw - this._orbitFrom.yaw) * k;
+      this.orbitPitch = this._orbitFrom.pitch + (this._orbitTo.pitch - this._orbitFrom.pitch) * k;
     }
     if (this._camT < 1) {
       this._camT = Math.min(1, this._camT + dt / this._camDur);
@@ -2431,54 +2709,13 @@ class BottleScene {
       const t = Math.min(1, this.bottleT);
       const bx = this.boat.position.x + BOTTLE_SHIFT_X;
       wc.uClipOn.value = 1.0;
-      wc.uClipCenter.value.set(bx, BOTTLE_Y, 0);
+      wc.uClipCenter.value.set(bx, BOTTLE_Y, BOTTLE_SHIFT_Z);
       wc.uClipT.value = t;
     } else {
       wc.uClipOn.value = 0.0;
     }
 
-    const boatPos = this.boat.position;
-    const cam = this._camCur;
-    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen);
-    // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
-    const tX = boatPos.x + cam.tx, tY = cam.ty, tZ = cam.tz;
-    // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
-    const fogRange = fogRangeFor(radius);
-    this.scene.fog.near = fogRange.near;
-    this.scene.fog.far = fogRange.far;
-    // 안개가 거의 다 낀 지점부터 지우기 시작해서, 안개가 완전히 낀 지점에서 사라진다.
-    const wuFade = this.waterMesh.material.uniforms;
-    wuFade.uFadeNear.value = fogRange.far * 0.80;
-    wuFade.uFadeFar.value = fogRange.far;
-    // 기본 시점: 좌측 상단에서 내려다보는 아이소메트릭. yaw가 음수면 카메라가 배 왼쪽으로,
-    // pitch 0.60rad(≈34°)은 정아이소메트릭(35.26°)에 가까운 내려다보기 각도.
-    // 바라보는 지점(lookAt)은 그대로 배 — 카메라 위치만 옮긴 것.
-    // ?debug=1 로 접속해 드래그로 각도를 잡은 뒤, HUD에 찍히는 값을 여기 붙여넣으면 된다.
-    const baseYaw = -0.45, basePitch = 0.60;
-    const yaw = baseYaw + this.orbitYaw;
-    this._updateSpecAnchor();
-    const pitch = basePitch + this.orbitPitch;
-    // 병이 뜬 뒤에는 병 중심을 축으로 돈다. 그래야 아크가 병 주위를 정확히 감싼다.
-    // 예전엔 bottleT가 0.01을 넘는 순간 회전 중심이 배에서 병으로 한 프레임에 갈아탔다.
-    // 결과 화면을 빠져나올 때 그 지점에서 시점이 툭 튀는 원인이었다. bottleT로 이어준다.
-    const bt = Math.min(1, Math.max(0, this.bottleT));
-    const bX = this.boat.position.x + BOTTLE_CENTER_X;
-    const oX = tX + (bX - tX) * bt;
-    const oY = tY + (BOTTLE_Y - tY) * bt;
-    const oZ = tZ + (0 - tZ) * bt;
-    this.camera.position.set(
-      oX + radius * Math.sin(yaw) * Math.cos(pitch),
-      oY + radius * Math.sin(pitch),
-      oZ + radius * Math.cos(yaw) * Math.cos(pitch)
-    );
-    // 병을 둘러볼 때는 수면 아래로도 내려갈 수 있어야 아래에서 올려다보는 각이 나온다.
-    // 수면 아래로 내려가는 건 병을 둘러볼 때만 허용한다. 바닥을 bt로 풀어줘야
-    // 병에서 빠져나오는 동안 카메라가 갑자기 위로 튀지 않는다.
-    this.camera.position.y = Math.max(this.camera.position.y, 0.16 * (1 - bt));
-
-    // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
-    // oX/oY/oZ가 이미 bottleT로 이어져 있어서, 병이 없으면 그대로 배를 본다.
-    this.camera.lookAt(oX, oY, oZ);
+    const { yaw, pitch, radius } = this._placeCamera();
 
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
