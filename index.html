@@ -146,6 +146,8 @@
   }
   .picker.v .picker-item{ height:96px; padding:0 18px; }
   .picker.h .picker-item{ padding:26px 6px; }   /* 폭은 layout()이 픽셀로 넣는다 */
+  /* 양끝 여백용 빈 항목. 스냅 대상이 아니어야 해서 snap-align을 주지 않는다. */
+  .picker-pad{ flex:0 0 auto; align-self:stretch; pointer-events:none; }
 
   /* 가운데가 아닌 항목은 물러나게 */
   .picker-item{ opacity:.25; transform:scale(.86); }
@@ -659,6 +661,15 @@ function snapPicker(items, axis, value, onPick, hint){
   const list=document.createElement("div"); list.className="picker-list";
   track.appendChild(list); wrap.appendChild(frame); wrap.appendChild(track);
 
+  // 양끝 여백은 "빈 항목"으로 준다.
+  // 예전엔 첫/마지막 항목의 margin으로 줬는데, 브라우저가 마지막 flex 항목의 바깥 여백을
+  // scrollWidth에 넣어주지 않아 스크롤이 끝까지 가지 못했다 — 실측으로 마지막 선택지가
+  // 가운데에서 74px 오른쪽에 멈췄다(필요한 scrollLeft 756, 실제 최대 682).
+  // 빈 항목은 진짜 폭을 가진 flex 항목이라 어느 브라우저에서나 스크롤 범위에 잡힌다.
+  const padStart=document.createElement("div"); padStart.className="picker-pad";
+  const padEnd=document.createElement("div"); padEnd.className="picker-pad";
+  if(horiz) list.appendChild(padStart);
+
   const els=items.map((it,i)=>{
     const el=document.createElement("div"); el.className="picker-item";
     el.innerHTML = it.desc
@@ -667,6 +678,7 @@ function snapPicker(items, axis, value, onPick, hint){
     el.addEventListener("click",()=>{ if(!moved) scrollToIndex(i, true); });
     list.appendChild(el); return el;
   });
+  if(horiz) list.appendChild(padEnd);
 
   /**
    * 가로 피커의 폭과 여백을 픽셀로 확정한다.
@@ -674,10 +686,12 @@ function snapPicker(items, axis, value, onPick, hint){
    * 퍼센트로 두면 항목 폭이 "리스트 콘텐츠 폭"을 기준으로 잡히는데, 그 콘텐츠 폭은
    * 다시 우리가 넣는 좌우 여백에 따라 줄어든다. 서로를 참조하는 꼴이라 계산이 어긋났다.
    *
-   * 선택 항목이 트랙 한가운데 오고 앞뒤 항목은 양옆으로 반쯤 걸쳐 나가도록,
-   * 항목 폭을 트랙의 72%로 잡고 남는 28%를 양끝에 절반씩 준다.
+   * 선택 항목이 트랙 한가운데 오고 앞뒤 항목이 양옆으로 넉넉히 걸쳐 보이도록,
+   * 항목 폭을 트랙의 58%로 잡고 남는 42%를 양끝에 절반씩 준다.
+   * 예전 72%에서는 이웃이 자기 폭의 19%만 비쳐서, 고르고 나면 다른 선택지가
+   * 아예 없는 것처럼 보였다. 58%면 이웃이 36%씩 걸쳐 좌우에 뭐가 더 있는지 보인다.
    */
-  const ITEM_RATIO = 0.72;
+  const ITEM_RATIO = 0.58;
   function layout(){
     if(!horiz) return;
     const trackW = track.clientWidth;
@@ -689,12 +703,8 @@ function snapPicker(items, axis, value, onPick, hint){
       el.style.marginLeft = "0px";
       el.style.marginRight = "0px";
     }
-    // 양끝 여백을 컨테이너 padding이 아니라 첫/마지막 항목의 margin으로 준다.
-    // 스크롤 컨테이너의 끝쪽 padding은 브라우저에 따라 scrollWidth에 안 잡혀서,
-    // 마지막 항목이 가운데까지 못 오고 오른쪽으로 치우친 채 멈춘다.
-    // flex 항목의 margin은 어느 브라우저에서나 스크롤 범위에 포함된다.
-    els[0].style.marginLeft = pad+"px";
-    els[els.length-1].style.marginRight = pad+"px";
+    padStart.style.width = pad+"px";
+    padEnd.style.width = pad+"px";
     list.style.paddingLeft = "0px";
     list.style.paddingRight = "0px";
   }
@@ -951,7 +961,7 @@ const fogRangeFor = (radius) => ({ near: radius + 2.5, far: radius + 7.0 });
 // (나머지는 전부 1.61 이하). 그래서 축과 반경 배율을 분리해, 필요한 만큼만 굵히고
 // 길이는 덜 늘렸다. 물 클리핑 셰이더도 같은 두 값을 쓴다.
 const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
-const BOTTLE_SCALE_R = 3.1;                  // 반경(굵기) 배율
+const BOTTLE_SCALE_R = 2.48;                 // 반경(굵기) 배율 (3.1의 80%)
 // 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
 const BOTTLE_SHIFT_X = 1.70;
 // 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
@@ -995,6 +1005,9 @@ const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2
 // amb(환경광)는 물체가 얼마나 어두워지지 않는지를 좌우한다 — 배가 시커멓게 죽지 않도록
 // 해가 약한 시간대일수록 오히려 넉넉히 준다.
 // shadow는 그림자 짙기(0이면 그림자 없음).
+// 처음 화면(스플래시·온보딩)이 쓰는 시간대. 병에 들어간 뒤 배경 하늘도 여기로 돌아온다.
+// 처음 화면 색을 바꾸고 싶으면 이 키만 바꾸면 둘이 같이 따라간다.
+const INITIAL_TIME_KEY = "day";
 const TIME_OF_DAY = {
   day: {
     sky: ["#3fa9d6", "#8fd6e8", "#bfe9ef", "#e9f7f2"],
@@ -1035,6 +1048,8 @@ const TIME_OF_DAY = {
 
 const TIME_MOVE_SEC = 2.6;
 const TMP_COLOR = new THREE.Color();
+// 배경 하늘을 칠할 때 쓰는 작업용 색 네 개 (_refreshSky). 매 프레임 새로 만들지 않는다.
+const TMP_SKY = [0, 0, 0, 0].map(() => new THREE.Color());
 
 // ── 유리병 ────────────────────────────────────────────────────────────────
 // 배를 감싸는 크기. 배(SHIP_SCALE 2.6)의 반지름이 약 0.70이라 여유를 두고 잡았다.
@@ -1157,7 +1172,7 @@ function makeSkyTexture(){
   const tex = new THREE.CanvasTexture(c);
   if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
   tex.__canvas = c;
-  paintSky(tex, TIME_OF_DAY.day.sky.map((h) => new THREE.Color(h)));
+  paintSky(tex, TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h)));
   return tex;
 }
 
@@ -1166,15 +1181,13 @@ function paintSky(tex, colors){
   const ctx = c.getContext("2d");
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
   // 정지점은 월드 좌표가 아니라 "화면 세로 위치"다 (배경 텍스처가 화면에 늘려 붙기 때문, 11장).
-  // 실측 결과 바다가 화면 세로 11%부터 배경을 덮기 시작해 21%면 절반, 44%면 거의 다 가린다.
-  // 예전 정지점(0.48 / 0.78)은 그 아래라 두 번째·세 번째 색이 화면에 거의 나타나지 못했고,
-  // 저녁 노을(#e2705f)과 자주색 띠(#a05a8c)가 통째로 묻혀 하늘이 탁한 청회색으로만 보였다.
-  // 그래서 네 색을 하늘이 실제로 드러나는 위쪽 구간으로 몰아넣는다.
+  // 바다가 화면 세로 11%부터 배경을 덮기 시작해 21%면 절반, 44%면 거의 다 가린다. 그래서
+  // 아래 두 정지점은 대부분 바다에 가리고, 색은 바다에 비쳐 은은하게만 배어나온다.
+  // 한 번 위쪽(0.09/0.16/0.24)으로 몰아 네 색을 또렷하게 세워 봤지만, 띠가 뚜렷하게 갈려
+  // 스며드는 느낌이 사라졌다. 원래 값이 낫다는 판단이라 되돌렸다.
   grad.addColorStop(0, "#" + colors[0].getHexString());
-  grad.addColorStop(0.09, "#" + colors[1].getHexString());
-  grad.addColorStop(0.16, "#" + colors[2].getHexString());
-  grad.addColorStop(0.24, "#" + colors[3].getHexString());
-  // 아래쪽은 바다에 가려 안 보이지만, 마지막 색으로 채워 그라디언트를 닫는다.
+  grad.addColorStop(0.48, "#" + colors[1].getHexString());
+  grad.addColorStop(0.78, "#" + colors[2].getHexString());
   grad.addColorStop(1, "#" + colors[3].getHexString());
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 8, 256);
@@ -1311,13 +1324,16 @@ class BottleScene {
 
     // 시간대 보간 상태. setTimeOfDay()가 목적지를 갈아끼운다.
     this._timeKey = "day";
-    this._timeFrom = TIME_OF_DAY.day;
-    this._timeTo = TIME_OF_DAY.day;
+    this._timeFrom = TIME_OF_DAY[INITIAL_TIME_KEY];
+    this._timeTo = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeT = 1;
-    this._skyColors = TIME_OF_DAY.day.sky.map((h) => new THREE.Color(h));
+    this._skyColors = TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h));
+    // 병에 들어간 뒤 배경이 되돌아갈 하늘. 처음 화면과 같은 팔레트를 그대로 참조한다.
+    this._initialSky = TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h));
+    this._skyBlend = 0;
     // 해는 절대 좌표가 아니라 "배 기준 오프셋"으로 들고 있는다.
     // '오가는 중'에서 배가 멀리 이동하면 그림자 절두체(±7)를 벗어나 그림자가 사라지기 때문.
-    this._sunOffset = new THREE.Vector3().fromArray(TIME_OF_DAY.day.sunPos);
+    this._sunOffset = new THREE.Vector3().fromArray(TIME_OF_DAY[INITIAL_TIME_KEY].sunPos);
     // 시작 시점에 한 번 적용한다. _applyTime은 전환 중(_timeT<1)에만 도는데,
     // 처음엔 이미 1이라 이 호출이 없으면 낮 팔레트가 화면에 반영되지 않는다.
     this._applyTime(1);
@@ -1325,6 +1341,8 @@ class BottleScene {
     // 드래그 오빗(카메라는 항상 배를 중심으로 둠)
     this.orbitYaw = 0;
     this.orbitPitch = 0;
+    this._orbitFrom = { yaw: 0, pitch: 0 };
+    this._orbitT = 1;
     this._bindDrag();
 
     // 카메라 각도 튜닝용: ?debug=1로 접속하면 현재 yaw/pitch/radius를 화면에 실시간 표시
@@ -1353,6 +1371,7 @@ class BottleScene {
     c.addEventListener("pointerdown", (e) => {
       dragging = true; lastX = e.clientX; lastY = e.clientY;
       c.style.cursor = "grabbing";
+      this._orbitT = 1;   // 손으로 잡으면 자동 복귀는 멈춘다
       try { c.setPointerCapture(e.pointerId); } catch (_e) {}
     });
     c.addEventListener("pointermove", (e) => {
@@ -1963,6 +1982,23 @@ class BottleScene {
   }
 
   /**
+   * 배경 하늘을 그린다.
+   *
+   * 병이 떠오르면 배경만 처음 화면의 하늘로 되돌린다. 병 안(빛·물·반짝임)은 고른 시간대를
+   * 그대로 유지하므로, 내가 고른 시간이 병 속에 봉해지고 그 병이 처음 그 하늘 위에
+   * 놓인 것처럼 보인다. 되돌아갈 색은 INITIAL_TIME_KEY 하나로 처음 화면과 묶여 있어
+   * 나중에 처음 화면 색을 바꿔도 따로 손댈 필요가 없다.
+   */
+  _refreshSky() {
+    const bt = Math.min(1, Math.max(0, this.bottleT));
+    for (let i = 0; i < 4; i++) {
+      TMP_SKY[i].copy(this._skyColors[i]).lerp(this._initialSky[i], bt);
+    }
+    paintSky(this.scene.background, TMP_SKY);
+    this._skyBlend = bt;
+  }
+
+  /**
    * 반짝임 띠를 처음 시점에서 잡은 자리에 붙들어 둔다.
    *
    * 반짝임은 reflect(태양, 파면)과 시선이 얼마나 맞는지로 정해진다. 태양이 월드에
@@ -1998,7 +2034,7 @@ class BottleScene {
       const toC = b.sky[i] instanceof THREE.Color ? b.sky[i] : new THREE.Color(b.sky[i]);
       this._skyColors[i].copy(fromC).lerp(toC, k);
     }
-    paintSky(this.scene.background, this._skyColors);
+    this._refreshSky();
     mixHex(this.scene.fog.color, a.fog, b.fog);
     mixHex(wu.uOceanColor.value, a.ocean, b.ocean);
     // 병 안 물 덩어리도 같은 바다색을 쓰되, 표면이 하늘을 반사해 조금 밝은 걸 감안해 섞는다.
@@ -2046,6 +2082,7 @@ class BottleScene {
   }
 
   show(step, appState) {
+    const wasVisible = this.visible;
     this.visible = ACTIVE_STEPS.includes(step);
     this.stage.classList.toggle("visible", this.visible);
     if (!this.visible) return;
@@ -2059,8 +2096,31 @@ class BottleScene {
     if (step !== "result") {
       this.bottleTarget = 0;
       this.bottleRevealed = false;
-      this.orbitYaw = 0; this.orbitPitch = 0;   // 둘러보던 각도를 되돌린다
+      // 둘러보던 각도를 한 프레임에 0으로 되돌리면, 카메라 위치는 1.1초에 걸쳐 이징으로
+      // 움직이는데 각도만 즉시 튀어 시점이 뒤틀린다. 위치와 같은 시간·같은 곡선으로 같이 돌린다.
+      this._orbitFrom = { yaw: this.orbitYaw, pitch: this.orbitPitch };
+      this._orbitT = (this.orbitYaw === 0 && this.orbitPitch === 0) ? 1 : 0;
     }
+
+    // 씬이 숨어 있다가 다시 나타나는 길 — 아카이브에서 "다시 한 문장 남기기"를 누르는 경우다.
+    // 여기서는 카메라를 이징으로 옮기지 않고 목적지에 바로 세운다.
+    // 결과 화면의 카메라는 병을 다 담느라 반지름 35 남짓까지 물러나 있어서, 기본 시점(12)까지
+    // 같은 1.1초 안에 오려면 50 가까이를 가로질러야 한다. 수식으로는 끊김 없이 이어지지만
+    // (프레임당 이동이 종 모양으로 오르내린다) 화면에는 확 낚아채는 줌인으로 보였다.
+    // 무대가 어차피 0.7초 동안 페이드 인하므로, 이미 자리를 잡은 채 떠오르는 편이 자연스럽다.
+    if (!wasVisible) this._snapCamera();
+  }
+
+  /** 카메라·둘러보기·병을 전환 없이 목적지 값으로 세운다. 화면에 안 보일 때만 쓴다. */
+  _snapCamera() {
+    this._camFrom = { ...this._camTo };
+    this._camCur = { ...this._camTo };
+    this._camT = 1;
+    this.orbitYaw = 0; this.orbitPitch = 0;
+    this._orbitFrom = { yaw: 0, pitch: 0 };
+    this._orbitT = 1;
+    this.bottleT = this.bottleTarget;
+    this._refreshSky();
   }
 
   capture() {
@@ -2298,6 +2358,9 @@ class BottleScene {
     this._updateSmoke(dt);
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
+    // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
+    // 눈에 보일 만큼 바뀐 프레임에만 칠한다.
+    if (Math.abs(this.bottleT - this._skyBlend) > 0.004) this._refreshSky();
     // 시간대 전환
     if (this._timeT < 1) {
       this._timeT = Math.min(1, this._timeT + dt / TIME_MOVE_SEC);
@@ -2305,6 +2368,13 @@ class BottleScene {
     }
 
     // 단계 전환: 각도는 그대로 두고 목적지(target)와 거리(radius)만 ease-in-out으로 이동한다.
+    // 결과에서 빠져나올 때 둘러보던 각도를 카메라 전환과 같은 곡선으로 되돌린다.
+    if (this._orbitT < 1) {
+      this._orbitT = Math.min(1, this._orbitT + dt / CAM_MOVE_SEC);
+      const k = 1 - easeInOutCubic(this._orbitT);
+      this.orbitYaw = this._orbitFrom.yaw * k;
+      this.orbitPitch = this._orbitFrom.pitch * k;
+    }
     if (this._camT < 1) {
       this._camT = Math.min(1, this._camT + dt / CAM_MOVE_SEC);
       const k = easeInOutCubic(this._camT);
@@ -2363,24 +2433,26 @@ class BottleScene {
     this._updateSpecAnchor();
     const pitch = basePitch + this.orbitPitch;
     // 병이 뜬 뒤에는 병 중심을 축으로 돈다. 그래야 아크가 병 주위를 정확히 감싼다.
-    const orbT = this.bottleT > 0.01;
-    const oX = orbT ? this.boat.position.x + BOTTLE_CENTER_X : tX;
-    const oY = orbT ? BOTTLE_Y : tY;
-    const oZ = orbT ? 0 : tZ;
+    // 예전엔 bottleT가 0.01을 넘는 순간 회전 중심이 배에서 병으로 한 프레임에 갈아탔다.
+    // 결과 화면을 빠져나올 때 그 지점에서 시점이 툭 튀는 원인이었다. bottleT로 이어준다.
+    const bt = Math.min(1, Math.max(0, this.bottleT));
+    const bX = this.boat.position.x + BOTTLE_CENTER_X;
+    const oX = tX + (bX - tX) * bt;
+    const oY = tY + (BOTTLE_Y - tY) * bt;
+    const oZ = tZ + (0 - tZ) * bt;
     this.camera.position.set(
       oX + radius * Math.sin(yaw) * Math.cos(pitch),
       oY + radius * Math.sin(pitch),
       oZ + radius * Math.cos(yaw) * Math.cos(pitch)
     );
     // 병을 둘러볼 때는 수면 아래로도 내려갈 수 있어야 아래에서 올려다보는 각이 나온다.
-    if (!orbT) this.camera.position.y = Math.max(this.camera.position.y, 0.16);
+    // 수면 아래로 내려가는 건 병을 둘러볼 때만 허용한다. 바닥을 bt로 풀어줘야
+    // 병에서 빠져나오는 동안 카메라가 갑자기 위로 튀지 않는다.
+    this.camera.position.y = Math.max(this.camera.position.y, 0.16 * (1 - bt));
 
     // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
-    if (this.bottleT > 0.01) {
-      this.camera.lookAt(this.boat.position.x + BOTTLE_CENTER_X, BOTTLE_Y, 0);
-    } else {
-      this.camera.lookAt(tX, tY, tZ);
-    }
+    // oX/oY/oZ가 이미 bottleT로 이어져 있어서, 병이 없으면 그대로 배를 본다.
+    this.camera.lookAt(oX, oY, oZ);
 
     if (this.debugCam && this.camDebugEl) {
       this.camDebugEl.textContent =
