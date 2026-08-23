@@ -1159,6 +1159,22 @@ const TIME_MOVE_SEC = 2.0;
 
 // 3D 전체 밝기 배수. 조명 세기와 물 노출에 함께 곱해진다.
 const SCENE_BRIGHTNESS = 1.1;
+
+// ── 물결(리플) ──────────────────────────────────────────────────────────
+// 물에 잠긴 물체 둘레에 흰 테두리가 겹겹이 도는 연출.
+// 새 지오메트리나 드로우콜을 만들지 않고 "이미 화면을 덮고 있는 물 셰이더 안에서" 그린다.
+// 물체 하나를 원 하나로 근사하고, 그 원까지의 거리로 링을 칠하는 방식이다.
+const RIPPLE_MAX = 8;           // 셰이더가 도는 원의 최대 개수 (루프 상한이라 상수여야 한다)
+const RIPPLE_IN_WIDTH = 0.16;   // 물체를 바로 감싸는 첫 링의 굵기
+const RIPPLE_GAP = 0.34;        // 바깥 링까지의 간격
+const RIPPLE_OUT_WIDTH = 0.07;  // 바깥 링의 굵기
+const RIPPLE_WOBBLE = 0.45;     // 첫 링의 바깥 굵기가 울렁이는 정도
+const RIPPLE_WAVE_FOLLOW = 0.9; // 파고를 따라 링이 안팎으로 밀리는 정도
+const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
+// 배가 나아갈 때 뒤로 끌리는 V자 항적
+const WAKE_SPREAD = 0.42;       // 뒤로 갈수록 벌어지는 각
+const WAKE_WIDTH = 0.13;
+const WAKE_FADE = 0.55;         // 뒤로 갈수록 옅어지는 속도
 // 카메라 기본 각도. 셰이더 앵커(_updateSpecAnchor)와 드래그 제한이 같은 값을 봐야 한다.
 const BASE_YAW = -0.45, BASE_PITCH = 0.60;
 const basePitchOf = () => BASE_PITCH;
@@ -1589,6 +1605,12 @@ class BottleScene {
         uSpecStrength: { value: 3.0 },
         // 반짝임 색. 시간대에 따라 바뀐다 (낮 흰빛 → 노을 주황 → 밤 푸른 달빛)
         uSpecColor: { value: new THREE.Color(0xfffcf2) },
+        // 물결 — xy는 월드 XZ 중심, z는 반지름, w는 세기(0이면 그 자리는 건너뛴다)
+        uRippleOn: { value: 1.0 },
+        uRipples: { value: Array.from({ length: RIPPLE_MAX }, () => new THREE.Vector4(0, 0, 0, 0)) },
+        uRippleColor: { value: new THREE.Color(0xffffff) },
+        // 배 항적 — xy는 배 월드 XZ, z는 진행 방향(라디안), w는 세기
+        uWake: { value: new THREE.Vector4(0, 0, 0, 0) },
         // 유리병이 나타나면 바다를 병 안쪽으로 가둔다.
         // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
         uFadeNear: { value: 100.0 },
@@ -1675,6 +1697,61 @@ class BottleScene {
         uniform float uClipScaleR;
         uniform float uProfU[7];
         uniform float uProfR[7];
+        uniform float uTime;          // 정점 셰이더에만 있던 것 — 물결 울렁임에 필요하다
+        uniform float uRippleOn;
+        uniform vec4 uRipples[8];
+        uniform vec3 uRippleColor;
+        uniform vec4 uWake;
+
+        /** 거리 d가 반지름 r에서 halfW 안쪽이면 1, 밖이면 0. 가장자리는 부드럽게. */
+        float ringAt(float d, float r, float halfW) {
+          return 1.0 - smoothstep(0.0, halfW, abs(d - r));
+        }
+
+        /**
+         * 물체 둘레의 물결.
+         *
+         * 안쪽 첫 링은 물체를 그대로 감싸되 바깥쪽 굵기만 울렁인다. 각도를 쓰면 atan이
+         * 픽셀마다 들어가 비싸므로, 평면파(sin(a*x + b*z + t))로 대신했다 — 링을 따라
+         * 굵기가 물결치는 결과는 같고 훨씬 싸다.
+         *
+         * 파도를 따라가는 것도 마찬가지다. 수면 높이는 이미 vWorldPos.y로 들어와 있으니,
+         * 그만큼 링을 안팎으로 밀어주면 "파도에 따라 드러나는 자리가 달라진다"로 읽힌다.
+         * 실루엣과 파면의 교차를 실제로 푸는 것보다 비교가 안 되게 싸다.
+         */
+        float rippleAt(vec2 p, float waveH) {
+          float acc = 0.0;
+          float shift = waveH * 0.9;
+          // 울렁임은 원마다 재지 않는다. 수면 전체에 깔린 무늬 하나를 원들이 함께 쓰면
+          // sin이 원 개수만큼 돌지 않아 훨씬 싸고, 링끼리 결이 맞아 오히려 자연스럽다.
+          // (원마다 계산했을 때 소프트웨어 렌더러에서 프레임 시간이 48% 늘었다.)
+          float halfW = 0.16 * 0.5 * (1.0 + 0.45 * sin(p.x * 5.0 + p.y * 3.7 + uTime * 1.6));
+          float gap = 0.34 * (1.0 + 0.18 * sin(p.x * 2.6 - p.y * 3.1 - uTime * 0.9));
+          float gapFar = gap * 1.9;
+          for (int i = 0; i < 8; i++) {
+            vec4 src = uRipples[i];
+            if (src.w <= 0.001) continue;
+            float d = distance(p, src.xy) + shift;
+            float inner = ringAt(d, src.z + halfW, halfW);
+            float mid   = ringAt(d, src.z + gap, 0.07) * 0.55;
+            float far   = ringAt(d, src.z + gapFar, 0.056) * 0.30;
+            acc = max(acc, (inner + mid + far) * src.w);
+          }
+          return acc;
+        }
+
+        /** 나아가는 배 뒤로 끌리는 V자 항적. 배 기준 좌표로 옮겨 놓고 그린다. */
+        float wakeAt(vec2 p) {
+          if (uWake.w <= 0.001) return 0.0;
+          vec2 rel = p - uWake.xy;
+          float c = cos(-uWake.z), s = sin(-uWake.z);
+          vec2 loc = vec2(rel.x * c - rel.y * s, rel.x * s + rel.y * c);
+          float behind = -loc.x;                       // 진행 방향 반대쪽만
+          if (behind <= 0.0) return 0.0;
+          float spread = 0.42 * behind;
+          float arm = 1.0 - smoothstep(0.0, 0.13, abs(abs(loc.y) - spread));
+          return arm * exp(-behind * 0.55) * uWake.w;
+        }
 
         // 병 옆면의 반지름은 축을 따라 변한다. 축 위치 ax(스케일 전)에서의 반지름.
         // 병 밖이면 0을 돌려주므로 그 구간의 물은 통째로 사라진다.
@@ -1732,6 +1809,11 @@ class BottleScene {
           vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
+          if (uRippleOn > 0.5) {
+            vec2 pXZ = vWorldPos.xz;
+            float foam = rippleAt(pXZ, vWorldPos.y) + wakeAt(pXZ);
+            color += uRippleColor * min(1.0, foam) * 0.55;
+          }
           // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
           float edgeFade = 1.0 - smoothstep(uFadeNear, uFadeFar, length(cameraPosition - vWorldPos));
           gl_FragColor = vec4(hdr(color, uExposure), 0.92 * clipA * edgeFade);
@@ -2035,6 +2117,85 @@ class BottleScene {
     }
     this.cloudGroup = g;
     this.scene.add(g);
+  }
+
+  /**
+   * 물결을 그릴 원들을 한 번만 추려 둔다.
+   *
+   * 물체 실루엣을 그대로 따라가려면 거리장이 필요하고 그건 렌더 타깃 한 장 값이다.
+   * 대신 "수면에 걸친 메쉬 하나 = 원 하나"로 근사한다. 로우폴리 덩어리들이라 원으로 싸도
+   * 크게 어색하지 않고, 셰이더는 거리 몇 번만 재면 된다.
+   * 좌표는 각자 부모(섬 그룹 / 배) 기준으로 담아 두고, 매 프레임 월드로 옮긴다.
+   */
+  _buildRippleSources() {
+    const circlesOf = (root, max) => {
+      const out = [];
+      root.updateWorldMatrix(true, true);
+      const inv = root.matrixWorld.clone().invert();
+      root.traverse((o) => {
+        if (!o.geometry) return;
+        o.geometry.computeBoundingBox();
+        const bb = o.geometry.boundingBox;
+        // 수면(y=0)에 걸쳐 있는 덩어리만 — 공중에 뜬 지붕이나 물속 바닥은 물결을 만들지 않는다
+        const lo = new THREE.Vector3(bb.min.x, bb.min.y, bb.min.z).applyMatrix4(o.matrixWorld);
+        const hi = new THREE.Vector3(bb.max.x, bb.max.y, bb.max.z).applyMatrix4(o.matrixWorld);
+        if (Math.min(lo.y, hi.y) > 0.05 || Math.max(lo.y, hi.y) < -0.05) return;
+        const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, 0, (bb.min.z + bb.max.z) / 2)
+          .applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        const w = Math.abs(hi.x - lo.x), d = Math.abs(hi.z - lo.z);
+        const long = Math.max(w, d), short = Math.min(w, d);
+        // 길쭉한 덩어리(배 선체 같은)를 원 하나로 싸면 실루엣에서 한참 떨어진 큰 원이 된다.
+        // 긴 축을 따라 원 두세 개로 나눠 담으면 훨씬 몸에 붙는다.
+        const parts = long > short * 1.6 ? (long > short * 2.6 ? 3 : 2) : 1;
+        const alongX = w >= d;
+        for (let k = 0; k < parts; k++) {
+          const f = parts === 1 ? 0 : (k / (parts - 1) - 0.5) * (long - short) ;
+          out.push({
+            x: c.x + (alongX ? f : 0),
+            z: c.z + (alongX ? 0 : f),
+            r: (parts === 1 ? long : short * 0.95) * 0.5,   // 나눈 원끼리 겹쳐야 테두리가 톱니지지 않는다
+          });
+        }
+      });
+      // 큰 것부터 남긴다 — 작은 조각까지 다 그리면 링이 뭉개진다
+      out.sort((a, b) => b.r - a.r);
+      return out.slice(0, max);
+    };
+    this._rippleIsland = circlesOf(this.islandGroup, 6);
+    this._rippleBoat = circlesOf(this.boat, 3);
+  }
+
+  /** 추려 둔 원들을 이번 프레임의 월드 좌표로 옮겨 셰이더에 넘긴다. */
+  _updateRipples(dt) {
+    const wu = this.waterMesh.material.uniforms;
+    if (wu.uRippleOn.value < 0.5) return;
+    if (!this._rippleIsland && this.boat.children.length) this._buildRippleSources();
+    if (!this._rippleIsland) return;
+
+    const arr = wu.uRipples.value;
+    let n = 0;
+    // 섬 — 멀어져 흐려지는 동안 물결도 같이 옅어진다
+    const islandFade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
+    const ig = this.islandGroup.position;
+    for (const c of this._rippleIsland) {
+      if (n >= RIPPLE_MAX) break;
+      arr[n++].set(ig.x + c.x, ig.z + c.z, c.r, islandFade);
+    }
+    // 배 — 뱃머리 방향으로 돌려서 얹는다
+    const by = this.boat.rotation.y, cs = Math.cos(by), sn = Math.sin(by);
+    const bp = this.boat.position;
+    for (const c of this._rippleBoat) {
+      if (n >= RIPPLE_MAX) break;
+      arr[n++].set(bp.x + c.x * cs + c.z * sn, bp.z - c.x * sn + c.z * cs, c.r, 1.0);
+    }
+    for (; n < RIPPLE_MAX; n++) arr[n].set(0, 0, 0, 0);
+
+    // 항적 — 배가 실제로 움직인 거리에서 속도를 낸다. 멈추면 저절로 사라진다.
+    const vx = dt > 0 ? (bp.x - (this._wakePrevX ?? bp.x)) / dt : 0;
+    this._wakePrevX = bp.x;
+    const speed = Math.min(1, Math.abs(vx) / 1.2);
+    this._wakeStrength = (this._wakeStrength ?? 0) + (speed - (this._wakeStrength ?? 0)) * Math.min(1, dt * 2.5);
+    wu.uWake.value.set(bp.x, bp.z, vx >= 0 ? 0 : Math.PI, this._wakeStrength);
   }
 
   /** 카메라 높이가 구름 층에 가까울 때만 짙어진다 — 지나가면 곧 사라진다. */
@@ -2661,6 +2822,8 @@ class BottleScene {
         const avgDt = this._perfSamples.reduce((a, b) => a + b, 0) / this._perfSamples.length;
         if (avgDt > 0.03) {
           this.waterMesh.material.uniforms.uSpecOn.value = 0.0;
+          // 물결도 같은 스위치에 물린다 — 픽셀마다 도는 계산이라 저사양에서 같이 꺼야 한다.
+          this.waterMesh.material.uniforms.uRippleOn.value = 0.0;
           this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
         }
         this._perfSamples = null;
@@ -2815,6 +2978,7 @@ class BottleScene {
     }
     this._updateBoatDrop(dt);
     this._updateClouds();
+    this._updateRipples(dt);
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
     // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
