@@ -985,7 +985,14 @@ const SHIP_SCALE = 3.38;   // 2.6의 130%
 // 선체 끝과 섬(Beachhouse) 사이에 둘 여유 거리. 눈으로 맞추는 값.
 // 섬을 옆(-z)으로 비켜 놓았으므로 배가 집 정면을 파고들 걱정이 줄었다.
 // 그만큼 x로 더 붙여 배가 선착장에 정박한 것처럼 보이게 한다.
-const ISLAND_CLEARANCE = -0.9;   // 뱃머리와 오두막 사이 여유. 닿기 직전까지 붙였다
+// 집이 바라보는 정면(+x를 향해 보는 시점) 기준으로 왼쪽 = -z.
+// 섬 전체(바위 포함)를 그쪽으로 이 만큼 비켜 놓아 배가 집 정면을 막고 서지 않게 한다.
+// 실측(세로 390×844 기본 시점): -1.66이면 집이 화면 33~85%, -0.85면 41~96%로 오른쪽에
+// 붙되 잘리지는 않는다. 더 키우면(0에 가까우면) 집 오른쪽이 화면 밖으로 나간다.
+const ISLAND_SIDE_SHIFT = -0.85;
+// 섬을 z로 덜 비켜 놓은 만큼 x로도 조금 물려야 뱃머리가 선착장을 파고들지 않는다
+// (실측: -0.9면 배와 섬 최근접 0.13으로 닿고, -0.6이면 0.35로 아슬하게 붙어 정박한 모양).
+const ISLAND_CLEARANCE = -0.6;   // 뱃머리와 오두막 사이 여유. 닿기 직전까지 붙였다
 
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
@@ -1014,10 +1021,10 @@ const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
 const BOTTLE_SCALE_R = 2.8;                  // 반경(굵기) 배율
 // 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
 const BOTTLE_SHIFT_X = 1.70;
-// 섬을 옆(-z)으로 비켜 놓으면서 내용물의 z 중심이 0에서 -1.54로 옮겨갔다.
-// 병 축이 z=0에 그대로 있으면 섬이 통째로 유리 밖으로 나간다(실측 여유 -1.70).
-// 내용물 중심 쪽으로 옮겨 같은 굵기로 최대한 담는다.
-const BOTTLE_SHIFT_Z = -1.40;
+// 섬을 옆으로 비켜 놓으면 내용물의 z 중심도 같이 옮겨간다. 병 축이 z=0에 그대로 있으면
+// 섬이 유리 밖으로 나가므로(실측: 섬을 -1.66 옮겼을 때 여유 -1.70), 섬 이동량에서 파생시킨다.
+// 계수 0.85는 배(z≈0)와 섬이 함께 들어가는 중간 지점을 실측으로 잡은 값이다.
+const BOTTLE_SHIFT_Z = ISLAND_SIDE_SHIFT * 0.85;
 // 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
 const BOTTLE_CENTER_X = BOTTLE_SHIFT_X + ((-1.75 + 1.55) / 2) * BOTTLE_SCALE_X;
 // 셰이더의 bottleRadiusAt과 같은 계산. 연기를 병 안에 가두는 데 쓴다(_updateSmoke).
@@ -1053,7 +1060,7 @@ const CAM_STEPS = {
   // 이 단계만 둘러보던 각도를 무시하고 정해진 시점으로 간다(벗어나면 원래 시점으로 돌아온다).
   // 실측으로 배+섬 세로 중심이 화면 56%(중앙보다 아래)였다. 바라보는 지점을 낮추면
   // 화면에서는 내용물이 위로 올라온다. 섬을 옆으로 옮긴 만큼 z도 따라 잡았다.
-  region:   { target: [1.30, 0.80, -1.10], radius: 12.2, orbit: { yaw: 0, pitch: 0 } },
+  region:   { target: [1.30, 0.58, -0.60], radius: 12.2, orbit: { yaw: 0, pitch: 0 } },
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
   keywords: { target: [0.21, 0.62, -0.01], radius: 8.4 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
@@ -1067,6 +1074,8 @@ const CAM_MOVE_SEC = 1.1;
 // 파도가 요동치는 것처럼 보인다. 상한을 두면 순간이동만 흡수되고, 순항 속도(1.2/초)는
 // 상한보다 낮아 그대로 통과하므로 배는 화면 한가운데에 그대로 있는다.
 const CAM_FOLLOW_MAX_SPEED = 4.0;
+// '돌아온 사람'이 선착장까지 남겨 두고 시작하는 거리.
+const RETURN_DISTANCE = 2.4;
 // 아카이브에서 "다시 한 문장 남기기"로 돌아올 때의 줌인.
 // 기본 시점의 몇 배 거리에서 시작해 몇 초에 걸쳐 당겨올지.
 // 인트로: 시작하기를 누르면 기본 시점에서 이만큼 수직 상승해 하늘만 남기고,
@@ -1075,7 +1084,22 @@ const CAM_FOLLOW_MAX_SPEED = 4.0;
 // 실측: 10만 올라가도 바다가 안개 너머로 완전히 밀려나 하늘만 남는다. 여유만 두고 15로 잡았다.
 const INTRO_LIFT = 15;
 const INTRO_RISE_SEC = 1.6;
-const INTRO_FALL_SEC = 2.0;
+// 하강 시간. 2.0에서 40% 빠르게.
+const INTRO_FALL_SEC = 1.43;
+// 처음엔 느리게 미끄러져 나오다 중간에 빨라지고 끝에서 다시 감속한다.
+// 빨라지는 구간에서 구름 층을 스치고 지나간다.
+const INTRO_FALL_EASE = cubicBezier(0.72, 0.0, 0.28, 1.0);
+
+// ── 구름 층 — 내려오는 길 중간을 한 번 스치고 지나간다 ──
+const CLOUD_Y = INTRO_LIFT * 0.46;      // 구름이 깔린 높이
+const CLOUD_COUNT = 8;
+const CLOUD_FADE_SPAN = INTRO_LIFT * 0.26;   // 이 높이 차 안에서만 보인다(짧게 지나가도록)
+
+// ── 배가 떨어지는 연출 ──
+const BOAT_DROP_LEAD = 0.5;      // 카메라가 멈추기 몇 초 전에 배가 나타나는지
+const BOAT_DROP_SEC = 1.25;      // 뽁 → 낙하 → 잠겼다 뜨기까지
+const BOAT_DROP_HEIGHT = 1.7;
+const BOAT_DROP_DIP = 0.26;      // 착수하면서 수면 아래로 잠기는 깊이
 
 const REENTER_ZOOM_FROM = 1.7;
 const REENTER_ZOOM_SEC = 1.8;
@@ -1209,10 +1233,14 @@ function cubicBezier(x1, y1, x2, y2) {
  * 예전엔 지수 감쇠라 시작이 제일 빠르고 끝이 늘어졌다 — ease-in이 없었다.
  * 이 값만 바꾸면 움직임이 바뀐다. 블렌더에서 잡은 곡선을 그대로 넣어도 된다.
  */
-// 첫 제어점을 (0,0)으로 내려 출발의 ease-in을 없앴다. 시작하자마자 최고 속도로 들어와
-// 끝에서만 감속한다 — '돌아온 사람'에서 집이 뜸들이지 않고 바로 들어온다.
-const SHORE_EASE = cubicBezier(0.0, 0.0, 0.25, 1.0);
-const SHORE_MOVE_SEC = 1.83;   // 2.2에서 20% 단축
+// 출발의 ease-in은 없애 뜸들이지 않고 바로 들어오되, 감속을 훨씬 일찍 시작한다.
+// 두 번째 제어점을 (0.55, 1.0) 근처로 올려 전체의 앞 1/3에서 대부분 거리를 좁히고
+// 나머지 시간을 감속에 쓴다 — 2.2초 기준으로 감속 시작이 약 1초 앞당겨진다.
+const SHORE_EASE = cubicBezier(0.0, 0.55, 0.30, 1.0);
+const SHORE_MOVE_SEC = 2.2;
+// 섬이 또렷해지는 구간. 예전엔 여정의 절반(0.5)만에 완전히 불투명해져서 안개 속에서
+// 갑자기 튀어나오는 것처럼 보였다. 거의 끝까지 늘려 서서히 드러나게 한다.
+const SHORE_FADE_UNTIL = 0.9;
 
 const easeInOutQuint = (x) => (x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2);
 
@@ -1376,9 +1404,7 @@ class BottleScene {
     // Beachhouse는 자기 원점 기준 -0.479부터 시작한다. 둘 사이에 여유를 둔다.
     // 값을 키우면 섬이 멀어지고, 줄이면 가까워진다.
     this.islandRestX = 0.49 * SHIP_SCALE + 0.479 + ISLAND_CLEARANCE;
-    // 집이 바라보는 정면(+x를 향해 보는 시점) 기준으로 왼쪽 = -z.
-    // 섬 전체(바위 포함)를 배 반지름만큼 그쪽으로 밀어, 배가 집 정면을 막고 서지 않게 한다.
-    this.islandSideShift = -(0.49 * SHIP_SCALE);
+    this.islandSideShift = ISLAND_SIDE_SHIFT;
     // 2.45로는 아직 또렷하게 보이는 중에 사라져 버렸다.
     // 안개가 삼킬 만큼 멀리 보낸다(안개 끝이 카메라 거리+7이므로 그보다 더 가야 한다).
     this.islandGoneX = this.islandRestX + 12;
@@ -1390,6 +1416,7 @@ class BottleScene {
     this._buildSmokePool();
     this._buildBottleShell();
     this._buildBottleWater();
+    this._buildClouds();
     // Rock/Beachhouse/Ship 실제 블렌더 모델은 GLB에서 비동기로 로드 — 로드 완료 전엔
     // 그 자리만 비어있고(섬 슬라이드·파도·카메라 등 나머지는 그대로 정상 동작),
     // 로드되는 즉시 islandGroup·boat 안에 그대로 꽂아 넣는 방식.
@@ -1397,14 +1424,21 @@ class BottleScene {
 
     // 상태
     this.mode = "stay";
+    // 선착장의 월드 x. 배를 옮기는 대신 이 값을 옮겨 순간이동을 없앤다(setMode 참고).
+    this.dockX = 0;
+    this.cruiseFromX = 0;
     this.shoreBlend = 1;
     this.shoreTarget = 1;
     this._shoreFrom = 1;
     this._shoreT = 1;
     this.introPlaying = false;
     this.introDone = false;
+    this._introPending = false;
     // 인트로 수직 이동 (카메라와 바라보는 지점을 함께 올린다)
     this._lift = 0;
+    this._dropT = 1;
+    this._dropOffset = 0;
+    this._onIntroSettled = null;
     this._liftFrom = 0;
     this._liftTarget = 0;
     this._liftT = 1;
@@ -1974,6 +2008,77 @@ class BottleScene {
   }
 
   /**
+   * 인트로에서 스치고 지나가는 구름 층.
+   *
+   * 하늘에서 바다까지 한 번에 내려오면 높이가 얼마나 되는지 읽히지 않는다.
+   * 중간에 가로로 화면을 덮는 층을 하나 두고 지나가면 "내려오고 있다"가 분명해진다.
+   * 로우폴리 스타일에 맞춰 납작하게 눌린 정이십면체를 흩어 놓았다.
+   */
+  _buildClouds() {
+    const geo = new THREE.IcosahedronGeometry(1, 0);
+    this.cloudMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0,
+      depthWrite: false, side: THREE.DoubleSide,
+    });
+    const g = new THREE.Group();
+    g.visible = false;
+    for (let i = 0; i < CLOUD_COUNT; i++) {
+      const m = new THREE.Mesh(geo, this.cloudMat);
+      const a = (i / CLOUD_COUNT) * Math.PI * 2 + 0.6;
+      const r = 1.6 + (i % 3) * 1.9;
+      m.position.set(Math.cos(a) * r, CLOUD_Y + ((i % 3) - 1) * 0.7, Math.sin(a) * r);
+      // 가로로 넓고 세로로 납작하게 — 지나갈 때 화면을 가득 덮는다.
+      m.scale.set(4.2 + (i % 3) * 1.6, 0.5, 3.2 + (i % 2) * 1.4);
+      m.rotation.y = a;
+      m.renderOrder = 12;
+      g.add(m);
+    }
+    this.cloudGroup = g;
+    this.scene.add(g);
+  }
+
+  /** 카메라 높이가 구름 층에 가까울 때만 짙어진다 — 지나가면 곧 사라진다. */
+  _updateClouds() {
+    if (!this.cloudGroup) return;
+    const active = this._introPending || this._liftT < 1 || this._lift > 0.01;
+    if (!active) { this.cloudGroup.visible = false; return; }
+    this.cloudGroup.visible = true;
+    this.cloudGroup.position.x = this.boat.position.x;
+    const k = Math.max(0, 1 - Math.abs(this._lift - CLOUD_Y) / CLOUD_FADE_SPAN);
+    this.cloudMat.opacity = 0.9 * k * k;
+  }
+
+  /** 인트로 끝에서 배가 나타나 떨어진다. 반환값은 파도 흔들림에 더할 높이. */
+  _startBoatDrop() {
+    this._dropT = 0;
+    this.boat.visible = true;
+  }
+
+  _updateBoatDrop(dt) {
+    if (this._dropT >= 1) { this._dropOffset = 0; return; }
+    this._dropT = Math.min(1, this._dropT + dt / BOAT_DROP_SEC);
+    if (this._dropT >= 1) { this._dropOffset = 0; this._fireIntroSettled(); return; }
+    const u = this._dropT;
+    if (u < 0.13) {
+      // 뽁 — 제자리에서 부풀어 나타난다
+      this.boat.scale.setScalar(Math.min(1, (u / 0.13) * 1.15));
+      this._dropOffset = BOAT_DROP_HEIGHT;
+      return;
+    }
+    this.boat.scale.setScalar(1);
+    if (u < 0.62) {
+      // 낙하 — 가속만 있고 감속이 없다(ease-in). 처음엔 느리게 떨어지다 빨라진다.
+      const p = (u - 0.13) / (0.62 - 0.13);
+      this._dropOffset = BOAT_DROP_HEIGHT * (1 - p * p * p);
+      return;
+    }
+    // 착수 — 한 번 깊이 잠겼다가 천천히 올라와 파도 흔들림으로 이어진다.
+    // 위로 튀어오르지 않아야 가볍지 않다.
+    const p = (u - 0.62) / (1 - 0.62);
+    this._dropOffset = -BOAT_DROP_DIP * Math.sin(Math.PI * p) * (1 - p * 0.35);
+  }
+
+  /**
    * 병 안 수면 아래를 채우는 물 덩어리.
    * 파도 메쉬는 "표면" 한 장뿐이라, 병을 아래에서 올려다보면 수심이 통째로 비어 보였다.
    * 병 안쪽 프로파일을 살짝 줄여 같은 모양으로 만들고, 월드 기준 수평면으로 잘라
@@ -2003,12 +2108,30 @@ class BottleScene {
   playIntro(onSettled) {
     if (this.introDone) { onSettled && onSettled(); return; }
     this.introDone = true;
-    this._liftTo(INTRO_LIFT, INTRO_RISE_SEC, easeInOutCubic, onSettled);
+    // 올라가는 과정은 보여주지 않는다 — 처음부터 하늘에 있다.
+    this._introPending = true;
+    this._lift = INTRO_LIFT;
+    this._liftT = 1;
+    this.boat.visible = false;      // 내려앉기 직전에 뽁 하고 나타난다
+    onSettled && onSettled();
   }
 
   /** 온보딩에서 다음으로 넘어갈 때. 올라간 높이를 그대로 내려온다 — 감속만 있고 가속은 없다. */
+  /**
+   * 온보딩에서 다음으로 넘어갈 때. 올라간 높이를 그대로 내려온다.
+   * 배가 떨어져 자리를 잡는 건 카메라가 멈춘 뒤에도 이어지므로, 끝났다는 신호는
+   * 카메라가 아니라 "배가 가라앉았다 올라와 멎은 시점"에 보낸다.
+   */
   introDescend(onDone) {
-    this._liftTo(0, INTRO_FALL_SEC, easeOutCubic, onDone);
+    this._introPending = false;
+    this._onIntroSettled = onDone || null;
+    this._liftTo(0, INTRO_FALL_SEC, INTRO_FALL_EASE, null);
+  }
+
+  _fireIntroSettled() {
+    const cb = this._onIntroSettled;
+    this._onIntroSettled = null;
+    cb && cb();
   }
 
   _liftTo(to, dur, ease, onDone) {
@@ -2051,23 +2174,36 @@ class BottleScene {
     const prev = this.mode;
     this.mode = mode;
     this.modeChangedAt = this.elapsed;
-    if (this._boatEaseX !== undefined) this._boatEaseX = this._wrapWave(this._boatEaseX);
-
-    // [버그7] '오가는 중'에서 다른 선택지로 바꿀 때 배가 미친듯이 요동치던 문제.
-    // '오가는 중'은 배를 월드에서 끝없이 밀어낸다(1.2/초 → 30초면 x≈-36). 파도는 월드에
-    // 고정돼 있으므로, 그 거리를 되돌아오면 배가 파도밭을 프레임당 1.8유닛(파장 하나 이상!)씩
-    // 훑으며 위아래로 튄다. 되돌아오는 경로를 부드럽게 만들 방법은 없다 — 파장들의 공배수가
-    // 1144라 짧게 접히지도 않는다. 그러니 되돌아오게 두지 말고 그 자리에서 자리를 다시 잡는다.
-    if (prev === "between" && mode !== "returned") {
-      // '아직 모르겠음'은 섬이 없으니 있던 자리에 그대로 표류. 나머지는 선착장(0)으로 자리 이동.
-      if (mode !== "unsure") this._boatEaseX = 0;
-      this.boat.position.x = this._boatEaseX ?? 0;
+    // 파도 위상이 같은 자리로 접어 좌표를 작게 유지한다(부동소수점 보호).
+    // 1144단위로 건너뛰는 것이라 화면엔 티가 안 나지만, 카메라와 배 실제 좌표도 같이
+    // 옮겨 주지 않으면 카메라가 그 거리를 추종 속도로 기어가게 된다.
+    if (this._boatEaseX !== undefined) {
+      const wrapped = this._wrapWave(this._boatEaseX);
+      const shift = wrapped - this._boatEaseX;
+      this._boatEaseX = wrapped;
+      this.boat.position.x += shift;
+      if (this._camFollowX !== undefined) this._camFollowX += shift;
+      this.dockX += shift;
+      if (this.cruiseFromX !== undefined) this.cruiseFromX += shift;
     }
 
+    // 배를 순간이동시키지 않는다.
+    //
+    // 예전엔 상태를 바꿀 때 배를 0이나 -2.4로 옮겨 놓았다. 파도는 월드에 고정돼 있고
+    // 카메라는 배를 따라가므로, 그 순간 바다 전체가 옮긴 거리만큼 한 번에 훑고 지나가
+    // 화면이 튀었다. 카메라 추종에 속도 상한을 걸어 봤지만 그건 튐을 미끄러짐으로
+    // 바꿨을 뿐이었다.
+    //
+    // 그래서 배가 아니라 "선착장이 어디인지"를 배가 지금 있는 자리 기준으로 다시 잡는다.
+    // 섬은 선착장에 딸려 오므로(islandGroup 위치가 dockX 기준), 배가 얼마나 멀리 나가 있든
+    // 화면에서는 늘 배 옆으로 섬이 미끄러져 들어온다. 배는 한 번도 순간이동하지 않는다.
+    const here = this._boatEaseX ?? this.boat.position.x;
     if (mode === "returned") {
-      this.returnStartX = -2.4;
-      this.boat.position.x = this.returnStartX;
-      this._boatEaseX = this.returnStartX;
+      this.dockX = here + RETURN_DISTANCE;   // 지금 자리에서 그만큼 더 가면 선착장
+    } else if (mode === "between") {
+      this.cruiseFromX = here;               // 지금 자리에서 이어서 나아간다
+    } else if (mode !== "unsure") {
+      this.dockX = here;                     // 있던 자리를 그대로 선착장으로 삼는다
     }
     const nextShore = (mode === "between" || mode === "unsure") ? 0 : 1;
     if (nextShore !== this.shoreTarget) {
@@ -2079,7 +2215,8 @@ class BottleScene {
     // between이 1.0이면 파도가 너무 거칠어서 0.1('아직 모르겠음'과 같은 값)로 낮췄다.
     // 진폭은 ampScale = 0.5 + 0.9*windT 이므로 1.4 -> 0.59, 약 58% 감소다.
     // (0.5가 하한이라 이 공식으로 낼 수 있는 최저치는 1.4의 36%다)
-    const windByMode = { stay: 0.22, leaving: 0.55, returned: 0.75, between: 0.1, unsure: 0.1 };
+    // '오가는 중'은 배뿐 아니라 바다도 함께 1.5배로 (0.1 → 0.15).
+    const windByMode = { stay: 0.22, leaving: 0.55, returned: 0.75, between: 0.15, unsure: 0.1 };
     this.windTarget = windByMode[mode] ?? 0.3;
   }
 
@@ -2290,7 +2427,7 @@ class BottleScene {
   _reenter() {
     // 스플래시 → 온보딩 첫 진입에서는 인트로가 이미 시점을 올리는 중이다.
     // 그때 여기서 높이를 0으로 되돌리고 줌인까지 걸면 인트로가 통째로 지워진다.
-    const introRunning = this._liftT < 1;
+    const introRunning = this._introPending || this._liftT < 1;
 
     this.orbitYaw = 0; this.orbitPitch = 0;
     this._orbitFrom = { yaw: 0, pitch: 0 };
@@ -2299,7 +2436,11 @@ class BottleScene {
     this._orbitOverridden = false;
     this._orbitSaved = { yaw: 0, pitch: 0 };
     this.bottleT = this.bottleTarget;
-    if (!introRunning) { this._lift = 0; this._liftT = 1; this._onLiftDone = null; }
+    if (!introRunning) {
+      this._lift = 0; this._liftT = 1; this._onLiftDone = null;
+      this.boat.visible = true; this.boat.scale.setScalar(1);
+      this._dropT = 1; this._dropOffset = 0;
+    }
 
     // 시간대도 처음 값으로 되돌린다. 앞사람이 고른 시간이 다음 사람 첫 화면에 남지 않게.
     this._timeKey = INITIAL_TIME_KEY;
@@ -2575,7 +2716,9 @@ class BottleScene {
       } else {
         this.shoreBlend = this.shoreTarget;
       }
-      this.islandGroup.position.x = THREE.MathUtils.lerp(this.islandGoneX, this.islandRestX, this.shoreBlend);
+      // 섬은 선착장에 딸려 있다. 배가 멀리 나가 있어도 선착장을 다시 잡으면 그쪽으로 온다.
+      this.islandGroup.position.x = this.dockX
+        + THREE.MathUtils.lerp(this.islandGoneX, this.islandRestX, this.shoreBlend);
       // [버그4] 섬이 "짠" 하고 나타나던 문제 — 예전 임계값이 0.5라 슬라이드가 절반이나 진행된
       // 뒤에야 visible이 켜졌다(= 화면 중앙 근처에서 갑자기 팝인). visible은 완전히 사라졌을 때
       // 렌더를 건너뛰려는 용도일 뿐이므로 0에 가깝게 두면 화면 밖에서부터 미끄러져 들어온다.
@@ -2583,7 +2726,7 @@ class BottleScene {
       // 여정의 뒤쪽 절반에서만 투명해진다. 앞쪽은 또렷한 채로 멀어지고,
       // 멀어질수록 안개가 옅게 덮은 위에 알파가 빠지면서 자연스럽게 지워진다.
       if (this.islandMats) {
-        const fade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, 0.5);
+        const fade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
         for (const m of this.islandMats) m.opacity = fade;
       }
 
@@ -2596,25 +2739,26 @@ class BottleScene {
       // 흐름이 느리거나 빠르게 느껴지면 다른 데 손대지 말고 이 숫자만 조절할 것.
       const CRUISE_SPEED = 1.2;
 
+      // 목적지는 전부 선착장(dockX) 기준이다. 절대 좌표 0을 쓰지 않으므로 배가 어디에
+      // 있든 순간이동 없이 이어진다 (setMode의 선착장 재설정 참고).
       if (this.mode === "returned") {
         const et = t - this.modeChangedAt;
         const p = Math.min(1, et / TRAVEL_DURATION);
-        targetX = THREE.MathUtils.lerp(this.returnStartX ?? -2.4, 0, easeOutCubic(p));
+        targetX = THREE.MathUtils.lerp(this.dockX - RETURN_DISTANCE, this.dockX, easeOutCubic(p));
         rotZ += -0.06 * (1 - p);
       } else if (this.mode === "leaving") {
-        targetX = 0;
+        targetX = this.dockX;
       } else if (this.mode === "between") {
         // 멈추지 않고 계속 나아감. 카메라가 배를 따라가므로 배는 화면상 제자리처럼 보이고,
         // 월드에 고정된 파도만 옆으로 흘러간다.
         const et = t - this.modeChangedAt;
-        targetX = -CRUISE_SPEED * et;
+        targetX = (this.cruiseFromX ?? this.dockX) - CRUISE_SPEED * et;
         rotZ += Math.sin(t * 0.7) * 0.015;
       } else if (this.mode === "unsure") {
-        // 표류 — 섬이 없으니 돌아갈 기준점도 없다. 있던 자리에 그대로 선다
-        // (0으로 되돌리면 '오가는 중'에서 누적된 거리를 한꺼번에 훑으며 요동친다).
-        targetX = this._boatEaseX ?? 0;
+        // 표류 — 섬이 없으니 돌아갈 기준점도 없다. 있던 자리에 그대로 선다.
+        targetX = this._boatEaseX ?? this.dockX;
       } else {
-        targetX = Math.sin(t * 0.4) * 0.03;
+        targetX = this.dockX + Math.sin(t * 0.4) * 0.03;
       }
 
       if (this.mode !== "stay" && this.mode !== "unsure") {
@@ -2640,7 +2784,7 @@ class BottleScene {
       // 나아가는 느낌이 산다. 바다가 아니라 배에만 곱한다.
       const bob = BOAT_BOB_BY_MODE[this.mode] ?? 1;
       this.boat.position.x = boatX;
-      this.boat.position.y = 0.0 + waveY * bob;
+      this.boat.position.y = 0.0 + waveY * bob + this._dropOffset;
       this.boat.rotation.z = rotZ + waveSlope * 0.9 * bob;
       this.boat.rotation.y = this.headingY + Math.sin(t * 0.5) * 0.08;
     }
@@ -2658,8 +2802,19 @@ class BottleScene {
     if (this._liftT < 1) {
       this._liftT = Math.min(1, this._liftT + dt / this._liftDur);
       this._lift = this._liftFrom + (this._liftTarget - this._liftFrom) * this._liftEase(this._liftT);
-      if (this._liftT >= 1) { const cb = this._onLiftDone; this._onLiftDone = null; cb && cb(); }
+      // 카메라가 멈추기 BOAT_DROP_LEAD초 전에 배가 나타나 떨어지기 시작한다.
+      if (this._liftTarget === 0 && this._dropT >= 1 && !this.boat.visible
+          && (1 - this._liftT) * this._liftDur <= BOAT_DROP_LEAD) {
+        this._startBoatDrop();
+      }
+      if (this._liftT >= 1) {
+        const cb = this._onLiftDone; this._onLiftDone = null; cb && cb();
+        // 떨어지는 배가 없으면(되돌아온 경우 등) 카메라가 멎는 즉시 끝난 것으로 본다.
+        if (this._dropT >= 1) this._fireIntroSettled();
+      }
     }
+    this._updateBoatDrop(dt);
+    this._updateClouds();
 
     this.bottleT += (this.bottleTarget - this.bottleT) * Math.min(1, dt * 2.2);
     // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
