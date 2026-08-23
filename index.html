@@ -1164,13 +1164,20 @@ const SCENE_BRIGHTNESS = 1.1;
 // 물에 잠긴 물체 둘레에 흰 테두리가 겹겹이 도는 연출.
 // 새 지오메트리나 드로우콜을 만들지 않고 "이미 화면을 덮고 있는 물 셰이더 안에서" 그린다.
 // 물체 하나를 원 하나로 근사하고, 그 원까지의 거리로 링을 칠하는 방식이다.
+// 수면에 "닿는다"고 볼 높이 범위. 이 안의 정점들로 링 반지름을 잰다.
+const RIPPLE_WATERLINE_BAND = 0.22;
 const RIPPLE_MAX = 8;           // 셰이더가 도는 원의 최대 개수 (루프 상한이라 상수여야 한다)
-const RIPPLE_IN_WIDTH = 0.16;   // 물체를 바로 감싸는 첫 링의 굵기
-const RIPPLE_GAP = 0.34;        // 바깥 링까지의 간격
-const RIPPLE_OUT_WIDTH = 0.07;  // 바깥 링의 굵기
-const RIPPLE_WOBBLE = 0.45;     // 첫 링의 바깥 굵기가 울렁이는 정도
+// 물체당 링은 둘이다 — 물체가 수면에 닿는 자리에 붙는 "기본 울렁"과, 그보다 조금 큰 링 하나.
+const RIPPLE_IN_WIDTH = 0.13;   // 기본 울렁의 굵기
+const RIPPLE_OUT_WIDTH = 0.075; // 바깥 링의 굵기
+const RIPPLE_WOBBLE = 0.45;     // 기본 울렁의 굵기가 울렁이는 정도
+const RIPPLE_SPEED = 0.6;       // 울렁이는 속도 (예전 1.6에서 낮춤)
 const RIPPLE_WAVE_FOLLOW = 0.9; // 파고를 따라 링이 안팎으로 밀리는 정도
 const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
+// 바깥 링은 원 전체가 아니라 한쪽 일부만 드러난다. 어느 쪽이 얼마나 보일지는
+// 물체마다 한 번 정해 두고 바꾸지 않는다 — 계속 돌면 눈이 그걸 쫓게 된다.
+const RIPPLE_OUT_GAP_MIN = 0.16, RIPPLE_OUT_GAP_MAX = 0.40;  // 기본 울렁에서 얼마나 떨어지는지
+const RIPPLE_ARC_MIN = 0.20, RIPPLE_ARC_MAX = 0.30;          // 둘레의 몇 할이 보이는지
 // 배가 나아갈 때 뒤로 끌리는 V자 항적
 const WAKE_SPREAD = 0.42;       // 뒤로 갈수록 벌어지는 각
 const WAKE_WIDTH = 0.13;
@@ -1608,6 +1615,7 @@ class BottleScene {
         // 물결 — xy는 월드 XZ 중심, z는 반지름, w는 세기(0이면 그 자리는 건너뛴다)
         uRippleOn: { value: 1.0 },
         uRipples: { value: Array.from({ length: RIPPLE_MAX }, () => new THREE.Vector4(0, 0, 0, 0)) },
+        uRippleArc: { value: Array.from({ length: RIPPLE_MAX }, () => new THREE.Vector4(1, 0, 1, 0)) },
         uRippleColor: { value: new THREE.Color(0xffffff) },
         // 배 항적 — xy는 배 월드 XZ, z는 진행 방향(라디안), w는 세기
         uWake: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -1700,6 +1708,8 @@ class BottleScene {
         uniform float uTime;          // 정점 셰이더에만 있던 것 — 물결 울렁임에 필요하다
         uniform float uRippleOn;
         uniform vec4 uRipples[8];
+        // xy = 드러나는 방향(단위벡터), z = 그 방향에서 잘라내는 각, w = 바깥 링 반지름
+        uniform vec4 uRippleArc[8];
         uniform vec3 uRippleColor;
         uniform vec4 uWake;
 
@@ -1725,17 +1735,25 @@ class BottleScene {
           // 울렁임은 원마다 재지 않는다. 수면 전체에 깔린 무늬 하나를 원들이 함께 쓰면
           // sin이 원 개수만큼 돌지 않아 훨씬 싸고, 링끼리 결이 맞아 오히려 자연스럽다.
           // (원마다 계산했을 때 소프트웨어 렌더러에서 프레임 시간이 48% 늘었다.)
-          float halfW = 0.16 * 0.5 * (1.0 + 0.45 * sin(p.x * 5.0 + p.y * 3.7 + uTime * 1.6));
-          float gap = 0.34 * (1.0 + 0.18 * sin(p.x * 2.6 - p.y * 3.1 - uTime * 0.9));
-          float gapFar = gap * 1.9;
+          float halfW = 0.13 * 0.5 * (1.0 + 0.45 * sin(p.x * 5.0 + p.y * 3.7 + uTime * 0.6));
           for (int i = 0; i < 8; i++) {
             vec4 src = uRipples[i];
             if (src.w <= 0.001) continue;
-            float d = distance(p, src.xy) + shift;
-            float inner = ringAt(d, src.z + halfW, halfW);
-            float mid   = ringAt(d, src.z + gap, 0.07) * 0.55;
-            float far   = ringAt(d, src.z + gapFar, 0.056) * 0.30;
-            acc = max(acc, (inner + mid + far) * src.w);
+            vec4 arcv = uRippleArc[i];
+            vec2 rel = p - src.xy;
+            float len = length(rel);
+            float d = len + shift;
+            // 화면 대부분은 어느 링 근처도 아니다. 바깥 링보다 멀면 곧장 건너뛴다.
+            if (d - src.z > 0.60) continue;
+            // 기본 울렁 — 물체가 수면에 닿는 자리(src.z)에 그대로 붙는다.
+            // 예전엔 굵기의 절반만큼 밖에 걸어 놔서 물체에서 떠 보였다.
+            float base = ringAt(d, src.z, halfW);
+            // 바깥 링 — 정해진 한 방향의 일부만 드러난다.
+            // 각도를 쓰면 atan이 픽셀마다 들어가므로, 방향 벡터와의 내적으로 대신한다.
+            float side = dot(rel / max(len, 1e-4), arcv.xy);
+            float arc = smoothstep(arcv.z, arcv.z + 0.10, side);
+            float outer = ringAt(d, arcv.w, 0.075) * 0.6 * arc;
+            acc = max(acc, (base + outer) * src.w);
           }
           return acc;
         }
@@ -2140,9 +2158,21 @@ class BottleScene {
         const lo = new THREE.Vector3(bb.min.x, bb.min.y, bb.min.z).applyMatrix4(o.matrixWorld);
         const hi = new THREE.Vector3(bb.max.x, bb.max.y, bb.max.z).applyMatrix4(o.matrixWorld);
         if (Math.min(lo.y, hi.y) > 0.05 || Math.max(lo.y, hi.y) < -0.05) return;
-        const c = new THREE.Vector3((bb.min.x + bb.max.x) / 2, 0, (bb.min.z + bb.max.z) / 2)
-          .applyMatrix4(o.matrixWorld).applyMatrix4(inv);
-        const w = Math.abs(hi.x - lo.x), d = Math.abs(hi.z - lo.z);
+        // 반지름은 바운딩박스가 아니라 "수면 근처 정점들"에서 잰다. 박스로 재면 물 위로
+        // 솟은 부분까지 들어가 링이 물체에서 한참 떨어진 곳에 그려진다.
+        const pos = o.geometry.attributes.position;
+        const v = new THREE.Vector3();
+        let wx0 = Infinity, wx1 = -Infinity, wz0 = Infinity, wz1 = -Infinity, hit = 0;
+        for (let vi = 0; vi < pos.count; vi++) {
+          v.set(pos.getX(vi), pos.getY(vi), pos.getZ(vi)).applyMatrix4(o.matrixWorld);
+          if (Math.abs(v.y) > RIPPLE_WATERLINE_BAND) continue;
+          hit++;
+          wx0 = Math.min(wx0, v.x); wx1 = Math.max(wx1, v.x);
+          wz0 = Math.min(wz0, v.z); wz1 = Math.max(wz1, v.z);
+        }
+        if (!hit) return;
+        const c = new THREE.Vector3((wx0 + wx1) / 2, 0, (wz0 + wz1) / 2).applyMatrix4(inv);
+        const w = wx1 - wx0, d = wz1 - wz0;
         const long = Math.max(w, d), short = Math.min(w, d);
         // 길쭉한 덩어리(배 선체 같은)를 원 하나로 싸면 실루엣에서 한참 떨어진 큰 원이 된다.
         // 긴 축을 따라 원 두세 개로 나눠 담으면 훨씬 몸에 붙는다.
@@ -2161,8 +2191,19 @@ class BottleScene {
       out.sort((a, b) => b.r - a.r);
       return out.slice(0, max);
     };
-    this._rippleIsland = circlesOf(this.islandGroup, 6);
+    this._rippleIsland = circlesOf(this.islandGroup, 5);
     this._rippleBoat = circlesOf(this.boat, 3);
+    // 바깥 링은 물체마다 한 번만 뽑아 고정한다 — 방향도, 얼마나 보일지도, 얼마나 떨어질지도.
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const decorate = (list) => list.forEach((c) => {
+      const a = Math.random() * Math.PI * 2;
+      c.dirX = Math.cos(a); c.dirZ = Math.sin(a);
+      // 둘레의 f 만큼 보이려면 반각이 f*PI, 잘라내는 내적값은 cos(f*PI)
+      c.cut = Math.cos(rnd(RIPPLE_ARC_MIN, RIPPLE_ARC_MAX) * Math.PI);
+      c.outR = c.r + rnd(RIPPLE_OUT_GAP_MIN, RIPPLE_OUT_GAP_MAX);
+    });
+    decorate(this._rippleIsland);
+    decorate(this._rippleBoat);
   }
 
   /** 추려 둔 원들을 이번 프레임의 월드 좌표로 옮겨 셰이더에 넘긴다. */
@@ -2173,12 +2214,14 @@ class BottleScene {
     if (!this._rippleIsland) return;
 
     const arr = wu.uRipples.value;
+    const arc = wu.uRippleArc.value;
     let n = 0;
     // 섬 — 멀어져 흐려지는 동안 물결도 같이 옅어진다
     const islandFade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
     const ig = this.islandGroup.position;
     for (const c of this._rippleIsland) {
       if (n >= RIPPLE_MAX) break;
+      arc[n].set(c.dirX, c.dirZ, c.cut, c.outR);
       arr[n++].set(ig.x + c.x, ig.z + c.z, c.r, islandFade);
     }
     // 배 — 뱃머리 방향으로 돌려서 얹는다
@@ -2186,6 +2229,8 @@ class BottleScene {
     const bp = this.boat.position;
     for (const c of this._rippleBoat) {
       if (n >= RIPPLE_MAX) break;
+      // 배는 돌아가므로 드러나는 방향도 같이 돌려야 한다
+      arc[n].set(c.dirX * cs + c.dirZ * sn, -c.dirX * sn + c.dirZ * cs, c.cut, c.outR);
       arr[n++].set(bp.x + c.x * cs + c.z * sn, bp.z - c.x * sn + c.z * cs, c.r, 1.0);
     }
     for (; n < RIPPLE_MAX; n++) arr[n].set(0, 0, 0, 0);
