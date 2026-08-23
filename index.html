@@ -1926,13 +1926,12 @@ class BottleScene {
         this.gullMesh = ship.getObjectByName("Seagull");
         this.tubeMesh = ship.getObjectByName("Tube");
 
-        // GLB엔 갈매기가 4마리 겹쳐 들어있는데 크기가 작아 화면에선 한 덩어리로 뭉쳐 보인다.
-        // 가장 큰 한 마리만 남긴다 (이름은 재익스포트마다 바뀔 수 있어 크기로 고른다).
-        if (this.gullMesh && this.gullMesh.children.length > 1) {
-          const spanOf = (o) => new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()).length();
-          const keep = this.gullMesh.children.reduce((a, b) => (spanOf(b) > spanOf(a) ? b : a));
-          this.gullMesh.children.slice().forEach((c) => { if (c !== keep) this.gullMesh.remove(c); });
-        }
+        // [삭제됨] 예전엔 "갈매기가 4마리 겹쳐 들어있다"고 보고 가장 큰 하나만 남기고 지웠다.
+        // 오판이었다. 실측해 보면 네 조각은 한 마리의 부위들이다 — 조각 중심 사이 최대 거리가
+        // 0.032인데 가장 큰 조각 자체가 0.040이라 서로 완전히 겹쳐 있다.
+        //   Gabbiano_Bianco(0.040) 몸통 / Gabbiano_Grigio(0.031) 날개끝
+        //   Gabbiano_Giallo(0.010) 부리 / Gabbiano_Rosa(0.007) 발
+        // 그래서 그 코드는 부리와 발을 지우고 흰 몸통만 남기고 있었다. 조각은 그대로 둔다.
 
         const box = new THREE.Box3().setFromObject(ship);
         const topLocal = new THREE.Vector3(
