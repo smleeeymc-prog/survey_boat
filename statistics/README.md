@@ -7,6 +7,8 @@
 ```
 statistics/
 ├─ index.html        화면 골격 · importmap · 리퀴드 글래스 SVG 필터
+├─ tools/
+│  └─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
 ├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
 └─ js/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
@@ -21,7 +23,23 @@ statistics/
    └─ main.js        조립 + 프레임 루프
 ```
 
-## 실행
+## 시안 보기 — 서버 없이
+
+`statistics/tools/build-standalone.mjs`가 **더블클릭하면 열리는 파일 하나**를 뽑아 줍니다.
+three.js·GLTFLoader·Scene.glb·앱 코드를 전부 파일 안에 넣어서, 로컬 서버도 CDN도
+필요 없습니다. 세로 9:16 액자 안에서 돌기 때문에 가로 모니터에서도 전시 화면 그대로 보입니다.
+
+```bash
+npm i three@0.160.1                                    # 한 번만
+node statistics/tools/build-standalone.mjs             # → 머무름의지도_시안.html
+```
+
+> 이 프로젝트에 빌드 도구가 생긴 게 아닙니다. `statistics/`는 그대로 순수 vanilla이고,
+> 이 스크립트는 앱을 빌드하지 않습니다. 리뷰용 사본을 뽑을 뿐이라, 씬 문서와 원본의
+> 차이는 스크립트 안 `REWRITES`에 적힌 세 군데뿐입니다(GLB를 fetch 대신 parse,
+> iframe에는 location.search가 없어 파라미터를 따로 받음).
+
+## 실행 — 원본 그대로
 
 `file://`로 열면 GLB fetch가 CORS로 막힙니다. 로컬 서버가 필요합니다.
 
