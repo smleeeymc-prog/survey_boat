@@ -10,12 +10,18 @@
  * ========================================================================== */
 
 // ── 모델 ────────────────────────────────────────────────────────────────────
-// [판단] Scene.glb를 statistics/ 안에 복사하지 않고 루트 것을 상대경로로 참조한다.
-//   · 모델을 다시 구우면 온보딩 씬과 지도가 저절로 같이 갱신된다 (진실의 출처가 하나)
-//   · 345KB짜리를 레포에 두 벌 두면 diff가 매번 이진 파일로 부풀어 오른다
-//   · 같은 오리진(GitHub Pages)이라 상대경로 fetch에 CORS 문제가 없다
-// 대신 "루트 경로에 의존한다"는 사실이 코드에 드러나야 하므로 여기 한 곳에만 적는다.
-export const MODEL_URL = "../assets/Scene.glb";
+// 배포 형태에 따라 GLB가 앉는 자리가 다르다. 후보를 순서대로 시도한다(먼저 되는 것 사용).
+//
+//   ./assets/Scene.glb    statistics/ 를 사이트 루트로 배포할 때 (Vercel 별도 프로젝트)
+//   ../assets/Scene.glb   레포 루트를 통째로 서빙할 때 (로컬 python3 -m http.server, GitHub Pages)
+//
+// 둘 다 두는 이유: 지도를 자기 도메인에 따로 올리려면 statistics/ 밖의 파일을 참조할 수
+// 없다(Vercel의 Root Directory가 그 밖을 배포에 포함하지 않는다). 그렇다고 상대경로를
+// 하나로 고정하면 다른 한쪽이 죽는다. 후보 두 개면 어느 쪽으로 올리든 그대로 돈다.
+//
+// statistics/assets/Scene.glb 는 루트 것의 사본이다. 모델을 다시 구우면
+// `node statistics/tools/sync-model.mjs` 로 맞춰야 두 화면의 배가 갈라지지 않는다.
+export const MODEL_URLS = ["./assets/Scene.glb", "../assets/Scene.glb"];
 
 // 원본: SHIP_FORWARD_OFFSET — 블렌더에서 뽑은 Ship의 정면이 코드가 가정하는 +X와 달라서
 // 모델을 한 번만 돌려두는 보정값. 지도에서는 이 회전을 지오메트리에 구워버리므로

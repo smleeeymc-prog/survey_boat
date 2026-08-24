@@ -98,8 +98,8 @@ const configNames = [...configSrc.matchAll(/^export\s+const\s+([A-Za-z0-9_$]+)/g
 const REWRITES = [
   // 1) GLB를 fetch하지 않고 파일 안에 심어 둔 것을 파싱한다.
   [
-    'const gltf = await new GLTFLoader().loadAsync(C.MODEL_URL);',
-    'const gltf = await new Promise((res, rej) => new GLTFLoader().parse(__GLB, "", res, rej));',
+    'const loadShipGltf = () => tryLoadFirst(C.MODEL_URLS);',
+    'const loadShipGltf = () => new Promise((res, rej) => new GLTFLoader().parse(__GLB, "", res, rej));',
   ],
   // 2) srcdoc iframe은 location.search가 없다. 껍데기가 넣어주는 값을 대신 읽는다.
   [

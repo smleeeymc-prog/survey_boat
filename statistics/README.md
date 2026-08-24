@@ -7,8 +7,12 @@
 ```
 statistics/
 ├─ index.html        화면 골격 · importmap · 리퀴드 글래스 SVG 필터
+├─ vercel.json       이 폴더만 따로 배포할 때의 설정 (레포 루트에는 두지 않는다)
+├─ assets/
+│  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
 ├─ tools/
-│  └─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
+│  ├─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
+│  └─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
 ├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
 └─ js/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
@@ -63,6 +67,63 @@ GitHub Pages에 올라가 있으면 `/statistics/` 경로로 바로 열립니다
 
 전시장에서는 `?glass=...`로 유리 단계를 **박아두는 걸 권합니다**. 워치독은 안전장치이지
 매번 같은 판단을 한다는 보장이 없어서, 실기기에서 한 번 재보고 고정하는 쪽이 예측 가능합니다.
+
+## Vercel 배포 — 기존 도메인은 그대로 두고 새 도메인 하나
+
+**핵심: 레포 루트에는 `vercel.json`을 두지 않습니다.** 루트에 두면 지금 main에 연결된
+프로젝트의 동작까지 같이 바뀝니다. 설정은 `statistics/vercel.json` 안에만 있고,
+**Root Directory를 `statistics`로 잡은 새 프로젝트만** 그 파일을 읽습니다.
+
+### 새 프로젝트 만들기
+
+1. Vercel → **Add New… → Project** → 같은 레포(`survey_boat`) 선택
+2. **Root Directory**를 `statistics` 로 지정 — 이게 전부입니다.
+   Framework Preset은 **Other**, Build Command·Install Command는 **비워 둡니다**
+   (정적 파일이라 빌드가 없습니다. `statistics/vercel.json`이 이미 그렇게 잡아 뒀습니다)
+3. **Production Branch** — 아래 둘 중 하나로 정합니다.
+
+| | Production Branch | 기존 도메인에 생기는 일 |
+|---|---|---|
+| **A. main을 안 건드리고 싶다** | `claude/statistics-map-screen-p0yhdr` | **아무 일도 안 생김** |
+| **B. 정리해서 main으로** | `main` (기본값) | main에 밀려 있던 커밋들이 같이 배포됨 — 아래 주의 |
+
+> **B를 고를 때 주의**: 현재 `main`은 작업 브랜치보다 **16커밋 뒤처져 있습니다.**
+> `statistics/`뿐 아니라 최근 온보딩 씬 작업(Q3 문구 분기, 물결, 인트로 연출 등)도
+> main에 없습니다. 즉 **지금 도메인에 떠 있는 온보딩 화면은 구버전일 가능성이 큽니다.**
+> 머지하면 그 화면도 같이 최신으로 바뀝니다. 원하는 결과일 수도, 아닐 수도 있으니
+> 머지 전에 한 번 확인하시길 권합니다.
+
+4. 배포되면 **Settings → Domains**에서 새 도메인을 이 프로젝트에 붙입니다.
+   기존 프로젝트는 손대지 않았으므로 원래 도메인은 그대로 돕니다.
+
+결과: `새도메인.com/` = 머무름의 지도, `기존도메인/` = 온보딩(그대로).
+
+### GLB 사본에 대해
+
+Vercel의 Root Directory는 **그 폴더 밖의 파일을 배포에 포함하지 않습니다.** 그래서
+`statistics/assets/Scene.glb`에 루트 것의 사본을 뒀습니다. 코드는 후보 두 개를 순서대로
+시도하므로(`config.js`의 `MODEL_URLS`) 어느 형태로 올리든 그대로 돕니다.
+
+| 배포 형태 | 실제로 쓰이는 경로 |
+|---|---|
+| Vercel, Root Directory = `statistics` | `./assets/Scene.glb` |
+| 레포 루트 서빙 (로컬 서버, GitHub Pages) | `./assets/Scene.glb` (없으면 `../assets/Scene.glb`) |
+
+사본은 드리프트 위험입니다 — 블렌더에서 모델을 다시 굽고 루트만 갈아끼우면 온보딩의
+배와 지도의 배가 소리 없이 달라집니다. **모델을 다시 구우면 반드시:**
+
+```bash
+node statistics/tools/sync-model.mjs          # 맞춘다
+node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 exit 1 — CI에 걸기 좋다)
+```
+
+### 배포 전에 한 번 볼 것
+
+- **three.js를 unpkg CDN에서 받습니다.** unpkg가 죽으면 화면도 죽습니다. 전시 당일
+  리스크를 없애려면 `three.module.js`와 `GLTFLoader.js`를 레포에 넣고 importmap을
+  그쪽으로 돌리는 게 안전합니다(약 1.4MB). 지금은 온보딩 씬과 같은 방식을 유지했습니다.
+- **캐시**: HTML·JS·CSS는 `must-revalidate`, GLB는 1년 immutable로 잡아 뒀습니다.
+  전시 중 코드를 고치면 새로고침만으로 반영되고, 무거운 모델은 다시 안 받습니다.
 
 ## 인수인계 문서에서 미결정이었던 것들 — 이번에 정한 것
 
@@ -156,9 +217,11 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 ## 알아둘 것 — 인수인계 문서와 실제가 다른 점
 
 - **`Scene.glb`의 위치**: 문서는 루트라고 했지만 실제로는 `assets/Scene.glb`입니다.
-  `statistics/`에 복사하지 않고 `../assets/Scene.glb`로 참조합니다 — 모델을 다시 구우면
-  온보딩과 지도가 저절로 같이 갱신되고(진실의 출처가 하나), 345KB짜리 이진 파일이
-  레포에 두 벌 들어가지 않습니다. 같은 오리진이라 CORS 문제도 없습니다.
+  처음에는 복사하지 않고 `../assets/Scene.glb`로만 참조했습니다(사본이 갈라질 위험이 없어서).
+  지도를 **자기 도메인에 따로 올리기로** 하면서 사본이 필요해졌습니다 — Vercel의 Root
+  Directory는 그 폴더 밖의 파일을 배포에 포함하지 않습니다. 지금은 `statistics/assets/`에
+  사본을 두고, 코드가 후보 두 경로를 순서대로 시도합니다. 드리프트는 `sync-model.mjs`로
+  막습니다(위 "Vercel 배포" 참고).
 - **배의 폴리곤 수**: 문서는 282 tri라고 했지만 실제 Ship 노드는 **1,302 tri**입니다
   (Ship Body 1226 + Funnel 40 + Funnel step 24 + Cabin 12). 갈매기(1,472)와 튜브(312)까지
   더하면 배 1척이 최대 3,086 tri, 80척이면 약 247,000 tri입니다. draw call이 9로 고정이라

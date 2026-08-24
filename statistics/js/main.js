@@ -132,7 +132,7 @@ class MapScene {
   }
 
   async load() {
-    const gltf = await new GLTFLoader().loadAsync(C.MODEL_URL);
+    const gltf = await loadShipGltf();
     this.fleet = new ShipFleet(gltf.scene, C.FLEET_CAPACITY);
     this.scene.add(this.fleet.group);
     runSelfChecks(this);
@@ -417,6 +417,19 @@ class MapScene {
       `flow ${this.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 ${C.FLOW_CROSS_SEC}초에 화면 횡단)`;
   }
 }
+
+/** 후보 경로를 순서대로 시도한다. 먼저 성공한 것을 쓰고, 다 실패하면 마지막 오류를 던진다. */
+async function tryLoadFirst(urls) {
+  const loader = new GLTFLoader();
+  let lastErr;
+  for (const url of urls) {
+    try { return await loader.loadAsync(url); } catch (err) { lastErr = err; }
+  }
+  throw lastErr;
+}
+// 배포 형태에 따라 GLB 경로가 다르다 (config.js의 MODEL_URLS 참고).
+// 단일 파일 시안에서는 build-standalone.mjs가 이 한 줄을 "파일 안의 GLB 파싱"으로 바꾼다.
+const loadShipGltf = () => tryLoadFirst(C.MODEL_URLS);
 
 // 등장 연출을 기다리는 줄의 상한 (_addRecord 참고)
 const ARRIVAL_QUEUE_MAX = 3;
