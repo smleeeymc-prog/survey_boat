@@ -10,9 +10,12 @@ statistics/
 ├─ vercel.json       이 폴더만 따로 배포할 때의 설정 (레포 루트에는 두지 않는다)
 ├─ assets/
 │  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
+├─ HANDOFF.html      이 문서를 브라우저에서 읽는 판 (README.md 에서 생성)
 ├─ tools/
 │  ├─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
-│  └─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
+│  ├─ build-handoff.mjs      README.md → HANDOFF.html
+│  ├─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
+│  └─ sync-from-main.mjs     main에 새로 들어온 것을 이 브랜치로 끌어오기
 ├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
 └─ js/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
@@ -26,6 +29,19 @@ statistics/
    ├─ selfcheck.js   조용히 깨지는 것들 자동 점검
    └─ main.js        조립 + 프레임 루프
 ```
+
+## 이 문서를 브라우저에서 읽기
+
+`HANDOFF.html`은 이 README를 그대로 렌더링한 단일 HTML입니다. CSS까지 파일 안에 있어서
+더블클릭하면 열리고, 레포를 안 열어보는 사람에게 그대로 넘길 수 있습니다(인쇄하면 흰 바탕).
+
+```bash
+node statistics/tools/build-handoff.mjs           # README.md → HANDOFF.html
+node statistics/tools/build-handoff.mjs --check   # 최신인지만 확인 (어긋나면 exit 1)
+```
+
+> 원본은 언제나 `README.md` 하나입니다. `HANDOFF.html`은 생성물이라 **직접 고치지 마세요** —
+> 다음에 다시 뽑으면 지워집니다. 문서를 고쳤으면 위 명령으로 같이 갱신하면 됩니다.
 
 ## 시안 보기 — 서버 없이
 
@@ -74,29 +90,53 @@ GitHub Pages에 올라가 있으면 `/statistics/` 경로로 바로 열립니다
 프로젝트의 동작까지 같이 바뀝니다. 설정은 `statistics/vercel.json` 안에만 있고,
 **Root Directory를 `statistics`로 잡은 새 프로젝트만** 그 파일을 읽습니다.
 
+### 브랜치 구조
+
+지도는 **`statistics-main`** 브랜치에서 배포됩니다. `main`과 별개의 "메인"이고,
+기존 도메인이 붙어 있는 프로젝트는 계속 `main`을 봅니다. 서로 건드리지 않습니다.
+
+```
+main              온보딩 씬 → 기존 도메인
+  └─ statistics-main   + statistics/ → 새 도메인
+```
+
+`statistics-main`은 `main`을 전부 포함한 뒤 지도 커밋만 얹은 브랜치입니다. 그래서
+루트의 `index.html`·`assets/`도 그대로 들어 있고, 지도가 `../assets/`를 참조하던
+경로도 살아 있습니다.
+
 ### 새 프로젝트 만들기
 
 1. Vercel → **Add New… → Project** → 같은 레포(`survey_boat`) 선택
 2. **Root Directory**를 `statistics` 로 지정 — 이게 전부입니다.
    Framework Preset은 **Other**, Build Command·Install Command는 **비워 둡니다**
    (정적 파일이라 빌드가 없습니다. `statistics/vercel.json`이 이미 그렇게 잡아 뒀습니다)
-3. **Production Branch** — 아래 둘 중 하나로 정합니다.
+3. **Settings → Git → Production Branch**를 **`statistics-main`** 으로 바꿉니다.
+   (기본값이 `main`이라 이걸 안 바꾸면 `statistics/`가 없는 커밋을 배포하려 합니다)
+4. **Settings → Domains**에서 새 도메인을 붙입니다.
 
-| | Production Branch | 기존 도메인에 생기는 일 |
-|---|---|---|
-| **A. main을 안 건드리고 싶다** | `claude/statistics-map-screen-p0yhdr` | **아무 일도 안 생김** |
-| **B. 정리해서 main으로** | `main` (기본값) | main에 밀려 있던 커밋들이 같이 배포됨 — 아래 주의 |
+결과: `새도메인/` = 머무름의 지도, `기존도메인/` = 온보딩(손대지 않음).
 
-> **B를 고를 때 주의**: 현재 `main`은 작업 브랜치보다 **16커밋 뒤처져 있습니다.**
-> `statistics/`뿐 아니라 최근 온보딩 씬 작업(Q3 문구 분기, 물결, 인트로 연출 등)도
-> main에 없습니다. 즉 **지금 도메인에 떠 있는 온보딩 화면은 구버전일 가능성이 큽니다.**
-> 머지하면 그 화면도 같이 최신으로 바뀝니다. 원하는 결과일 수도, 아닐 수도 있으니
-> 머지 전에 한 번 확인하시길 권합니다.
+### main에 새로 들어온 것 반영하기
 
-4. 배포되면 **Settings → Domains**에서 새 도메인을 이 프로젝트에 붙입니다.
-   기존 프로젝트는 손대지 않았으므로 원래 도메인은 그대로 돕니다.
+두 화면이 같은 레포에 살면서 배포만 갈라져 있으므로, `main`에 들어간 변경이 자동으로
+넘어오지 않습니다. 특히 이 둘이 갈라지면 조용히 어긋납니다.
 
-결과: `새도메인.com/` = 머무름의 지도, `기존도메인/` = 온보딩(그대로).
+| 갈라지면 | 무슨 일이 생기나 |
+|---|---|
+| `assets/Scene.glb` | 온보딩의 배와 지도의 배가 달라짐 |
+| `index.html`의 `REGIONS` / `STATES` / `KEYWORDS` | 통계 집계가 갈라짐 (`config.js`가 이 값을 옮겨 적은 것) |
+
+```bash
+git checkout statistics-main
+node statistics/tools/sync-from-main.mjs --check   # 밀린 게 있는지만 확인 (있으면 exit 1)
+node statistics/tools/sync-from-main.mjs           # 가져와서 병합 + 모델 사본 맞춤
+# 지도를 한 번 돌려보고 이상 없으면
+git push
+```
+
+`sync-from-main.mjs`는 **병합까지만 하고 푸시하지 않습니다.** 무엇이 들어왔는지 보고
+화면을 한 번 돌려본 뒤 올리는 게 맞습니다. 위 두 파일이 건드려졌으면 따로 짚어 주고,
+충돌하면 그 자리에서 멈춥니다.
 
 ### GLB 사본에 대해
 

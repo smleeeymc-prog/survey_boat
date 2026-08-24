@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>머무름의 지도 — 인수인계</title>
+<style>
+:root{
+  --ground:#0b1219; --surface:#111c26; --edge:rgba(160,196,220,.13);
+  --text:#d3e0e8; --muted:#8ba1b0; --dim:#5d7484; --accent:#ff4d6e; --spec:#7fc4d8;
+  --font:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',system-ui,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,'Roboto Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--text);font-family:var(--font);
+     font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased}
+main{max-width:820px;margin:0 auto;padding:52px 26px 90px}
+h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px;color:#eaf2f7;text-wrap:balance}
+h2{font-size:19px;font-weight:700;letter-spacing:-.01em;margin:46px 0 14px;padding-top:18px;
+   border-top:1px solid var(--edge);color:#e2ecf2;text-wrap:balance}
+h3{font-size:15.5px;font-weight:700;margin:30px 0 10px;color:#cfe0ea}
+h4{font-size:14px;font-weight:600;margin:22px 0 8px;color:var(--muted)}
+p{margin:0 0 14px}
+strong{color:#eef5f9;font-weight:600}
+a{color:var(--spec);text-decoration:none;border-bottom:1px solid rgba(127,196,216,.3)}
+a:hover{border-bottom-color:var(--spec)}
+code{font-family:var(--mono);font-size:.87em;background:rgba(160,196,220,.1);
+     padding:.12em .4em;border-radius:4px;color:#bcd7e4}
+pre{background:var(--surface);border:1px solid var(--edge);border-radius:10px;
+    padding:14px 16px;overflow-x:auto;margin:0 0 18px}
+pre code{background:none;padding:0;font-size:12.8px;line-height:1.65;color:#b9cfdc}
+blockquote{margin:0 0 18px;padding:13px 16px;background:var(--surface);
+           border-left:3px solid var(--accent);border-radius:0 8px 8px 0;
+           color:var(--muted);font-size:14px}
+blockquote strong{color:#f2f8fb}
+ul,ol{margin:0 0 16px;padding-left:22px}
+li{margin:0 0 6px}
+li::marker{color:var(--dim)}
+hr{border:0;border-top:1px solid var(--edge);margin:34px 0}
+.tw{overflow-x:auto;margin:0 0 20px;border:1px solid var(--edge);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--edge);vertical-align:top}
+thead th{background:var(--surface);color:var(--dim);font-weight:600;font-size:12px;
+         letter-spacing:.05em;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody td{color:var(--muted)}
+tbody td strong{color:var(--text)}
+td code{white-space:nowrap}
+.meta{color:var(--dim);font-size:12.5px;margin:0 0 40px;font-family:var(--mono)}
+@media print{
+  body{background:#fff;color:#111}
+  main{max-width:none;padding:0}
+  h1,h2,h3{color:#000}
+  h2{border-top-color:#ddd}
+  pre,blockquote,.tw,thead th{border-color:#ddd;background:#f6f7f8}
+  a{color:#111}
+  code{background:#eee;color:#111}
+  tbody td,strong,.meta{color:#333}
+}
+</style></head>
+<body><main>
+<p class="meta">statistics/README.md 에서 생성됨 · 2026-08-24</p>
+<h1>머무름의 지도 (statistics/)</h1>
+<p>참여자들이 남긴 문장이 배 한 척씩으로 바뀌어 한 바다에 모이는 <strong>전시용 송출 화면</strong>입니다.<br>루트의 온보딩 씬(<code>../index.html</code>)이 "참여자 1명이 자기 배 1척을 보는 화면"이라면, 이 화면은<br>그 배들이 전부 모여 있는 화면입니다.</p>
+<pre><code>statistics/
+├─ index.html        화면 골격 · importmap · 리퀴드 글래스 SVG 필터
+├─ vercel.json       이 폴더만 따로 배포할 때의 설정 (레포 루트에는 두지 않는다)
+├─ assets/
+│  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
+├─ HANDOFF.html      이 문서를 브라우저에서 읽는 판 (README.md 에서 생성)
+├─ tools/
+│  ├─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
+│  ├─ build-handoff.mjs      README.md → HANDOFF.html
+│  ├─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
+│  └─ sync-from-main.mjs     main에 새로 들어온 것을 이 브랜치로 끌어오기
+├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
+└─ js/
+   ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
+   ├─ ocean.js       파도 셰이더 + waveHeightAt  ← 온보딩 씬에서 그대로 확장
+   ├─ fleet.js       Scene.glb의 Ship 노드를 InstancedMesh로
+   ├─ style.js       "답변 → 배의 모습" 매핑이 있는 유일한 곳 (지금은 난수)
+   ├─ motion.js      푸아송 디스크 배치 + 흐름
+   ├─ camera.js      고정 카메라
+   ├─ panel.js       누적 수 · 통계 자동 전환 · 새 문장 카드
+   ├─ store.js       기록 저장소 (지금은 목업, 백엔드 어댑터 자리 있음)
+   ├─ selfcheck.js   조용히 깨지는 것들 자동 점검
+   └─ main.js        조립 + 프레임 루프</code></pre>
+<h2>이 문서를 브라우저에서 읽기</h2>
+<p><code>HANDOFF.html</code>은 이 README를 그대로 렌더링한 단일 HTML입니다. CSS까지 파일 안에 있어서<br>더블클릭하면 열리고, 레포를 안 열어보는 사람에게 그대로 넘길 수 있습니다(인쇄하면 흰 바탕).</p>
+<pre data-lang="bash"><code>node statistics/tools/build-handoff.mjs           # README.md → HANDOFF.html
+node statistics/tools/build-handoff.mjs --check   # 최신인지만 확인 (어긋나면 exit 1)</code></pre>
+<blockquote>원본은 언제나 <code>README.md</code> 하나입니다. <code>HANDOFF.html</code>은 생성물이라 <strong>직접 고치지 마세요</strong> — 다음에 다시 뽑으면 지워집니다. 문서를 고쳤으면 위 명령으로 같이 갱신하면 됩니다.</blockquote>
+<h2>시안 보기 — 서버 없이</h2>
+<p><code>statistics/tools/build-standalone.mjs</code>가 <strong>더블클릭하면 열리는 파일 하나</strong>를 뽑아 줍니다.<br>three.js·GLTFLoader·Scene.glb·앱 코드를 전부 파일 안에 넣어서, 로컬 서버도 CDN도<br>필요 없습니다. 세로 9:16 액자 안에서 돌기 때문에 가로 모니터에서도 전시 화면 그대로 보입니다.</p>
+<pre data-lang="bash"><code>npm i three@0.160.1                                    # 한 번만
+node statistics/tools/build-standalone.mjs             # → 머무름의지도_시안.html</code></pre>
+<blockquote>이 프로젝트에 빌드 도구가 생긴 게 아닙니다. <code>statistics/</code>는 그대로 순수 vanilla이고, 이 스크립트는 앱을 빌드하지 않습니다. 리뷰용 사본을 뽑을 뿐이라, 씬 문서와 원본의 차이는 스크립트 안 <code>REWRITES</code>에 적힌 세 군데뿐입니다(GLB를 fetch 대신 parse, iframe에는 location.search가 없어 파라미터를 따로 받음).</blockquote>
+<h2>실행 — 원본 그대로</h2>
+<p><code>file://</code>로 열면 GLB fetch가 CORS로 막힙니다. 로컬 서버가 필요합니다.</p>
+<pre data-lang="bash"><code>python3 -m http.server 8000      # 레포 루트에서
+# → http://localhost:8000/statistics/</code></pre>
+<p>GitHub Pages에 올라가 있으면 <code>/statistics/</code> 경로로 바로 열립니다.</p>
+<h3>쿼리 파라미터</h3>
+<div class="tw"><table><thead><tr><th>파라미터</th><th>기본값</th><th>설명</th></tr></thead><tbody><tr><td><code>time</code></td><td><code>night</code></td><td>시간대 팔레트 (<code>day</code> / <code>afternoon</code> / <code>evening</code> / <code>night</code>)</td></tr><tr><td><code>glass</code></td><td>(자동)</td><td>유리 단계 고정 (<code>lens</code> / <code>blur</code> / <code>flat</code>). 안 주면 워치독이 판단</td></tr><tr><td><code>debug</code></td><td>–</td><td><code>1</code>이면 fps·draw call·인스턴스 수 오버레이</td></tr><tr><td><code>interactive</code></td><td>–</td><td><code>1</code>이면 드래그로 시점 조작 (리허설용, 전시 기본값은 무조작)</td></tr><tr><td><code>seed</code></td><td><code>46</code></td><td>목업: 시작할 때 이미 쌓여 있는 기록 수</td></tr><tr><td><code>interval</code></td><td><code>14</code></td><td>목업: 새 기록이 들어오는 평균 간격(초). <code>0</code>이면 안 들어옴</td></tr></tbody></table></div>
+<p>전시장에서는 <code>?glass=...</code>로 유리 단계를 <strong>박아두는 걸 권합니다</strong>. 워치독은 안전장치이지<br>매번 같은 판단을 한다는 보장이 없어서, 실기기에서 한 번 재보고 고정하는 쪽이 예측 가능합니다.</p>
+<h2>Vercel 배포 — 기존 도메인은 그대로 두고 새 도메인 하나</h2>
+<p><strong>핵심: 레포 루트에는 <code>vercel.json</code>을 두지 않습니다.</strong> 루트에 두면 지금 main에 연결된<br>프로젝트의 동작까지 같이 바뀝니다. 설정은 <code>statistics/vercel.json</code> 안에만 있고,<br><strong>Root Directory를 <code>statistics</code>로 잡은 새 프로젝트만</strong> 그 파일을 읽습니다.</p>
+<h3>브랜치 구조</h3>
+<p>지도는 <strong><code>statistics-main</code></strong> 브랜치에서 배포됩니다. <code>main</code>과 별개의 "메인"이고,<br>기존 도메인이 붙어 있는 프로젝트는 계속 <code>main</code>을 봅니다. 서로 건드리지 않습니다.</p>
+<pre><code>main              온보딩 씬 → 기존 도메인
+  └─ statistics-main   + statistics/ → 새 도메인</code></pre>
+<p><code>statistics-main</code>은 <code>main</code>을 전부 포함한 뒤 지도 커밋만 얹은 브랜치입니다. 그래서<br>루트의 <code>index.html</code>·<code>assets/</code>도 그대로 들어 있고, 지도가 <code>../assets/</code>를 참조하던<br>경로도 살아 있습니다.</p>
+<h3>새 프로젝트 만들기</h3>
+<ol><li>Vercel → <strong>Add New… → Project</strong> → 같은 레포(<code>survey_boat</code>) 선택</li><li><strong>Root Directory</strong>를 <code>statistics</code> 로 지정 — 이게 전부입니다. Framework Preset은 <strong>Other</strong>, Build Command·Install Command는 <strong>비워 둡니다</strong> (정적 파일이라 빌드가 없습니다. <code>statistics/vercel.json</code>이 이미 그렇게 잡아 뒀습니다)</li><li><strong>Settings → Git → Production Branch</strong>를 <strong><code>statistics-main</code></strong> 으로 바꿉니다. (기본값이 <code>main</code>이라 이걸 안 바꾸면 <code>statistics/</code>가 없는 커밋을 배포하려 합니다)</li><li><strong>Settings → Domains</strong>에서 새 도메인을 붙입니다.</li></ol>
+<p>결과: <code>새도메인/</code> = 머무름의 지도, <code>기존도메인/</code> = 온보딩(손대지 않음).</p>
+<h3>main에 새로 들어온 것 반영하기</h3>
+<p>두 화면이 같은 레포에 살면서 배포만 갈라져 있으므로, <code>main</code>에 들어간 변경이 자동으로<br>넘어오지 않습니다. 특히 이 둘이 갈라지면 조용히 어긋납니다.</p>
+<div class="tw"><table><thead><tr><th>갈라지면</th><th>무슨 일이 생기나</th></tr></thead><tbody><tr><td><code>assets/Scene.glb</code></td><td>온보딩의 배와 지도의 배가 달라짐</td></tr><tr><td><code>index.html</code>의 <code>REGIONS</code> / <code>STATES</code> / <code>KEYWORDS</code></td><td>통계 집계가 갈라짐 (<code>config.js</code>가 이 값을 옮겨 적은 것)</td></tr></tbody></table></div>
+<pre data-lang="bash"><code>git checkout statistics-main
+node statistics/tools/sync-from-main.mjs --check   # 밀린 게 있는지만 확인 (있으면 exit 1)
+node statistics/tools/sync-from-main.mjs           # 가져와서 병합 + 모델 사본 맞춤
+# 지도를 한 번 돌려보고 이상 없으면
+git push</code></pre>
+<p><code>sync-from-main.mjs</code>는 <strong>병합까지만 하고 푸시하지 않습니다.</strong> 무엇이 들어왔는지 보고<br>화면을 한 번 돌려본 뒤 올리는 게 맞습니다. 위 두 파일이 건드려졌으면 따로 짚어 주고,<br>충돌하면 그 자리에서 멈춥니다.</p>
+<h3>GLB 사본에 대해</h3>
+<p>Vercel의 Root Directory는 <strong>그 폴더 밖의 파일을 배포에 포함하지 않습니다.</strong> 그래서<br><code>statistics/assets/Scene.glb</code>에 루트 것의 사본을 뒀습니다. 코드는 후보 두 개를 순서대로<br>시도하므로(<code>config.js</code>의 <code>MODEL_URLS</code>) 어느 형태로 올리든 그대로 돕니다.</p>
+<div class="tw"><table><thead><tr><th>배포 형태</th><th>실제로 쓰이는 경로</th></tr></thead><tbody><tr><td>Vercel, Root Directory = <code>statistics</code></td><td><code>./assets/Scene.glb</code></td></tr><tr><td>레포 루트 서빙 (로컬 서버, GitHub Pages)</td><td><code>./assets/Scene.glb</code> (없으면 <code>../assets/Scene.glb</code>)</td></tr></tbody></table></div>
+<p>사본은 드리프트 위험입니다 — 블렌더에서 모델을 다시 굽고 루트만 갈아끼우면 온보딩의<br>배와 지도의 배가 소리 없이 달라집니다. <strong>모델을 다시 구우면 반드시:</strong></p>
+<pre data-lang="bash"><code>node statistics/tools/sync-model.mjs          # 맞춘다
+node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 exit 1 — CI에 걸기 좋다)</code></pre>
+<h3>배포 전에 한 번 볼 것</h3>
+<ul><li><strong>three.js를 unpkg CDN에서 받습니다.</strong> unpkg가 죽으면 화면도 죽습니다. 전시 당일 리스크를 없애려면 <code>three.module.js</code>와 <code>GLTFLoader.js</code>를 레포에 넣고 importmap을 그쪽으로 돌리는 게 안전합니다(약 1.4MB). 지금은 온보딩 씬과 같은 방식을 유지했습니다.</li><li><strong>캐시</strong>: HTML·JS·CSS는 <code>must-revalidate</code>, GLB는 1년 immutable로 잡아 뒀습니다. 전시 중 코드를 고치면 새로고침만으로 반영되고, 무거운 모델은 다시 안 받습니다.</li></ul>
+<h2>인수인계 문서에서 미결정이었던 것들 — 이번에 정한 것</h2>
+<div class="tw"><table><thead><tr><th>항목</th><th>결정</th><th>근거</th></tr></thead><tbody><tr><td>인스턴싱에서 배 색</td><td><strong>GLB 메쉬 노드마다 InstancedMesh 하나. 인스턴스 행렬은 공유, 색을 쓰는 그룹에만 <code>instanceColor</code></strong></td><td>"배당 색 1개"의 제약도 "메쉬 쪼개기"의 수고도 없이 둘 다 얻음. 선체·굴뚝 재질은 GLB 원본 그대로 유지되고, draw call은 배 수와 무관하게 재질 수(9)로 고정</td></tr><tr><td>카메라</td><td><strong>고정 (무조작)</strong></td><td>전시장 TV/프로젝터에 입력장치가 없음. 배가 흐르는 연출이라 카메라까지 움직이면 "화면 끝에서 등장 → 반대쪽 퇴장" 규칙이 깨짐. <code>?interactive=1</code>로 리허설용 조작만 열어둠</td></tr><tr><td>배의 움직임</td><td><strong>전부 같은 방향·같은 속도로 흐름</strong></td><td>아래 "흐름" 참고</td></tr><tr><td>배 배치</td><td><strong>푸아송 디스크(Bridson) + 토러스 감김</strong></td><td>최소 간격 보장. 속도가 하나라 상대 위치가 안 변하고, 감김도 정확히 띠 폭만큼이라 한 번 안 겹치게 놓으면 영원히 안 겹침</td></tr><tr><td>표현 채널</td><td><strong>지금은 난수 (시안 단계)</strong></td><td>아래 "표현 채널" 참고</td></tr><tr><td>문장 표시</td><td><strong>UI 레이어(유리 카드)</strong></td><td>문서 6장에서 이미 확정된 것을 그대로 구현</td></tr><tr><td>백엔드</td><td><strong>아직 안 정함</strong></td><td>아래 "남은 일" 참고 — 계정·비용이 걸린 결정이라 코드로 앞서가지 않았음</td></tr><tr><td><code>age_bracket</code></td><td><strong>안 건드림</strong></td><td>미확정. 화면 쪽은 필드가 생기면 통계 지표 하나 추가하면 끝나는 구조(<code>panel.js</code>의 <code>METRICS</code>)</td></tr></tbody></table></div>
+<h3>흐름 — 배는 어떻게 움직이나</h3>
+<p>배는 <strong>전부 같은 방향으로, 같은 속도로</strong> 흐릅니다. 화면 왼쪽 끝에서 나타나 오른쪽으로<br>빠지고, 띠 폭(<code>FLOW_CORRIDOR_W = 80</code>)을 다 지나면 반대편 끝으로 감겨 다시 들어옵니다.</p>
+<p>속도는 상수로 박지 않고 <strong>"기준 깊이의 배가 40초에 화면을 건넌다"</strong>로 정의하고<br>카메라 화각에서 역산합니다(<code>FLOW_CROSS_SEC</code>, <code>FLOW_REF_DEPTH</code>). 화면 폭은 기기<br>화면비마다 다르기 때문입니다. 세로 화면(1080×1920) 실측:</p>
+<div class="tw"><table><thead><tr><th>카메라 앞 거리</th><th>화면 가로 폭</th><th>횡단 시간</th></tr></thead><tbody><tr><td>10 (화면 아래끝)</td><td>6.5</td><td>24초</td></tr><tr><td>15</td><td>8.6</td><td>32초</td></tr><tr><td><strong>20 (기준)</strong></td><td><strong>10.9</strong></td><td><strong>40초</strong></td></tr><tr><td>30 (화면 세로 중앙)</td><td>15.7</td><td>58초</td></tr><tr><td>48 (가장 먼 배)</td><td>24.6</td><td>90초</td></tr></tbody></table></div>
+<p>속도를 하나로 통일한 게 핵심입니다. <strong>깊이마다 속도를 달리 주면 원근이 사라져<br>평면 스크롤처럼 보입니다.</strong> 가까운 배가 빨리, 먼 배가 천천히 지나가는 게 깊이감입니다.<br>띠 폭이 화면보다 넉넉해서 감기는 순간은 언제나 화면 밖이고, <code>selfcheck.js</code>가 이걸<br>화면비마다 검산합니다.</p>
+<p>한 번에 화면에 보이는 배는 80척 중 약 13척입니다. 나머지는 띠의 화면 밖 구간에 있고,<br>약 5분 주기로 다시 들어옵니다.</p>
+<h3>표현 채널 — 지금은 난수</h3>
+<p>어떤 답변이 배의 무엇을 바꿀지가 아직 확정되지 않아서, <strong>채널 값을 실제 답변이 아니라<br>난수에서 뽑고 있습니다.</strong> <code>config.js</code>의 한 줄로 바뀝니다:</p>
+<pre data-lang="js"><code>export const STYLE_SOURCE = "random";   // "random" | "record"</code></pre>
+<p>난수는 <code>record_id</code>를 시드로 한 <strong>고정 난수</strong>입니다 — 매 프레임 새로 뽑으면 색이 깜빡이고,<br>매 로드마다 새로 뽑으면 전시 중 재시작할 때 바다가 통째로 달라집니다. 지금 방식이면<br>"그 기록의 배"는 언제 봐도 같은 배입니다.</p>
+<p><strong>중요</strong>: 난수인 건 <strong>배의 모습뿐</strong>입니다. 상단 패널의 누적 수와 통계(키워드·상태·지역<br>분포)는 지금도 실제 기록에서 집계합니다.</p>
+<div class="tw"><table><thead><tr><th>채널</th><th>어떻게</th><th>비용</th></tr></thead><tbody><tr><td>캐빈 색</td><td><code>instanceColor</code> (재질 색을 흰색으로 두고 색 전체를 인스턴스가 들고 감)</td><td>공짜</td></tr><tr><td>선체 색조</td><td><code>instanceColor</code> (GLB 원본 색에 흰색 근처 색조를 곱함 — 원본 색을 안 버림)</td><td>공짜</td></tr><tr><td>갑판 소품</td><td>갈매기 / 구명튜브. 파츠마다 인스턴스 그룹 1개</td><td>draw call +1씩</td></tr></tbody></table></div>
+<p>매핑을 바꾸거나 채널을 늘릴 때 손대는 파일은 <strong><code>style.js</code> 하나</strong>입니다. 새 채널에<br>인스턴스 컬러를 걸려면 <code>fleet.js</code>의 <code>TINT_ROLES</code>에 한 줄만 더하면 됩니다.<br>씬·카메라·패널 코드는 "배마다 style 객체 하나"만 알고, 그 안이 어떻게 정해졌는지는<br>모릅니다.</p>
+<h3>상태별 자리·움직임은 어디 갔나</h3>
+<p>처음 판에는 상태(머무르는 중 / 떠날 준비 중 / 오가는 중 / 돌아온 사람 / 아직 모르겠음)에<br>따라 바다 중심에서의 거리와 움직임이 달랐습니다. 채널 구성이 아직 변동될 수 있다고 해서<br><strong>흐름 하나로 단순화하고 잠시 뺐습니다.</strong> 되살릴 자리는 <code>motion.js</code>의 <code>stepBoat</code> 한 곳이고,<br>깊이나 속도 배수를 <code>style.js</code>가 정하게 하는 방법도 있습니다.</p>
+<h2>온보딩 씬에서 가져온 것 / 바꾼 것</h2>
+<p><strong>그대로 가져온 것</strong> — Gerstner 파도 3개(파장 2.2/1.3/0.8)와 그 상수, 플랫 셰이딩(<code>dFdx/dFdy</code>),<br>프레넬+램버트+스펙큘러 조합, 안개, 물결(리플)·항적 셰이더, 무한 바다 재중심 트릭,<br><code>WAVE_WRAP_DOMAIN</code> 랩, 성능 워치독 패턴, <code>Scene.glb</code>의 Ship 노드와 그 재질,<br>키워드→색/소품 매핑, 시간대 팔레트.</p>
+<p><strong>바꾼 것 (3곳뿐입니다)</strong></p>
+<ol><li><strong>재중심이 1축 → 2축.</strong> 온보딩은 배가 +X로만 나아가서 <code>uBoatX</code>(float) 하나면 됐습니다. 지도는 카메라가 XZ 평면을 자유롭게 흐르므로 <code>uCenter</code>(vec2)로 바꿨습니다. 수식은 그대로입니다. <code>WAVE_WRAP_DOMAIN = 1144</code>가 Z축에서도 공배수인지 검산해 봤고, 맞습니다 (X: 520/440/1001, Z: 78/748/572 — 전부 정수). <code>selfcheck.js</code>가 로드마다 다시 검산합니다.</li><li><strong>유리병 클리핑(<code>uClip*</code>) 제거.</strong> 지도엔 병이 없습니다.</li><li><strong>스케일·카메라·인스턴싱 구조.</strong> 배 크기 3.38 → 1.5, FOV 34 → 50, 타일 31.5 → 190, 안개 범위 확대. 재질·색·지오메트리는 손대지 않았습니다.</li></ol>
+<h2>알아둘 것 — 인수인계 문서와 실제가 다른 점</h2>
+<ul><li><strong><code>Scene.glb</code>의 위치</strong>: 문서는 루트라고 했지만 실제로는 <code>assets/Scene.glb</code>입니다. 처음에는 복사하지 않고 <code>../assets/Scene.glb</code>로만 참조했습니다(사본이 갈라질 위험이 없어서). 지도를 <strong>자기 도메인에 따로 올리기로</strong> 하면서 사본이 필요해졌습니다 — Vercel의 Root Directory는 그 폴더 밖의 파일을 배포에 포함하지 않습니다. 지금은 <code>statistics/assets/</code>에 사본을 두고, 코드가 후보 두 경로를 순서대로 시도합니다. 드리프트는 <code>sync-model.mjs</code>로 막습니다(위 "Vercel 배포" 참고).</li><li><strong>배의 폴리곤 수</strong>: 문서는 282 tri라고 했지만 실제 Ship 노드는 <strong>1,302 tri</strong>입니다 (Ship Body 1226 + Funnel 40 + Funnel step 24 + Cabin 12). 갈매기(1,472)와 튜브(312)까지 더하면 배 1척이 최대 3,086 tri, 80척이면 약 247,000 tri입니다. draw call이 9로 고정이라 현대 GPU에는 여전히 여유가 있지만, 문서의 "22,560 tri" 추정보다 한 자리 큽니다.</li><li><strong>키워드 목록</strong>: 시안 스크린샷에는 <code>비용</code>이 있지만 온보딩(<code>../index.html</code>)의 실제 <code>KEYWORDS</code>에는 없습니다. 집계가 갈라지면 안 되므로 온보딩 쪽을 정본으로 삼았습니다.</li><li><strong>GLB의 <code>Cabin</code> 노드에는 재질이 없습니다.</strong> 그러면 GLTFLoader가 기본 재질을 만들어 주는데, 그 기본값이 <code>metalness: 1</code>(완전 금속)입니다. 금속은 확산광이 없고 환경맵 반사만 보이는데 이 씬에는 환경맵이 없어서, 직사광이 강한 낮에는 색이 스페큘러로 어른거리다가 <strong>밤 팔레트에서는 캐빈이 통째로 새까매집니다</strong> — 즉 "키워드 → 캐빈 색" 규칙이 기본 설정에서 아무 일도 안 합니다. 누가 의도해서 칠한 재질이 아니라 로더의 기본값이므로, <strong>캐빈 그룹에 한해</strong> <code>metalness: 0</code>으로 되돌렸습니다(색·지오메트리는 그대로). <strong>온보딩 씬(<code>../index.html</code>)에도 같은 증상이 잠재해 있습니다</strong> — 거기는 밝은 시간대가 기본이라 아직 드러나지 않았을 뿐이고, 사용자가 '나눈 적 없음'을 골라 밤이 되면 캐빈 색이 사라집니다. 온보딩 쪽은 이번 작업 범위 밖이라 건드리지 않았습니다.</li><li><strong><code>instanceColor</code>는 <code>material.vertexColors = true</code> 없이는 조용히 버려집니다.</strong> three.js의 <code>color_vertex</code> 청크는 <code>USE_INSTANCING_COLOR</code>만으로도 <code>vColor</code>를 채우지만, <code>color_fragment</code> 청크는 <code>USE_COLOR</code>(= <code>vertexColors</code>)일 때만 그 값을 곱합니다. 그리고 <code>vertexColors</code>를 켜면 지오메트리의 <code>color</code> 어트리뷰트도 같이 읽으므로, 전부 1인 어트리뷰트를 깔아 둬야 새까매지지 않습니다. 둘 다 <code>fleet.js</code>에 주석으로 남겼습니다.</li></ul>
+<h2>리퀴드 글래스</h2>
+<p>문서 9장의 2단계 구성을 그대로 따랐고, 강등 경로를 하나 더 붙였습니다.</p>
+<div class="tw"><table><thead><tr><th>단계</th><th>내용</th><th>언제</th></tr></thead><tbody><tr><td><code>lens</code></td><td><code>blur(16px) saturate(1.55) url(#liquid-lens)</code> — <code>feDisplacementMap</code> 굴절</td><td>Chromium 계열 기본</td></tr><tr><td><code>blur</code></td><td><code>blur(18px) saturate(1.6)</code></td><td>Safari/Firefox는 <code>@supports</code>가 걸러서 자동으로 여기</td></tr><tr><td><code>flat</code></td><td><code>backdrop-filter</code> 없이 불투명 배경</td><td>프레임이 계속 모자랄 때</td></tr></tbody></table></div>
+<ul><li>필터에 <code>color-interpolation-filters="sRGB"</code>가 붙어 있습니다. 없으면 노이즈가 선형 색공간에서 생성돼 중간값이 0.5에서 밀리고, 결과가 굴절이 아니라 한쪽으로 쏠린 평행이동이 됩니다.</li><li>가이드의 <code>rgba(255,255,255,.08)</code> 위에 <strong>어두운 스크림을 한 겹 깔았습니다.</strong> 뒤가 밤바다 셰이더라 흰 유리만으로는 파도가 글자 사이로 지나가 읽히지 않습니다. 스크림은 아래로 갈수록 진해집니다 — 패널 위쪽 뒤에는 안개·하늘(어둡고 균일), 아래쪽 뒤에는 바다 (밝고 어른거림)가 오기 때문입니다.</li><li>안개를 온보딩보다 훨씬 멀리 밀었습니다(near 34 / far 84). 유리 뒤가 균일한 안개색 판이면 굴절도 블러도 보일 게 없어서 그냥 어두운 색판이 됩니다. 먼 바다의 결이 비쳐야 유리로 읽힙니다.</li></ul>
+<p><strong>성능</strong>: 워치독이 실제 벽시계 기준으로 프레임타임을 재고 자동으로 내려갑니다.<br>(<code>dt</code>에 0.05 상한이 걸려 있어서 장면 시간으로 재면, 렉이 심할수록 절전이 늦게 켜지는<br>정확히 반대 방향의 동작이 됩니다 — 그래서 워치독만 raw dt를 씁니다.)<br>1차는 온보딩과 같은 기준(33fps 미만)으로 스펙큘러·물결을 끄고 픽셀비를 1로 낮춥니다.<br>2차부터는 유리를 한 단계씩 내립니다.</p>
+<h2>남은 일</h2>
+<ol><li><strong>백엔드 (제일 큰 덩어리).</strong> 지금은 <code>MockStore</code>가 가짜 기록을 만들어 냅니다. 화면이 저장소에 요구하는 건 세 가지뿐입니다 — <code>onReady(records)</code> / <code>onInsert(record)</code> / <code>onRemove(recordId)</code>. <code>store.js</code>에 Supabase·Firestore 두 경우의 배선이 주석으로 적혀 있고, 정해지면 <code>main.js</code>의 저장소 한 줄만 갈아끼우면 씬 쪽은 손댈 게 없습니다.</li><li>어느 쪽이든 <strong>공개 조건(<code>consent_public</code> &amp;&amp; <code>moderation_status === "public"</code>)은 서버에서 걸어야 합니다.</strong> 비공개 문장이 브라우저까지 내려온 뒤 JS가 거르는 구조면 개발자도구만 열면 다 보입니다.</li><li>Firestore를 쓴다면: 첫 스냅샷이 기존 문서 전부를 <code>added</code>로 줍니다. 그대로 두면 시작할 때 수십 척이 한 척씩 등장 연출을 하며 쏟아집니다. 첫 스냅샷만 모아서 <code>onReady</code>로 넘겨야 합니다.</li><li><strong>관리자 화면</strong> (문장 숨김·금칙어 확인). 화면 쪽은 <code>onRemove</code>만 받으면 즉시 반영됩니다.</li><li><strong>인터넷 장애 대비</strong> 임시 로컬 저장·재전송. 제출 쪽(온보딩) 몫입니다.</li><li><strong>실기기 프레임 측정.</strong> 전시장에서 쓸 TV/태블릿에서 <code>?debug=1</code>로 한 번 재보고 <code>?glass=</code>를 고정할 것. Chromium 계열이 아니면 굴절은 자동으로 꺼집니다.</li><li><strong>표현 채널 확정.</strong> <code>STYLE_SOURCE</code>를 <code>"record"</code>로 바꾸고 <code>style.js</code>의 <code>fromRecord</code> 쪽을 채우면 됩니다. 지역 → 선체 색조 매핑은 자리만 비워 뒀습니다.</li><li><strong>폰트.</strong> 지금은 시스템 폰트 스택(온보딩과 동일)입니다. 전시장 기기에 따라 초대형 숫자의 인상이 달라질 수 있어서, 웹폰트를 쓸 거면 오프라인 대비로 파일을 레포에 넣는 편이 안전합니다.</li></ol>
+</main></body></html>
