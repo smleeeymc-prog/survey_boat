@@ -15,6 +15,7 @@ import * as C from "./config.js";
 import { buildWater, waveHeightAt, wrapWave, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
 import { SlotPool, makeBoat, stepBoat, makeRng } from "./motion.js";
+import { makeStyle } from "./style.js";
 import { TourCamera } from "./camera.js";
 import { Panel } from "./panel.js";
 import { MockStore } from "./store.js";
@@ -115,6 +116,7 @@ class MapScene {
     this._perf = { samples: [], wall: 0, checkAt: 2.0, step: 0 };
 
     this._rippleScratch = [];
+    this.flowSpeed = 0;
     this._resize();
     window.addEventListener("resize", () => this._resize());
   }
@@ -123,6 +125,10 @@ class MapScene {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.cam.setAspect(w / h);
+    // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다.
+    // 화면 폭은 기기 화면비마다 다르므로 상수로 박을 수 없고, 카메라에서 역산한다.
+    // (창 크기를 바꾸면 속도도 따라 바뀐다 — 전시장에서는 한 번 고정되므로 무해하다)
+    this.flowSpeed = (2 * this.cam.frameHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
   }
 
   async load() {
@@ -150,12 +156,15 @@ class MapScene {
   }
 
   _addRecord(record, announce) {
-    const slot = this.slots.take(record.state);
+    const slot = this.slots.take();
     if (!slot) return;
     const boat = makeBoat(record, slot);
+    // "이 배가 어떻게 생겼는지"는 전부 여기서 한 번 정해진다 (style.js).
+    // 지금은 난수에서 뽑지만, config.js의 STYLE_SOURCE만 바꾸면 실제 답변에서 온다.
+    boat.style = makeStyle(record);
     // 물결의 "드러나는 방향"은 배마다 한 번 정해 두고 바꾸지 않는다 —
     // 계속 돌면 눈이 그걸 쫓게 된다(온보딩 주석).
-    const rng = makeRng(boat.slot.x * 1000 + boat.slot.z * 7919 + 13);
+    const rng = makeRng(boat.slot.x0 * 1000 + boat.slot.depth * 7919 + 13);
     const a = rng() * Math.PI * 2;
     boat.arcX = Math.cos(a); boat.arcZ = Math.sin(a);
     boat.arcCut = Math.cos(Math.PI * (0.20 + rng() * 0.10));   // 둘레의 20~30%만 보인다
@@ -202,7 +211,7 @@ class MapScene {
   _reindex() {
     if (!this.fleet) return;
     this.fleet.setCount(this.boats.length);
-    for (let i = 0; i < this.boats.length; i++) this.fleet.applyRecord(i, this.boats[i].record);
+    for (let i = 0; i < this.boats.length; i++) this.fleet.applyStyle(i, this.boats[i].style);
   }
 
   /**
@@ -370,7 +379,7 @@ class MapScene {
       const d = 0.5;   // 파도 기울기를 재는 간격
       for (let i = 0; i < this.boats.length; i++) {
         const b = this.boats[i];
-        stepBoat(b, dt, t);
+        stepBoat(b, dt, t, this.flowSpeed);
         const x = b.phase ? b.renderX : b.x;
         const z = b.phase ? b.renderZ : b.z;
         const heading = b.phase ? b.renderHeading : b.heading;
@@ -404,7 +413,8 @@ class MapScene {
       `${(1 / Math.max(dt, 1e-4)).toFixed(0)} fps  dt ${(dt * 1000).toFixed(1)}ms\n` +
       `boats ${this.boats.length} / records ${this.records.length}\n` +
       `draw calls ${info.calls}  tris ${info.triangles.toLocaleString()}\n` +
-      `glass ${document.documentElement.dataset.glass}  time ${TIME_KEY}`;
+      `glass ${document.documentElement.dataset.glass}  time ${TIME_KEY}\n` +
+      `flow ${this.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 ${C.FLOW_CROSS_SEC}초에 화면 횡단)`;
   }
 }
 

@@ -26,20 +26,24 @@
  * ========================================================================== */
 
 import * as THREE from "three";
-import {
-  SHIP_FORWARD_OFFSET, SHIP_DRAFT, FLEET_SHIP_SCALE,
-  KEYWORD_COLOR, CABIN_BASE_COLOR, KEYWORD_PROP,
-} from "./config.js";
+import { SHIP_FORWARD_OFFSET, SHIP_DRAFT, FLEET_SHIP_SCALE } from "./config.js";
 
 // GLB 노드 이름 → 역할. 이름이 바뀌면 조용히 역할이 사라지므로 selfCheck가 확인한다.
+// (three.js가 노드 이름의 공백을 _로 바꾸므로 "Ship Body"는 "Ship_Body"로 들어온다)
 const CABIN_NODE = "Cabin";
+const HULL_NODE = /^Ship[_ ]?Body/;
 const PROP_NODES = { Seagull: "gull", Tube: "tube" };
 
-/** 메쉬에서 위로 거슬러 올라가며 역할을 찾는다. 아무 데도 안 걸리면 선체 취급. */
+// 인스턴스 컬러를 걸 역할 → style의 어느 값을 쓸지. 여기 없는 역할은 GLB 재질 그대로다.
+// 표현 채널을 늘리려면 style.js에 값을 추가하고 여기 한 줄만 더하면 된다.
+const TINT_ROLES = { cabin: "cabinColor", hull: "hullTint" };
+
+/** 메쉬에서 위로 거슬러 올라가며 역할을 찾는다. 아무 데도 안 걸리면 부속 취급. */
 function roleOf(mesh, shipRoot) {
   for (let o = mesh; o && o !== shipRoot.parent; o = o.parent) {
     if (PROP_NODES[o.name]) return PROP_NODES[o.name];
     if (o.name === CABIN_NODE) return "cabin";
+    if (HULL_NODE.test(o.name)) return "hull";
   }
   return "body";
 }
@@ -83,7 +87,8 @@ export class ShipFleet {
     // 메쉬마다 InstancedMesh 하나. 지오메트리에는 배 원점 기준 변환을 구워 넣는다.
     /** @type {{role:string, mesh:THREE.InstancedMesh, mat:Float32Array}[]} */
     this.groups = [];
-    this.cabinMeshes = [];
+    /** 인스턴스 컬러를 쓰는 그룹들 — {mesh, key}. key는 style의 어느 값을 읽을지. */
+    this.tintMeshes = [];
     ship.traverse((child) => {
       if (!child.isMesh || !child.geometry) return;
       const role = roleOf(child, ship);
@@ -107,13 +112,15 @@ export class ShipFleet {
       inst.receiveShadow = false;
       inst.count = 0;
 
-      if (role === "cabin") {
-        // 온보딩과 같은 처리: 재질을 갈아끼우지 않고 color만 다룬다. three.js는 color를
-        // map에 곱하므로 나중에 UV 아틀라스 텍스처가 붙어도 키워드 색이 틴트로 남는다.
-        // 다만 지도에서는 재질 색을 흰색으로 두고 instanceColor가 색 전체를 들고 간다.
+      const tintKey = TINT_ROLES[role];
+      if (tintKey) {
+        // 캐빈은 재질 색을 흰색으로 두고 instanceColor가 색 전체를 들고 간다.
         // 재질에 크림색을 두고 거기에 키워드 색을 또 곱하면 두 색이 겹쳐 곱해져서
-        // 원래 키워드 색보다 어둡고 탁한 색이 나온다(실측: 관계 #e28ea0 → 거의 팥죽색).
-        mat.color.setHex(0xffffff);
+        // 원래 색보다 어둡고 탁해진다(실측: 관계 #e28ea0 → 거의 팥죽색).
+        // 선체는 반대로 GLB가 칠해 둔 색(Kapal)을 그대로 두고, 흰색 근처의 색조만
+        // 곱한다 — 원본 색을 버리지 않으면서 배마다 다른 기가 돌게 하는 게 목적이다.
+        if (role === "cabin") mat.color.setHex(0xffffff);
+
         inst.instanceColor = new THREE.InstancedBufferAttribute(
           new Float32Array(this.capacity * 3).fill(1), 3
         );
@@ -122,27 +129,26 @@ export class ShipFleet {
         // [함정] instanceColor를 넣는 것만으로는 아무 일도 일어나지 않는다.
         // three.js의 color_vertex 청크는 USE_INSTANCING_COLOR만 있어도 vColor를 채우지만,
         // color_fragment 청크는 USE_COLOR(=material.vertexColors)일 때만 그 vColor를
-        // diffuseColor에 곱한다. 즉 vertexColors를 켜지 않으면 인스턴스 색이 조용히 버려진다
-        // — 화면은 멀쩡히 그려지고 캐빈만 원래 색으로 남아서 한참 뒤에나 눈치챈다.
+        // diffuseColor에 곱한다. 즉 vertexColors를 켜지 않으면 인스턴스 색이 조용히
+        // 버려진다 — 화면은 멀쩡히 그려지고 색만 안 먹어서 한참 뒤에나 눈치챈다.
         mat.vertexColors = true;
+        // vertexColors를 켜면 셰이더가 지오메트리의 color 어트리뷰트도 같이 읽는다.
+        // 없으면 기본값이 들어가 새까매지므로, 전부 1인 어트리뷰트를 깔아 둔다
+        // (곱셈의 항등원이라 결과에 영향이 없다).
+        const vcount = geo.attributes.position.count;
+        geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(vcount * 3).fill(1), 3));
 
         // [함정 2] GLB의 Cabin 노드에는 재질이 없다. 그러면 GLTFLoader가 기본 재질을
         // 만들어 주는데, 그 기본값이 metalness:1(완전 금속)이다. 금속은 확산광이 없고
         // 환경맵 반사만 보이는데 이 씬에는 환경맵이 없어서, 직사광이 강한 낮에는
         // 색이 스페큘러로 어른거리다가 밤 팔레트에서는 캐빈이 통째로 새까매진다.
         // 즉 "키워드 → 캐빈 색"이라는 규칙이 기본 설정(밤)에서 아무 일도 안 하게 된다.
-        // 이건 누가 의도해서 칠한 재질이 아니라 로더의 기본값이므로, 캐빈 그룹에 한해
-        // 확산 재질로 되돌린다. (색·지오메트리는 그대로다. 온보딩 씬도 같은 기본값을
-        // 쓰고 있어서 같은 증상이 잠재해 있다 — 거기는 낮 계열이 기본이라 안 드러날 뿐이다)
-        mat.metalness = 0;
-        mat.roughness = 0.8;
-        // vertexColors를 켜면 셰이더가 지오메트리의 color 어트리뷰트도 같이 읽는다.
-        // 없으면 기본값이 들어가 캐빈이 새까매지므로, 전부 1인 어트리뷰트를 깔아 둔다
-        // (곱셈의 항등원이라 결과에 영향이 없다). 캐빈은 12삼각형뿐이라 비용도 없다.
-        const vcount = geo.attributes.position.count;
-        geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(vcount * 3).fill(1), 3));
+        // 이건 누가 의도해서 칠한 재질이 아니라 로더의 기본값이므로, 재질이 없던
+        // 그룹에 한해 확산 재질로 되돌린다. (색·지오메트리는 그대로다. 온보딩 씬도
+        // 같은 기본값을 쓰고 있어서 같은 증상이 잠재해 있다)
+        if (mat.metalness === 1) { mat.metalness = 0; mat.roughness = 0.8; }
 
-        this.cabinMeshes.push(inst);
+        this.tintMeshes.push({ mesh: inst, key: tintKey });
       }
 
       this.groups.push({ role, mesh: inst, mat: inst.instanceMatrix.array });
@@ -170,25 +176,20 @@ export class ShipFleet {
   }
 
   /**
-   * 기록 하나가 배 i에 배정될 때 한 번만 부르는 것들 — 색과 소품.
-   * @param {{keywords:string[]}} record
+   * 배 i의 "모습"을 쓴다. 자리가 밀릴 때마다 다시 부르면 되고, 매 프레임 부를 필요는 없다.
+   * style이 어떻게 정해졌는지(난수인지 답변인지)는 여기서 알 필요가 없다 — style.js 몫이다.
+   * @param {{cabinColor:number, hullTint:number, gull:boolean, tube:boolean}} style
    */
-  applyRecord(i, record) {
-    const kws = record.keywords || [];
-    // 첫 번째 키워드가 캐빈 색 (온보딩 규칙 그대로). 없으면 기본 크림색.
-    const hex = KEYWORD_COLOR[kws[0]];
-    this._c.setHex(hex === undefined ? CABIN_BASE_COLOR : hex);
-    for (const m of this.cabinMeshes) {
-      this._c.toArray(m.instanceColor.array, i * 3);
-      m.instanceColor.needsUpdate = true;
+  applyStyle(i, style) {
+    for (const t of this.tintMeshes) {
+      const hex = style[t.key];
+      this._c.setHex(hex === undefined ? 0xffffff : hex);
+      this._c.toArray(t.mesh.instanceColor.array, i * 3);
+      t.mesh.instanceColor.needsUpdate = true;
     }
-
     const props = this.props[i];
-    props.gull = false; props.tube = false;
-    for (const k of kws) {
-      const p = KEYWORD_PROP[k];
-      if (p) props[p] = true;
-    }
+    props.gull = !!style.gull;
+    props.tube = !!style.tube;
   }
 
   /**

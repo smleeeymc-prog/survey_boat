@@ -47,8 +47,9 @@ export function runSelfChecks(scene) {
     `[selfCheck] GLB에 없는 노드: ${fleet.missing.join(", ")} — 이름이 바뀌었는지 확인`
   );
   console.assert(
-    fleet.cabinMeshes.length > 0,
-    "[selfCheck] 캐빈 그룹이 없음 — 키워드 색이 아무 데도 안 먹는다"
+    fleet.tintMeshes.length >= 2,
+    `[selfCheck] 인스턴스 컬러를 받는 그룹이 ${fleet.tintMeshes.length}개 ` +
+    `— 캐빈/선체 노드 이름이 바뀌었는지 확인 (색 채널이 조용히 죽는다)`
   );
 
   // 4) 인스턴싱의 요점. draw call이 배 수에 비례하면 인스턴싱이 깨진 것이다.
@@ -62,10 +63,19 @@ export function runSelfChecks(scene) {
   console.assert(
     pool.slots.length >= C.FLEET_CAPACITY,
     `[selfCheck] 푸아송 자리 ${pool.slots.length}개 < 정원 ${C.FLEET_CAPACITY} ` +
-    `— SEA_RADIUS를 키우거나 FLEET_MIN_GAP을 줄일 것`
+    `— FLOW_CORRIDOR_W나 깊이 범위를 키우거나 FLEET_MIN_GAP을 줄일 것`
   );
 
-  // 6) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
+  // 6) 띠 폭이 화면보다 넓은가. 좁으면 배가 화면 안에서 순간이동하듯 감긴다.
+  //    가장 먼 배(FLOW_DEPTH_MAX)의 화면 가로 절반보다 띠의 절반이 커야 한다.
+  const halfFrame = scene.cam.frameHalfWidthAt(C.FLOW_DEPTH_MAX);
+  console.assert(
+    C.FLOW_CORRIDOR_W / 2 > halfFrame + 2,
+    `[selfCheck] 띠 폭 ${C.FLOW_CORRIDOR_W}의 절반이 화면 가로 절반 ${halfFrame.toFixed(1)}보다 ` +
+    `충분히 크지 않다 — 배가 화면 안에서 감긴다. FLOW_CORRIDOR_W를 키울 것`
+  );
+
+  // 7) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
   for (const id of ["countNum", "statLabel", "statRows", "arrival", "arrivalText", "arrivalMeta"]) {
     console.assert(document.getElementById(id), `[selfCheck] #${id} 엘리먼트가 없음`);
   }
