@@ -10,10 +10,8 @@ statistics/
 ├─ vercel.json       이 폴더만 따로 배포할 때의 설정 (레포 루트에는 두지 않는다)
 ├─ assets/
 │  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
-├─ HANDOFF.html      이 문서를 브라우저에서 읽는 판 (README.md 에서 생성)
 ├─ tools/
 │  ├─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
-│  ├─ build-handoff.mjs      README.md → HANDOFF.html
 │  ├─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
 │  └─ sync-from-main.mjs     main에 새로 들어온 것을 이 브랜치로 끌어오기
 ├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
@@ -29,19 +27,6 @@ statistics/
    ├─ selfcheck.js   조용히 깨지는 것들 자동 점검
    └─ main.js        조립 + 프레임 루프
 ```
-
-## 이 문서를 브라우저에서 읽기
-
-`HANDOFF.html`은 이 README를 그대로 렌더링한 단일 HTML입니다. CSS까지 파일 안에 있어서
-더블클릭하면 열리고, 레포를 안 열어보는 사람에게 그대로 넘길 수 있습니다(인쇄하면 흰 바탕).
-
-```bash
-node statistics/tools/build-handoff.mjs           # README.md → HANDOFF.html
-node statistics/tools/build-handoff.mjs --check   # 최신인지만 확인 (어긋나면 exit 1)
-```
-
-> 원본은 언제나 `README.md` 하나입니다. `HANDOFF.html`은 생성물이라 **직접 고치지 마세요** —
-> 다음에 다시 뽑으면 지워집니다. 문서를 고쳤으면 위 명령으로 같이 갱신하면 됩니다.
 
 ## 시안 보기 — 서버 없이
 
