@@ -57,8 +57,7 @@ export const GERSTNER_WAVES = [
 export const WAVE_WRAP_DOMAIN = 1144;
 
 // ── 시간대 팔레트 (원본 그대로) ───────────────────────────────────────────────
-// 지도는 전시장 대형 화면이라 기본값을 night로 둔다(시안 스크린샷이 어두운 화면).
-// ?time=day|afternoon|evening|night 로 바꿀 수 있다.
+// ?time=day|afternoon|evening|night 로 바꿀 수 있다. 기본값은 아래 DEFAULT_TIME_KEY.
 export const TIME_OF_DAY = {
   day: {
     sky: ["#3fa9d6", "#8fd6e8", "#bfe9ef", "#e9f7f2"],
@@ -93,7 +92,11 @@ export const TIME_OF_DAY = {
     spec: 0xaecbff, specI: 1.6,
   },
 };
-export const DEFAULT_TIME_KEY = "night";
+// 설문 페이지(루트 index.html)의 INITIAL_TIME_KEY와 같은 값을 쓴다.
+// 바다 색을 팔레트에서 떼어내 하나만 바꿀 수는 없다 — 하늘·안개·조명·반사색이 한 세트라
+// 바다만 밝은 하늘색으로 바꾸면 남색 하늘 아래 청록 바다가 뜬다.
+// 세트를 day로 맞추면 바다가 설문 페이지의 기본 바다색(#2fb3e6)과 정확히 같아진다.
+export const DEFAULT_TIME_KEY = "day";
 
 // 원본: 3D 전체 밝기 배수. 조명 세기와 물 노출에 함께 곱해진다.
 export const SCENE_BRIGHTNESS = 1.1;

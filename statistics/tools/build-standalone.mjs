@@ -162,7 +162,7 @@ const shell = `<!doctype html>
   .note { font-size:12.5px; line-height:1.65; color:#7e94a3; max-width:620px; text-align:center; }
   .note b { color:#b9ccd8; font-weight:600; }
   .frame { position:relative; height:min(76vh, 900px); aspect-ratio:9/16;
-           border-radius:18px; overflow:hidden; background:#071722;
+           border-radius:18px; overflow:hidden; background:#bfe9ef;
            box-shadow:0 18px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09); }
   .frame iframe { width:100%; height:100%; border:0; display:block; }
   .bar { display:flex; gap:7px; flex-wrap:wrap; justify-content:center; }
