@@ -12,8 +12,7 @@ statistics/
 │  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
 ├─ tools/
 │  ├─ build-standalone.mjs   서버 없이 열리는 시안 파일 뽑기 (앱 빌드 아님)
-│  ├─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
-│  └─ sync-from-main.mjs     main에 새로 들어온 것을 이 브랜치로 끌어오기
+│  └─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
 ├─ css/panel.css     상단 패널(리퀴드 글래스) · 타이포 · 반응형
 └─ js/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
@@ -71,57 +70,33 @@ GitHub Pages에 올라가 있으면 `/statistics/` 경로로 바로 열립니다
 
 ## Vercel 배포 — 기존 도메인은 그대로 두고 새 도메인 하나
 
-**핵심: 레포 루트에는 `vercel.json`을 두지 않습니다.** 루트에 두면 지금 main에 연결된
-프로젝트의 동작까지 같이 바뀝니다. 설정은 `statistics/vercel.json` 안에만 있고,
-**Root Directory를 `statistics`로 잡은 새 프로젝트만** 그 파일을 읽습니다.
+브랜치는 **`main` 하나**입니다. 온보딩 씬과 지도가 같은 레포·같은 브랜치에 살고,
+**Vercel 프로젝트를 둘로 나눠서** 서로 다른 도메인으로 나갑니다.
 
-### 브랜치 구조
+| 프로젝트 | Root Directory | 나가는 주소 | 내용 |
+|---|---|---|---|
+| 기존 (그대로 둠) | 레포 루트 | 원래 도메인 | 온보딩 씬 (`index.html`) |
+| 새로 만듦 | `statistics` | 새 도메인 | 머무름의 지도 |
 
-지도는 **`statistics-main`** 브랜치에서 배포됩니다. `main`과 별개의 "메인"이고,
-기존 도메인이 붙어 있는 프로젝트는 계속 `main`을 봅니다. 서로 건드리지 않습니다.
-
-```
-main              온보딩 씬 → 기존 도메인
-  └─ statistics-main   + statistics/ → 새 도메인
-```
-
-`statistics-main`은 `main`을 전부 포함한 뒤 지도 커밋만 얹은 브랜치입니다. 그래서
-루트의 `index.html`·`assets/`도 그대로 들어 있고, 지도가 `../assets/`를 참조하던
-경로도 살아 있습니다.
+**레포 루트에는 `vercel.json`을 두지 않습니다.** 루트에 두면 기존 프로젝트의 동작까지
+같이 바뀝니다. 설정은 `statistics/vercel.json` 안에만 있고, Root Directory를
+`statistics`로 잡은 프로젝트만 그 파일을 읽습니다.
 
 ### 새 프로젝트 만들기
 
 1. Vercel → **Add New… → Project** → 같은 레포(`survey_boat`) 선택
-2. **Root Directory**를 `statistics` 로 지정 — 이게 전부입니다.
-   Framework Preset은 **Other**, Build Command·Install Command는 **비워 둡니다**
-   (정적 파일이라 빌드가 없습니다. `statistics/vercel.json`이 이미 그렇게 잡아 뒀습니다)
-3. **Settings → Git → Production Branch**를 **`statistics-main`** 으로 바꿉니다.
-   (기본값이 `main`이라 이걸 안 바꾸면 `statistics/`가 없는 커밋을 배포하려 합니다)
-4. **Settings → Domains**에서 새 도메인을 붙입니다.
+2. **Root Directory** 의 **Edit** → `statistics` 선택
+3. **Framework Preset** → `Other`, Build Command·Install Command는 **비워 둡니다**
+   (정적 파일이라 빌드가 없습니다)
+4. **Deploy** → `프로젝트이름.vercel.app` 주소가 바로 생깁니다
+5. **Settings → Domains** → **Add** → 새 도메인 입력 → Vercel이 알려주는 A/CNAME 레코드를
+   도메인 산 곳(가비아·Cloudflare 등)의 DNS에 입력
 
-결과: `새도메인/` = 머무름의 지도, `기존도메인/` = 온보딩(손대지 않음).
+Production Branch는 기본값 `main` 그대로 두면 됩니다.
 
-### main에 새로 들어온 것 반영하기
-
-두 화면이 같은 레포에 살면서 배포만 갈라져 있으므로, `main`에 들어간 변경이 자동으로
-넘어오지 않습니다. 특히 이 둘이 갈라지면 조용히 어긋납니다.
-
-| 갈라지면 | 무슨 일이 생기나 |
-|---|---|
-| `assets/Scene.glb` | 온보딩의 배와 지도의 배가 달라짐 |
-| `index.html`의 `REGIONS` / `STATES` / `KEYWORDS` | 통계 집계가 갈라짐 (`config.js`가 이 값을 옮겨 적은 것) |
-
-```bash
-git checkout statistics-main
-node statistics/tools/sync-from-main.mjs --check   # 밀린 게 있는지만 확인 (있으면 exit 1)
-node statistics/tools/sync-from-main.mjs           # 가져와서 병합 + 모델 사본 맞춤
-# 지도를 한 번 돌려보고 이상 없으면
-git push
-```
-
-`sync-from-main.mjs`는 **병합까지만 하고 푸시하지 않습니다.** 무엇이 들어왔는지 보고
-화면을 한 번 돌려본 뒤 올리는 게 맞습니다. 위 두 파일이 건드려졌으면 따로 짚어 주고,
-충돌하면 그 자리에서 멈춥니다.
+> **404가 뜬다면** Root Directory가 `statistics`로 잡혔는지 먼저 보세요.
+> `프로젝트.vercel.app/js/main.js` 가 200이면 파일은 올라간 것이고,
+> 그것도 404면 Root Directory 설정 문제입니다.
 
 ### GLB 사본에 대해
 
@@ -139,7 +114,7 @@ Vercel의 Root Directory는 **그 폴더 밖의 파일을 배포에 포함하지
 
 ```bash
 node statistics/tools/sync-model.mjs          # 맞춘다
-node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 exit 1 — CI에 걸기 좋다)
+node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 exit 1)
 ```
 
 ### 배포 전에 한 번 볼 것
@@ -147,8 +122,8 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
 - **three.js를 unpkg CDN에서 받습니다.** unpkg가 죽으면 화면도 죽습니다. 전시 당일
   리스크를 없애려면 `three.module.js`와 `GLTFLoader.js`를 레포에 넣고 importmap을
   그쪽으로 돌리는 게 안전합니다(약 1.4MB). 지금은 온보딩 씬과 같은 방식을 유지했습니다.
-- **캐시**: HTML·JS·CSS는 `must-revalidate`, GLB는 1년 immutable로 잡아 뒀습니다.
-  전시 중 코드를 고치면 새로고침만으로 반영되고, 무거운 모델은 다시 안 받습니다.
+- **캐시**: `statistics/vercel.json`이 `assets/` 만 1년 immutable로 잡습니다.
+  HTML·JS·CSS는 Vercel 기본값이라 전시 중 코드를 고치면 새로고침으로 반영됩니다.
 
 ## 인수인계 문서에서 미결정이었던 것들 — 이번에 정한 것
 
