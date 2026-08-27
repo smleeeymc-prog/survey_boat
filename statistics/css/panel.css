@@ -14,19 +14,27 @@
 :root {
   --font: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
 
-  /* 설문 페이지(루트 index.html)의 :root 토큰에서 가져온 색.
+  /* 설문 페이지(루트 index.html)의 :root 토큰을 그대로 쓴다.
      3D 팔레트(config.js)와는 별개다 — 패널은 UI 레이어라 시간대가 바뀌어도 같은 색이다.
+
+     패널은 크림 유리다. 설문 페이지가 크림 바탕의 밝은 UI라 어두운 유리를 얹으면
+     두 화면이 다른 제품처럼 보인다.
 
      설문 페이지는 강조색을 바탕 밝기에 따라 나눠 쓴다.
        밝은 바탕 → --gold  #b89a6a  (진행바, 선택된 카드 테두리, 포커스, 상태 태그)
-       어두운 바탕 → --gold2 #d4b896  (26행: background:var(--dark); color:var(--gold2))
-     이 패널은 어두운 유리라 gold2가 맞는 쪽이다. gold(#b89a6a)를 쓰면 2위 크림색보다
-     오히려 어두워서 1위가 가라앉는다 — 크기 계단과 밝기 계단이 서로 어긋난다. */
-  --c-title: #9a9186;   /* 맨 위 작은 타이틀 — --ink3(#7a7a7a)를 어두운 바탕용으로 올린 값 */
-  --c-count: #f7f4ef;   /* 초대형 숫자 — 설문 --cream 그대로 */
-  --c-sub:   #c8bfb2;   /* 숫자 아래 설명 — cream과 gold2 사이 */
-  --c-label: #857c6f;   /* 통계 라벨 */
-  --c-accent:#d4b896;   /* 1위 강조 — 설문 --gold2 */
+       어두운 바탕 → --gold2 #d4b896
+     이제 패널이 밝은 쪽이므로 --gold 를 쓴다.
+
+     [주의] 크림 위에서 금색은 먹색보다 밝다 — 1위(금색)가 2위(먹색)보다 어두워 보이지
+     않는다. 순위는 글자 크기가 이미 계단으로 나타내고 있고, 금색은 "이 문단에서 유일한
+     유채색"이라는 방식으로 1위를 표시한다. 설문 페이지가 회색 글 사이에 금색
+     state-tag 하나를 두는 것과 같은 처리다. */
+  --c-ground: #f7f4ef;  /* 유리 바탕 — 설문 --cream */
+  --c-title: #7a7a7a;   /* 맨 위 작은 타이틀 — 설문 --ink3 */
+  --c-count: #1a1a1a;   /* 초대형 숫자 — 설문 --ink */
+  --c-sub:   #3d3d3d;   /* 숫자 아래 설명 — 설문 --ink2 */
+  --c-label: #8d8880;   /* 통계 라벨 — ink3를 살짝 따뜻하게 */
+  --c-accent:#b89a6a;   /* 1위 강조 — 설문 --gold */
 
   /* 통계 문단의 기준 글자 크기. 순위별 배수가 여기에 곱해진다(panel.js TIERS). */
   --stat-base: 6.6vw;
@@ -39,7 +47,7 @@ html, body {
   /* 캔버스가 뜨기 전 한 프레임의 섬광을 막는다. 낮 팔레트의 안개색과 같은 값이라
      씬이 떠도 바탕이 바뀐 티가 안 난다 (config.js TIME_OF_DAY.day.fog). */
   background: #bfe9ef;
-  color: #f7f4ef;
+  color: #1a1a1a;
   font-family: var(--font);
   overflow: hidden;                  /* 전시장 송출이라 스크롤이 있으면 안 된다 */
   -webkit-font-smoothing: antialiased;
@@ -64,22 +72,20 @@ html, body {
   overflow: hidden;                  /* 굴절 필터가 패널 밖으로 번지지 않게 */
 
   /* 1단계 — 기본 프로스트 글래스 (모든 브라우저).
-     가이드의 rgba(255,255,255,.08) 위에 어두운 스크림을 한 겹 깔았다. 뒤가 밤바다
-     셰이더라 흰 유리만으로는 파도가 글자 사이로 지나가 읽히지 않는다. 유리의 흰 결은
-     그대로 살리고 대비만 확보하는 게 목적이다.
-     스크림은 아래로 갈수록 진해진다 — 패널 위쪽 뒤에는 안개와 하늘(어둡고 균일)이,
-     아래쪽 뒤에는 바다(밝고 어른거림)가 오기 때문이다. 균일한 스크림으로 두면
-     낮 팔레트에서 통계 문단의 작은 글자가 물결에 먹힌다. */
+     크림(--cream)을 위에서 아래로 점점 진하게 깐다. 뒤가 매 프레임 변하는 바다라
+     균일한 농도로는 안 된다 — 패널 위쪽 뒤에는 하늘과 안개(밝고 균일)가 오지만
+     아래쪽 뒤로는 배가 지나가서, 얇게 두면 통계 문단의 작은 글자가 배에 먹힌다.
+     그래서 위 .62 → 아래 .82로 기울여 놓았다. */
   background:
-    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.045)),
-    linear-gradient(180deg, rgba(22,22,30,.52) 0%, rgba(22,22,30,.60) 46%, rgba(22,22,30,.74) 100%);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
-  border-bottom: 1px solid rgba(255,255,255,.18);
+    linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06)),
+    linear-gradient(180deg, rgba(247,244,239,.62) 0%, rgba(247,244,239,.72) 46%, rgba(247,244,239,.82) 100%);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  border-bottom: 1px solid rgba(26,26,26,.10);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.25),    /* 위쪽 스페큘러 라인 */
-    inset 0 -1px 0 rgba(255,255,255,.06),
-    0 8px 32px rgba(0,0,0,.35);
+    inset 0 1px 0 rgba(255,255,255,.65),    /* 위쪽 스페큘러 라인 */
+    inset 0 -1px 0 rgba(26,26,26,.05),
+    0 10px 34px rgba(18,32,44,.22);         /* 유리가 바다 위에 떠 있게 하는 그림자 */
 }
 
 /* 유리 아래쪽 가장자리를 지나는 하이라이트. 패널이 화면 폭을 꽉 채우는 형태라
@@ -88,8 +94,8 @@ html, body {
   content: "";
   position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
   background: linear-gradient(90deg,
-    rgba(255,255,255,0) 0%, rgba(255,255,255,.42) 22%,
-    rgba(255,255,255,.55) 50%, rgba(255,255,255,.42) 78%, rgba(255,255,255,0) 100%);
+    rgba(255,255,255,0) 0%, rgba(255,255,255,.55) 22%,
+    rgba(255,255,255,.75) 50%, rgba(255,255,255,.55) 78%, rgba(255,255,255,0) 100%);
   pointer-events: none;
 }
 
@@ -107,7 +113,7 @@ html, body {
 html[data-glass="flat"] .panel {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  background: linear-gradient(180deg, rgba(22,22,30,.94), rgba(22,22,30,.88));
+  background: linear-gradient(180deg, rgba(247,244,239,.95), rgba(247,244,239,.98));
 }
 
 /* ── 헤더 ────────────────────────────────────────────────────────────────── */
@@ -138,7 +144,7 @@ html[data-glass="flat"] .panel {
 .p-rule {
   height: 1px;
   margin: 5.4vw -6.4vw 4.4vw;
-  background: rgba(255,255,255,.16);
+  background: rgba(26,26,26,.13);
 }
 
 /* ── 통계 ────────────────────────────────────────────────────────────────── */
@@ -163,10 +169,10 @@ html[data-glass="flat"] .panel {
 
 .stat-item { line-height: 1.14; white-space: nowrap; }
 .t1 { color: var(--c-accent); font-weight: 700; }
-.t2 { color: #f2ede4; font-weight: 600; }
-.t3 { color: #c6bdb0; font-weight: 500; }
-.t4 { color: #9a9186; font-weight: 500; }
-.t5 { color: #756d61; font-weight: 500; }
+.t2 { color: #1a1a1a; font-weight: 600; }
+.t3 { color: #3d3d3d; font-weight: 500; }
+.t4 { color: #6d6a64; font-weight: 500; }
+.t5 { color: #97938c; font-weight: 500; }
 
 /* ── 새 기록 카드 ────────────────────────────────────────────────────────── */
 /* 새로 제출된 기록은 배가 크게 제시되는 동안 문장도 같이 떠 있는다.
@@ -178,14 +184,14 @@ html[data-glass="flat"] .panel {
   padding: 4.6vw 5vw;
   border-radius: 4.6vw;
   background:
-    linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.05)),
-    linear-gradient(180deg, rgba(22,22,30,.62), rgba(22,22,30,.46));
-  backdrop-filter: blur(16px) saturate(1.5);
-  -webkit-backdrop-filter: blur(16px) saturate(1.5);
-  border: 1px solid rgba(255,255,255,.18);
+    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.07)),
+    linear-gradient(180deg, rgba(247,244,239,.72), rgba(247,244,239,.82));
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,.55);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.28),
-    0 10px 40px rgba(0,0,0,.42);
+    inset 0 1px 0 rgba(255,255,255,.7),
+    0 12px 40px rgba(18,32,44,.26);
   opacity: 0;
   transform: translateY(2.4vw);
   transition: opacity .7s ease, transform .7s cubic-bezier(.22,.9,.28,1);
@@ -194,7 +200,7 @@ html[data-glass="flat"] .panel {
 .arrival.on { opacity: 1; transform: translateY(0); }
 html[data-glass="flat"] .arrival {
   backdrop-filter: none; -webkit-backdrop-filter: none;
-  background: rgba(22,22,30,.93);
+  background: rgba(247,244,239,.97);
 }
 .arrival-tag {
   font-size: 2.3vw; font-weight: 600; letter-spacing: .2em;
@@ -202,7 +208,7 @@ html[data-glass="flat"] .arrival {
 }
 .arrival-text {
   font-size: 4.2vw; line-height: 1.5; font-weight: 500;
-  color: #f7f4ef; margin-top: 1.6vw;
+  color: #1a1a1a; margin-top: 1.6vw;
   word-break: keep-all;                 /* 한국어는 어절 단위로 끊어야 읽힌다 */
 }
 .arrival-meta {
