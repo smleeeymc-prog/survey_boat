@@ -550,3 +550,155 @@ Ship
 
 - 갈매기 부위 삭제 로직 제거 — "4마리가 겹쳐 있다"는 오판이었고, 실제로는 한 마리의
   몸통/부리/발/날개끝이었다. 부리와 발이 지워지고 있었다.
+
+---
+
+## 13. Firebase 연동 설계 (구현 전, 설계만)
+
+목업 배열(`entries`)을 실제 DB로 바꾸는 설계. **아직 아무것도 구현하지 않았다.**
+사용자가 "스토리지에 WebP" 방식으로 가기로 했다.
+
+### 13.1 자동화가 되는 것과 안 되는 것
+
+컨테이너에서 확인한 사실:
+
+| | 상태 |
+|---|---|
+| `firebase` / `gcloud` CLI | 설치 안 됨 (단 `registry.npmjs.org` 열려 있어 설치는 가능) |
+| Google API 도달 | 가능 (`firebase.googleapis.com`, `accounts.google.com` 응답) |
+| 로그인 자격증명 | 없음 |
+
+**프로젝트 생성은 자동화 불가.** `firebase login`이 브라우저 OAuth 대화형 흐름이라 이
+컨테이너에서 완료할 수 없다. `login:ci` 토큰도 발급 자체가 대화형이다.
+**토큰을 대화창에 붙여넣게 하지 말 것** — 자격증명 노출이다. 배포는 사용자가 로컬에서
+`firebase deploy`로 실행하거나, 환경 설정에 토큰을 넣어두는 쪽이 맞다.
+
+**대신 자동화되는 것:** `firebase.json`, `firestore.rules`, `storage.rules`,
+`firestore.indexes.json`, 앱 코드 전부. 사용자가 로그인만 하면 한 줄로 배포된다.
+
+**사용자가 콘솔에서 해야 할 일:** 프로젝트 생성 → 웹 앱 등록 → 설정값(apiKey 등) 전달
+→ Firestore·Storage·익명 인증 켜기.
+
+> **확인 필요:** 최근 Firebase는 신규 프로젝트에서 Cloud Storage를 쓰려면 종량제(Blaze)
+> 전환을 요구하는 경우가 있다. 가입 시점에 직접 확인할 것. 만약 그렇다면 13.6의
+> "스냅샷 없이 값만 저장" 대안이 무료 티어로 갈 수 있는 길이다.
+
+### 13.2 무엇을 어디에 두나
+
+측정값 (스냅샷 373x199 기준):
+
+| | 크기 |
+|---|---|
+| 문장·지역·키워드·이름 (JSON) | 187 bytes |
+| 스냅샷 PNG (지금) | 82 KB — 문장의 440배 |
+| WebP q0.8 | 16 KB |
+| WebP q0.8 + 절반 해상도 | 8 KB |
+
+PNG 하나가 Firestore 문서 한도(1 MiB)의 8%를 쓴다. 그래서 **텍스트는 Firestore,
+이미지는 Storage**로 나눈다. 1,000명 기준 스냅샷 총량이 PNG 80MB에서 WebP 절반 8MB로 준다.
+
+### 13.3 Firestore 문서 구조
+
+컬렉션 `entries`, 문서 하나가 참여 한 건:
+
+```
+entries/{autoId}
+  region     string   REGIONS 중 하나 ("아산" "천안" "기타 충남" "충남 밖" "비공개")
+  state      string   STATES 중 하나 (stay leaving between returned unsure)
+  text       string   한 문장 (상한 200자)
+  keywords   array    KEYWORDS 중 최대 3개
+  share      string   SHARES 중 하나 (시간대 재현용)
+  name       string   "익명" 또는 표시명
+  thumbPath  string   Storage 경로. 없으면 빈 문자열
+  createdAt  timestamp  serverTimestamp()
+  status     string   "published" | "hidden"   (신고·검토용)
+```
+
+`share`를 같이 넣는 이유: 시간대가 이 답에서 나오므로, 나중에 스냅샷 없이 병을 다시
+그리고 싶어질 때 필요하다(13.6 대안).
+
+### 13.4 Storage 배치
+
+```
+snapshots/{entryId}.webp      WebP q0.8, 긴 변 400px 상한
+```
+
+문서를 먼저 만들어 id를 얻고 → 그 id로 업로드 → `thumbPath` 갱신.
+업로드가 실패해도 문장은 남는다(썸네일만 없는 카드).
+
+### 13.5 읽기 전략 — 복합 인덱스 없이
+
+지금 아카이브는 상태·지역으로 거르고 최신순으로 본다. 전시 규모(수백~수천 건)에서는
+**최신 200건을 `createdAt desc`로 받아 클라이언트에서 거르는 쪽이 낫다.**
+복합 인덱스가 필요 없고 읽기 횟수도 적다. 지금 코드가 배열을 거르는 방식 그대로라
+`entries` 배열만 갈아끼우면 필터 로직은 손대지 않아도 된다.
+
+건수가 수천을 넘어가면 그때 `(state, createdAt)` `(region, createdAt)` 복합 인덱스를
+`firestore.indexes.json`에 추가하고 서버 필터로 옮긴다.
+
+썸네일은 **스크롤에 들어올 때 지연 로딩**(`loading="lazy"` + `IntersectionObserver`).
+목록 200건을 한 번에 받아도 이미지는 보이는 것만 내려온다.
+
+### 13.6 대안 — 스냅샷을 저장하지 않는 길
+
+지역·상태·키워드·`share`만 있으면 **그 병을 다시 그릴 수 있다.** 이미지를 아예 저장하지
+않으면 한 건이 200바이트로 끝나고 Storage도 필요 없다(= 무료 티어 안전). 대신 아카이브
+카드마다 3D를 다시 그려야 해서 카드가 많으면 무겁다.
+
+지금은 "Storage에 WebP"로 가기로 했으나, Blaze 전환이 걸리면 이 길이 대안이다.
+
+### 13.7 보안 규칙
+
+공개 API 키만으로 아무나 쓰기가 가능하면 안 된다. **익명 인증**을 켜고 규칙으로 막는다.
+
+`firestore.rules` 요지:
+- 읽기: `status == "published"` 인 문서만 누구나
+- 생성: 로그인(익명 포함)한 사용자만. 필드 화이트리스트, 타입 검사,
+  `text` 200자 이하, `keywords` 3개 이하, `region`/`state`/`share`는 정해진 값만,
+  `createdAt`은 `request.time`과 일치, `status`는 `"published"` 고정
+- 수정·삭제: 전부 금지 (운영자는 콘솔에서)
+
+`storage.rules` 요지:
+- 읽기: 누구나
+- 쓰기: 로그인한 사용자, `snapshots/` 경로, `image/webp`, 512KB 이하, 덮어쓰기 금지
+
+### 13.8 전시장에서 깨지는 경우
+
+**와이파이가 끊긴다.** 전시장에서 흔하다. 제출이 실패하면 참여자의 문장이 사라진다.
+
+- 제출 실패 시 `localStorage` 큐에 넣고, 다음 로드나 온라인 복귀 시 재전송
+- 결과 화면은 **전송 성공을 기다리지 않고** 바로 보여준다 (병은 로컬 데이터로 그린다)
+- 아카이브는 서버 목록 + 로컬 큐를 합쳐 보여준다 — 방금 쓴 내 문장이 안 보이면 불안하다
+
+### 13.9 검토·신고
+
+전시장 공개 벽이라 부적절한 문장이 바로 뜬다. 정해야 할 것:
+- 전부 즉시 공개하고 신고 버튼만 둘지
+- `status: "pending"`으로 받아 운영자가 승인해야 뜨게 할지 (전시 중 사람이 붙어야 함)
+
+지금 설계는 `status` 필드를 두고 기본 `"published"`로 시작한다 — 나중에 정책을 바꿔도
+스키마를 안 건드린다.
+
+### 13.10 비용
+
+무료 티어(Spark) 기준: Firestore 하루 읽기 5만·쓰기 2만, Storage 5GB.
+1,000명 참여 + 스냅샷 8KB면 총 8MB — 여유롭다. 읽기는 아카이브 열 때 200건씩이라
+하루 250번 열어야 한도에 닿는다. **비용보다 Blaze 전환 요구 여부가 변수다(13.1).**
+
+### 13.11 추가될 파일
+
+```
+firebase.json              배포 설정
+firestore.rules            위 규칙
+firestore.indexes.json     지금은 비어 있음 (13.5)
+storage.rules              위 규칙
+```
+
+앱 코드는 `index.html` 안에 남는다. Firebase JS SDK는 three.js처럼 CDN ESM 빌드를
+importmap에 한 줄 추가해 쓴다 — 빌드 도구는 계속 필요 없다.
+
+### 13.12 진행 전 사용자에게 확인할 것
+
+1. Firebase 프로젝트가 이미 있는지 (없으면 콘솔 절차 안내 필요)
+2. Storage가 Blaze를 요구하는지 확인 결과 — 요구하면 13.6으로 갈지
+3. 검토 정책 (즉시 공개 + 신고 / 승인 후 공개)
