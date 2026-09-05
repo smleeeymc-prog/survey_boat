@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko" data-glass="lens">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>머무름의 지도 — 그래도, 여기 살고 있습니다</title>
+<meta name="description" content="참여자들이 남긴 문장이 배가 되어 한 바다에 모이는 전시용 화면" />
+<!-- 전시장 송출 화면이라 검색 노출은 불필요하고, 온보딩 페이지와 내용이 겹친다 -->
+<meta name="robots" content="noindex" />
+<link rel="stylesheet" href="./css/panel.css" />
+</head>
+<body>
+
+<!--
+  ===========================================================================
+  머무름의 지도 — 공동 아카이브 화면
+
+  · 온보딩 씬(../index.html)이 "참여자 1명이 자기 배 1척을 보는 화면"이라면,
+    이 화면은 "모든 참여자의 배가 한 바다에 모여 떠다니는 전시용 화면"이다.
+  · 파도 셰이더와 배 모델(../assets/Scene.glb의 Ship 노드)은 온보딩 것을 그대로
+    쓰고, 스케일·데이터 구조·실시간성만 다르다.
+  · file:// 로 직접 열면 GLB fetch가 CORS로 막힌다. 로컬 서버가 필요하다:
+        python3 -m http.server 8000   →  http://localhost:8000/statistics/
+  · 쿼리 파라미터
+        ?time=day|afternoon|evening|night   시간대 팔레트 (기본 night)
+        ?debug=1                            프레임/인스턴스 정보 오버레이
+        ?interactive=1                      드래그로 시점 조작 (리허설용)
+        ?seed=46&interval=14                목업 데이터 초기 개수·유입 간격(초)
+  ===========================================================================
+-->
+
+<canvas id="scene"></canvas>
+
+<!--
+  리퀴드 글래스 2단계 — 실제 굴절.
+  feTurbulence로 만든 노이즈를 변위 맵으로 써서 패널 뒤 배경 픽셀을 렌즈처럼 민다.
+  color-interpolation-filters="sRGB"가 없으면 노이즈가 선형 색공간에서 생성돼
+  중간값이 0.5에서 밀리고, 그 결과 굴절이 아니라 한쪽으로 쏠린 평행이동이 된다.
+  Chromium 계열 외에서는 CSS의 @supports가 이 필터를 아예 참조하지 않는다(panel.css).
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="liquid-lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="2" seed="7" result="noise" />
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="26" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
+
+<section class="panel" id="panel">
+  <p class="p-title">그래도, 여기 살고 있습니다</p>
+  <p class="p-count"><span id="countNum">0</span></p>
+  <p class="p-sub">개의 문장이 이곳에 머물러 있습니다</p>
+
+  <div class="p-rule"></div>
+
+  <p class="p-label" id="statLabel">가장 많이 선택된 이유</p>
+  <p class="p-rows" id="statRows"></p>
+</section>
+
+<aside class="arrival" id="arrival">
+  <p class="arrival-tag">방금 도착한 문장</p>
+  <p class="arrival-text" id="arrivalText"></p>
+  <p class="arrival-meta" id="arrivalMeta"></p>
+</aside>
+
+<div id="hud"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
