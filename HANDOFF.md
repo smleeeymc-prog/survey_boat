@@ -41,6 +41,15 @@
 공유가 아직 안 되는 건 `assets/Scene.glb` 하나다 (파일이라 import로 못 묶는다).
 모델을 다시 뽑으면 `statistics/tools/sync-model.mjs` 로 두 벌을 맞춘다.
 
+**설문 쪽에서 지역·키워드·팔레트·파도를 바꿀 때는 `index.html`에 표를 다시 적지 말고
+`statistics/shared/` 안의 파일을 고친다.** `index.html`은 거기서 `import` 해 온다.
+표를 여기 되살리면 지도와 갈라지고, 예전에 그래서 한 번 어긋났다.
+
+폴더 이름 때문에 방향이 거꾸로 보이지만 **소유권은 그대로다.** 지도 세션은
+`index.html`과 `assets/`를 **읽기만 한다** — 값을 참고할 뿐 고치지 않는다.
+`shared/`가 `statistics/` 안에 있는 건 Vercel 제약 때문이고, 이유는
+`statistics/README.md`의 "왜 `shared/`가 `statistics/` 안에 있나"에 적혀 있다.
+
 **지금 두 담당에 걸쳐 있어 사용자 결정이 필요한 것: 13.13 스키마 충돌.**
 설문 페이지 설계와 `statistics/js/store.js`가 같은 DB를 다르게 부르고 있다.
 Firebase를 붙이기 전에 한쪽으로 정해야 한다.
