@@ -986,8 +986,11 @@ import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND, KEYWORD_C
   from "./statistics/shared/palette.js";
 import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
 
-// 레포 구조 기준 상대경로 (index.html 은 루트, 모델은 assets/ 안)
-const MODEL_URL = "./assets/Scene.glb";
+// 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
+// Directory를 statistics 로 잡아 따로 배포되므로 그 폴더 밖의 파일을 못 읽는다.
+// 두 화면이 한 파일을 보게 두어야 모델을 다시 구웠을 때 조용히 갈라지지 않는다.
+// 루트 assets/ 는 백업으로 남겨 둔다 (Scene.baked.glb 도 거기 있다).
+const MODEL_URL = "./statistics/assets/Scene.glb";
 
 // 배 모델의 "기본 뱃머리 방향" 보정값 — 블렌더에서 뽑은 Ship의 정면이 코드가 가정하는
 // +X 축과 다를 때 여기서만 맞춘다. 헤딩 로직(headingY)은 건드리지 않으므로
