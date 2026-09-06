@@ -46,6 +46,66 @@ Root Directory를 `statistics` 로 잡아 따로 배포되면 그 폴더 밖의 
 `node statistics/tools/sync-model.mjs` 로 `statistics/assets/` 에 밀어 넣어야
 실제 화면이 바뀐다 — 이 한 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
 
+### `shared/` 에 지금 무엇이 있나 (2026-09-06 기준)
+
+설문 세션이 `statistics/` 안을 고친 적이 있다 — 두 화면에 걸친 문제라 한쪽만 고칠 수
+없었다(커밋 `ecf3c7a`). 지도 세션이 모르고 지나갈 수 있어 여기 남긴다.
+
+| 파일 | 설문이 읽는가 | 지도가 읽는가 |
+|---|:--:|:--:|
+| `ocean-core.js` 파도 표·GLSL·`waveHeightAt`·랩 도메인 | ✓ | ✓ |
+| `palette.js` 시간대 4종·밝기·지역/키워드 색 | ✓ | ✓ (`config.js` 재수출) |
+| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) | ✓ `<link>` | ✓ `<link>` |
+| `ship-tokens.js` 뱃머리 보정·흘수·캐빈 기본색 | ✓ | ✓ |
+| `glb-nodes.js` GLB 노드 이름 전부 | ✓ | ✓ |
+| `deps.js` three 버전 | ✓ | ✓ |
+| `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
+
+그때 같이 바뀐 것: `fleet.js`의 `CABIN_NODE`/`HULL_NODE`/`PROP_NODES`가 `GLB_NODES`·
+`GLB_PROPS`에서 온다. `panel.css`의 색이 `var()` 참조가 됐다. `selfcheck.js` 맨 앞에
+three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/assets/Scene.glb`를
+굽고 `tokens.css`도 인라인한다.
+
+### 방향을 정해야 한다 — 지금은 `shared/` 가 원본이다
+
+지도 세션이 `sync-survey.mjs`(루트에서 표를 뽑아 `shared/*`를 생성)를 제안했다.
+**그 계획은 `f19bd88` 이전 상태를 기준으로 쓰였다.** 지금 루트 `index.html`에는
+뽑아낼 표가 없다 — 위 일곱 개를 전부 `import`(분류값은 전역)로 받아 쓰는 순수
+소비자다. 그대로 만들면 `shared`에서 `shared`를 생성하는 순환이 된다.
+
+둘 중 하나를 골라야 한다.
+
+- **지금 구조 (`shared/`가 원본):** 사본이 없으니 갈라질 수가 없다. 대신 루트가
+  `statistics/` 안의 파일에 의존하고, 지도 세션이 `shared/`를 고치면 설문이 깨진다.
+- **지도 계획 (루트가 원본):** 루트가 완전히 독립한다. 대신 `shared/*`가 생성 사본이
+  되어 갈라질 수 있고, `selfcheck`로 방어해야 한다. 표를 루트로 되돌리는 작업이 먼저다.
+
+**사용자가 "지도 쪽 동기화는 나중에"로 정했다.** 그때까지는 위 표가 원본이다.
+
+### 나중에 싱크 작업을 할 때 확인할 것
+
+값을 옮기는 것 자체보다 아래가 문제다. 전부 "틀려도 화면은 그럴싸하게 도는" 종류다.
+
+1. **`ocean-core.js`의 GLSL은 문자까지 같아야 한다.** 설문 `selfCheck`가
+   `glsl.includes(\`/ ${w.wavelength};\`)` 로 셰이더 **소스 문자열**을 검사한다.
+   생성기가 공백 하나만 다르게 뽑아도 assert가 뜬다.
+2. **`glb-nodes.js`의 `hull`은 정규식이다** (`/^Ship[_ ]?Body/`). JSON으로 직렬화되지
+   않는다. 생성기가 문자열로 바꿔 버리면 지도의 선체 틴트가 조용히 죽는다
+   (증상: `fleet.tintMeshes.length`가 2→1).
+3. **한쪽만 쓰는 값을 빼면 안 된다.** `REGION_SAND`는 설문만, `CABIN_BASE_COLOR`는
+   지도만 쓴다. "지도가 안 쓰니 빼자"는 판단이 설문을 깨뜨린다.
+4. **`survey-taxonomy.js`는 `var`여야 한다.** 클래식 스크립트라 최상위 `const`/`let`은
+   전역 객체의 속성이 되지 않는다. `const`로 생성하면 두 화면이 같이 죽는다.
+5. **`tokens.css`는 CSS다.** JS 생성기 대상이 아니라 별도 경로가 필요하고,
+   `build-standalone.mjs`가 `panel.css`보다 **먼저** 인라인해야 한다(`var()` 참조).
+6. **`deps.js`는 3중 일치다.** 이 파일 + 두 `index.html`의 importmap. 하나만 올리면
+   그 화면 콘솔에서 리비전 불일치 assert가 뜬다.
+7. **`SENTENCE_Q`·`SHARES`를 빠뜨리지 말 것.** 실제로 이 둘이 반환 객체에서 누락돼
+   설문이 3단계에서 죽은 적이 있다(`5d96f59`). 반환 객체와 사용처를 대조할 것.
+
+싱크 스크립트에는 `--check`(고치지 않고 어긋난 것만 보고, 다르면 exit 1)를 꼭 둘 것.
+`sync-model.mjs`가 같은 방식이라 그대로 본뜨면 된다.
+
 **설문 쪽에서 지역·키워드·팔레트·파도를 바꿀 때는 `index.html`에 표를 다시 적지 말고
 `statistics/shared/` 안의 파일을 고친다.** `index.html`은 거기서 `import` 해 온다.
 표를 여기 되살리면 지도와 갈라지고, 예전에 그래서 한 번 어긋났다.
