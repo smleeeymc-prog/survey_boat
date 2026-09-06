@@ -26,13 +26,13 @@
  * ========================================================================== */
 
 import * as THREE from "three";
-import { SHIP_FORWARD_OFFSET, SHIP_DRAFT, FLEET_SHIP_SCALE } from "./config.js";
+import { SHIP_FORWARD_OFFSET, SHIP_DRAFT, FLEET_SHIP_SCALE, GLB_NODES, GLB_PROPS } from "./config.js";
 
-// GLB 노드 이름 → 역할. 이름이 바뀌면 조용히 역할이 사라지므로 selfCheck가 확인한다.
-// (three.js가 노드 이름의 공백을 _로 바꾸므로 "Ship Body"는 "Ship_Body"로 들어온다)
-const CABIN_NODE = "Cabin";
-const HULL_NODE = /^Ship[_ ]?Body/;
-const PROP_NODES = { Seagull: "gull", Tube: "tube" };
+// GLB 노드 이름은 shared/glb-nodes.js 한 곳에서 온다 — 설문 화면도 같은 값을 읽는다.
+// 이름이 바뀌면 조용히 역할이 사라지므로 selfCheck가 존재를 확인한다.
+const CABIN_NODE = GLB_NODES.cabin;
+const HULL_NODE = GLB_NODES.hull;
+const PROP_NODES = GLB_PROPS;
 
 // 인스턴스 컬러를 걸 역할 → style의 어느 값을 쓸지. 여기 없는 역할은 GLB 재질 그대로다.
 // 표현 채널을 늘리려면 style.js에 값을 추가하고 여기 한 줄만 더하면 된다.
@@ -59,9 +59,9 @@ export class ShipFleet {
     this.group = new THREE.Group();
     this.missing = [];          // selfCheck용 — GLB에서 못 찾은 노드 이름
 
-    const ship = gltfRoot.getObjectByName("Ship");
+    const ship = gltfRoot.getObjectByName(GLB_NODES.ship);
     if (!ship) {
-      this.missing.push("Ship");
+      this.missing.push(GLB_NODES.ship);
       return;
     }
 

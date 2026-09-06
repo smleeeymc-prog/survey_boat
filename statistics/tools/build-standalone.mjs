@@ -39,7 +39,7 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 // 이어붙이는 순서 = 최상위에서 평가되는 순서. const/class는 호이스팅되지 않으므로
 // "먼저 평가돼야 하는 것"이 앞에 와야 한다 (panel.js의 METRICS가 config의 STATE_LABEL을 읽는 식).
 // shared/ 가 먼저다 — config.js가 그 값들을 다시 내보내기 때문에 앞에 평가돼 있어야 한다.
-const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js"];
+const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
   "fleet.js", "camera.js", "store.js", "panel.js", "selfcheck.js", "main.js",
@@ -79,8 +79,11 @@ function jsmModule(file, exports) {
 }
 
 // ── 씬 문서(iframe 안에 들어갈 진짜 화면) ────────────────────────────────────
-const css = read(path.join(STAT, "css", "panel.css"));
-const glbB64 = fs.readFileSync(path.join(ROOT, "assets", "Scene.glb")).toString("base64");
+// tokens.css 가 먼저다 — panel.css 가 var(--ink) 처럼 그 토큰을 참조한다.
+const css = read(path.join(STAT, "shared", "tokens.css")) + "\n" + read(path.join(STAT, "css", "panel.css"));
+// 화면이 실제로 읽는 사본을 그대로 굽는다. 루트 assets/ 는 백업이라, 그쪽을 읽으면
+// 모델을 다시 구웠을 때 시안만 옛 배가 된다.
+const glbB64 = fs.readFileSync(path.join(STAT, "assets", "Scene.glb")).toString("base64");
 
 // three.min.js는 r160의 전역(UMD) 빌드다. 열리자마자 deprecation 경고를 찍는데,
 // 시안 콘솔이 지저분해질 뿐이라 지운다. 단, 그 줄은 파일 전체와 쉼표로 이어진

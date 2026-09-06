@@ -20,14 +20,9 @@ export const SHIP_FORWARD_OFFSET = Math.PI;
 // 배 크기에 비례해서 같이 곱해야 잠기는 "비율"이 유지된다.
 export const SHIP_DRAFT = 0.17;
 
-// GLB에서 찾아 쓰는 노드 이름. 블렌더에서 이름이 바뀌면 두 화면이 같이 조용히 깨지므로
-// 여기 한 곳에 모아 둔다. (지도의 selfcheck.js가 로드마다 존재를 확인한다)
-export const SHIP_NODES = {
-  ship: "Ship",
-  cabin: "Cabin",
-  funnel: "Funnel",
-  props: { Seagull: "gull", Tube: "tube" },
-};
+// GLB 노드 이름은 ./glb-nodes.js 로 옮겼다. 배뿐 아니라 섬 노드(Rock·Beachhouse)와
+// 지도 전용 선체 패턴까지 한 곳에 모아야 "블렌더에서 이름이 바뀌면 조용히 깨진다"를
+// 실제로 막을 수 있어서다. 여기는 수치·색 토큰만 남긴다.
 
 // 키워드가 없는 배의 캐빈 색. three.js는 color를 map에 곱하므로 나중에 UV 아틀라스
 // 텍스처가 붙어도 이 색이 틴트로 남는다.

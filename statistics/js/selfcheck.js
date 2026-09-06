@@ -7,12 +7,23 @@
  * console.assert라 실패해도 화면은 멈추지 않는다 — 콘솔에만 남는다.
  * ========================================================================== */
 
+import * as THREE from "three";
+import { THREE_VERSION, THREE_REVISION } from "../shared/deps.js";
 import * as C from "./config.js";
 import { waveHeightAt } from "./ocean.js";
 import { SlotPool } from "./motion.js";
 
 export function runSelfChecks(scene) {
   const D = C.WAVE_WRAP_DOMAIN;
+
+  // 0) importmap이 선언한 three 버전과 실제로 로드된 리비전이 같은가.
+  //    importmap은 HTML 인라인이라 두 화면에 각각 적힌다 — 한쪽만 올리면 두 화면이
+  //    다른 three로 돌면서 셰이더나 로더 동작이 조용히 갈라진다.
+  console.assert(
+    THREE.REVISION === THREE_REVISION,
+    `[selfCheck] three 리비전 불일치 — shared/deps.js는 ${THREE_VERSION}인데 로드된 건 r${THREE.REVISION} ` +
+    `(importmap을 고쳤으면 shared/deps.js도 같이 올릴 것)`
+  );
 
   // 1) 랩 도메인이 X·Z 양쪽에서 유효 파장의 공배수인가.
   //    위상은 k*(dirX*x + dirZ*z) 이므로 축별 유효 파장은 wavelength/dir 이다.

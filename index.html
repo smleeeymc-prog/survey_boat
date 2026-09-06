@@ -4,15 +4,10 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>그래도, 여기 살고 있습니다 — 참여형 아카이브 (프로토타입)</title>
+<!-- UI 색·서체 토큰. 지도 화면(statistics/)과 같은 파일을 읽는다 — 한쪽만 바뀌지 않게. -->
+<link rel="stylesheet" href="./statistics/shared/tokens.css" />
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  :root{
-    --ink:#1a1a1a; --ink2:#3d3d3d; --ink3:#7a7a7a;
-    --cream:#f7f4ef; --white:#ffffff;
-    --gold:#b89a6a; --gold2:#d4b896;
-    --dark:#16161e; --dark2:#22222e;
-    --font:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
-  }
   html,body{height:100%;}
   /* 가로 피커가 100vw로 화면 끝까지 나가므로, 그 때문에 페이지가 옆으로 밀리지 않게 막는다. */
   body{overflow-x:hidden;}
@@ -985,6 +980,8 @@ import { GERSTNER_WAVES, WAVE_WRAP_DOMAIN, GERSTNER_GLSL, waveHeightAt, wrapWave
 import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND, KEYWORD_COLOR, KEYWORD_PROP }
   from "./statistics/shared/palette.js";
 import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
+import { GLB_NODES, GLB_PROPS } from "./statistics/shared/glb-nodes.js";
+import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
 // Directory를 statistics 로 잡아 따로 배포되므로 그 폴더 밖의 파일을 못 읽는다.
@@ -1823,9 +1820,9 @@ ${GERSTNER_GLSL}
       const gltf = await loader.loadAsync(MODEL_URL);
       const root = gltf.scene;
 
-      const rock = root.getObjectByName("Rock");
-      const beachhouse = root.getObjectByName("Beachhouse");
-      const ship = root.getObjectByName("Ship");
+      const rock = root.getObjectByName(GLB_NODES.rock);
+      const beachhouse = root.getObjectByName(GLB_NODES.beachhouse);
+      const ship = root.getObjectByName(GLB_NODES.ship);
 
       if (rock) {
         this.rockMats = [];
@@ -1860,7 +1857,7 @@ ${GERSTNER_GLSL}
         // 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어 항해·롤링·헤딩에 딸려 간다.
         // (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
         // 기본으로는 둘 다 숨겨두고, 키워드 선택에 따라 applyKeywords에서 켠다.
-        ["Seagull", "Tube"].forEach((name) => {
+        Object.keys(GLB_PROPS).forEach((name) => {
           const obj = root.getObjectByName(name);
           // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
           // 씬은 멀쩡히 돌아가고 갈매기만 없어서 한참 뒤에나 눈치챈다.
@@ -1869,8 +1866,8 @@ ${GERSTNER_GLSL}
           ship.attach(obj);
           obj.visible = false;
         });
-        this.gullMesh = ship.getObjectByName("Seagull");
-        this.tubeMesh = ship.getObjectByName("Tube");
+        this.gullMesh = ship.getObjectByName(GLB_NODES.gull);
+        this.tubeMesh = ship.getObjectByName(GLB_NODES.tube);
 
         // [삭제됨] 예전엔 "갈매기가 4마리 겹쳐 들어있다"고 보고 가장 큰 하나만 남기고 지웠다.
         // 오판이었다. 실측해 보면 네 조각은 한 마리의 부위들이다 — 조각 중심 사이 최대 거리가
@@ -1891,7 +1888,7 @@ ${GERSTNER_GLSL}
         // 대신 원래 재질을 clone해서(다른 메쉬와 공유될 수 있으므로) color만 바꾼다.
         // three.js는 color를 map에 곱하므로, 텍스처가 붙은 뒤에도 키워드 색이 틴트로 그대로 먹는다.
         // (텍스처는 밝은 회색조로 그려야 틴트가 눈에 보인다)
-        const cabin = ship.getObjectByName("Cabin");
+        const cabin = ship.getObjectByName(GLB_NODES.cabin);
         if (cabin) {
           cabin.traverse((c) => {
             if (!c.isMesh) return;
@@ -1905,7 +1902,7 @@ ${GERSTNER_GLSL}
         // 마스트/깃발은 삭제했다 — 배 바운딩박스 꼭대기(=굴뚝 위)에 매달려 있어서 갑판이 아니라
         // 공중에 떠 보였고, 키워드 표시는 이제 갈매기/튜브가 대신한다.
 
-        const funnel = ship.getObjectByName("Funnel");
+        const funnel = ship.getObjectByName(GLB_NODES.funnel);
         this.smokeAnchor = new THREE.Object3D();
         if (funnel && funnel.geometry) {
           funnel.geometry.computeBoundingBox();
@@ -3125,6 +3122,15 @@ try {
 // 자기검증(콘솔) — 조용히 깨지면 한참 뒤에나 눈치채는 것들만 딱 두 개.
 // 실패해도 씬은 그대로 돌아가고, 콘솔에 빨간 assert만 남는다.
 function selfCheck(s) {
+  // 0) importmap이 선언한 three 버전과 실제로 로드된 리비전이 같은가.
+  //    importmap은 HTML 인라인이라 두 화면에 각각 적힌다 — 한쪽만 올리면 두 화면이
+  //    다른 three로 돌면서 셰이더나 로더 동작이 조용히 갈라진다.
+  console.assert(
+    THREE.REVISION === THREE_REVISION,
+    `[selfCheck] three 리비전 불일치 — shared/deps.js는 ${THREE_VERSION}인데 로드된 건 r${THREE.REVISION} ` +
+    `(importmap을 고쳤으면 shared/deps.js도 같이 올릴 것)`
+  );
+
   // 1) 파도 랩어라운드가 정말 "위상 불변"인가.
   //    깨지면 '오가는 중'으로 오래 항해할 때 바다가 순간적으로 튄다.
   const a = s._waveHeightAt(3.7, 0.9, 12.5, 0);

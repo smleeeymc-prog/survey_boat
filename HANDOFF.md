@@ -184,7 +184,14 @@ survey_boat/
 │   └─ Scene.baked.glb 현재 배치·크기를 구워 넣은 것
 └─ statistics/
     ├─ assets/Scene.glb   ★ 두 화면이 실제로 읽는 모델
-    └─ shared/            ★ 두 화면이 같이 읽는 표 (파도·팔레트·배·분류값)
+    └─ shared/            ★ 두 화면이 같이 읽는 것 — 여기만 고치면 양쪽이 따라온다
+        ├─ ocean-core.js       파도 표 · GLSL · waveHeightAt · 랩 도메인
+        ├─ palette.js          3D 색: 시간대 · 밝기 · 지역/키워드 색
+        ├─ tokens.css          UI 색·서체 (--ink --cream --gold …)
+        ├─ ship-tokens.js      뱃머리 보정 · 흘수 · 캐빈 기본색
+        ├─ glb-nodes.js        GLB 노드 이름 전부
+        ├─ deps.js             three 버전 (양쪽 selfCheck가 대조)
+        └─ survey-taxonomy.js  지역 · 상태 · 키워드 · 질문 문구
 ```
 
 `index.html` 안은 크게 셋으로 나뉜다.
@@ -555,9 +562,13 @@ git push --dry-run origin main
 4. `SHIP_GLB_POS`(GLB의 Ship 노드 translation)도 바뀌었으면 옮겨 적기
 5. `Scene.baked.glb` 다시 굽기
 
-**절대 바뀌면 안 되는 노드 이름 일곱:**
+**노드 이름을 바꿨다면 `statistics/shared/glb-nodes.js` 한 곳만 고치면 된다.**
+두 화면이 그 파일에서 이름을 읽는다 (예전에는 `index.html` 7곳과 `fleet.js` 2곳에
+문자열로 박혀 있었다). 지금 쓰는 이름 일곱:
 `Rock` `Beachhouse` `Ship` `Seagull` `Tube` `Cabin` `Funnel`
-(`Seagull`·`Tube`만 콘솔 assert가 있고, `Cabin`·`Funnel`은 경고 없이 조용히 안 먹는다)
+그리고 지도 전용 선체 패턴 `/^Ship[_ ]?Body/`.
+못 찾으면 양쪽 selfCheck가 콘솔에 assert를 남긴다 (실측으로 확인: 설문은
+`"…" 노드가 없음`, 지도는 `fleet.missing` 에 이름이 쌓이고 틴트 그룹이 2→1로 준다).
 
 ### B. 자세별 소품 배치 — 설계까지 끝, 사용자 답변 대기
 
