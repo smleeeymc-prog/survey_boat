@@ -2438,9 +2438,10 @@ ${GERSTNER_GLSL}
       fog: this.scene.fog.color.getHex(),
       ocean: wu.uOceanColor.value.getHex(),
       skyRefl: wu.uSkyColor.value.getHex(),
-      exposure: wu.uExposure.value,
-      // 팔레트 값으로 되돌려 담는다 — _applyTime이 다시 SCENE_BRIGHTNESS를 곱하므로
-      // 여기서 곱해진 값을 그대로 넣으면 전환할 때마다 밝기가 누적된다.
+      // 아래 세기들과 uExposure는 전부 팔레트 값으로 되돌려 담는다 — _applyTime이 다시
+      // SCENE_BRIGHTNESS를 곱하므로, 곱해진 값을 그대로 넣으면 전환을 걸 때마다 한 번 더
+      // 곱해져 그 순간 화면이 10% 튀었다가 내려온다. (uExposure만 나누기가 빠져 있었다)
+      exposure: wu.uExposure.value / SCENE_BRIGHTNESS,
       sun: this.sunLight.color.getHex(), sunI: this.sunLight.intensity / SCENE_BRIGHTNESS,
       rim: this.rimLight.color.getHex(), rimI: this.rimLight.intensity / SCENE_BRIGHTNESS,
       amb: this.ambLight.color.getHex(), ambI: this.ambLight.intensity / SCENE_BRIGHTNESS,
