@@ -159,6 +159,29 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
 `./statistics/shared/`로 가져다 쓴다. **위치가 이상해 보여도 옮기지 말 것** — 옮기는
 순간 지도 배포가 깨진다.
 
+### 루트 `index.html`은 읽기만 한다
+
+`shared/`가 여기 있다 보니 루트의 온보딩 씬이 이 폴더를 `import` 한다. 방향이 거꾸로
+보이지만 **그렇다고 지도 쪽에서 루트를 고치라는 뜻이 아니다.** 설문 페이지는 설문
+세션의 것이다. 이 폴더에서 루트로 나가는 쓰기는 없다 — 읽기만 한다.
+
+| | 누가 고치나 |
+|---|---|
+| `../index.html`, `../assets/` | 설문 세션만 |
+| `statistics/` 전체 (`shared/` 포함) | 지도 세션 |
+
+설문 쪽에서 지역·키워드·팔레트를 바꿔야 하면 `../index.html`에 표를 다시 적지 말고
+**`shared/` 안의 파일을 고친다.** 그래야 두 화면이 같이 따라온다.
+
+**루트 파일을 통째로 읽지 말 것.** `../index.html`은 3,000줄이 넘어서 한 번 여는 것만으로
+세션 예산의 상당 부분이 날아간다. 필요한 줄만 집는다.
+
+```bash
+git log --oneline -- ../index.html | head -3   # 설문이 바뀌었나
+grep -n 'MODEL_URL' ../index.html              # 값 하나만
+sed -n '985,995p' ../index.html                # 앞뒤 맥락만
+```
+
 ### `survey-taxonomy.js` 만 클래식 스크립트인 이유
 
 이 값들을 쓰는 온보딩의 설문 UI는 클래식 `<script>` 안에 있고(인라인 `onclick` 핸들러가
