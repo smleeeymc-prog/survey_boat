@@ -331,6 +331,14 @@
 <div id="sceneError">3D 배경을 불러오지 못했어요. ① 이 파일을 다운로드해서 그냥 열었다면 웹 서버(https)에 올려서 열어보세요. ② 카카오톡·인스타그램 등 인앱 브라우저라면 우측 상단 메뉴에서 "다른 브라우저로 열기"를 사용해보세요. ③ 브라우저를 최신 버전으로 업데이트해보세요.</div>
 <div id="camDebug"></div>
 
+<!--
+  설문 분류값(지역·상태·키워드). 머무름의 지도(statistics/)와 같은 파일을 읽는다.
+  두 벌로 두면 지역이나 키워드를 하나 추가했을 때 지도의 통계 집계가 조용히 어긋난다.
+  클래식 스크립트인 이유는 그 파일 머리말 참고 — 아래 설문 UI가 인라인 핸들러 때문에
+  모듈로 못 바뀌고, 클래식 스크립트는 import를 못 쓴다.
+-->
+<script src="./statistics/shared/survey-taxonomy.js"></script>
+
 <script>
   // 4초 안에 3D 씬이 초기화되지 않으면(모듈 로드 실패, WebGL 미지원 등) 안내 메시지 노출
   setTimeout(function(){
@@ -348,34 +356,11 @@
      새로고침 시 초기화됩니다. (실서비스는 Supabase 등 연동 필요)
 =========================================================== */
 
-const REGIONS = ["아산","천안","기타 충남","충남 밖","비공개"];
-// Q3은 앞 단계에서 고른 상태에 따라 묻는 말이 달라진다.
-// '머무르는 중'과 '돌아온 사람'은 결국 여기 남아 있는 이유를 묻는 것이라 같은 문장을 쓴다.
-const SENTENCE_Q = {
-  stay:     "지금 당신을 이곳에 머무르게 하는 것은 무엇인가요?",
-  returned: "지금 당신을 이곳에 머무르게 하는 것은 무엇인가요?",
-  leaving:  "지금 당신이 이곳에서 떠나게 하는 것은 무엇인가요?",
-  between:  "지금 당신이 두 지역을 오가게 하는 것은 무엇인가요?",
-  unsure:   "지금 당신이 이곳에서 망설이게 하는 것은 무엇인가요?",
-};
-
-const STATES = [
-  {id:"stay", label:"머무르는 중", desc:"지금 이곳에서 계속 살아가고 있어요"},
-  {id:"leaving", label:"떠날 준비 중", desc:"곧 이곳을 떠날 계획이 있어요"},
-  {id:"between", label:"오가는 중", desc:"두 지역을 오가며 지내고 있어요"},
-  {id:"returned", label:"돌아온 사람", desc:"떠났다가 다시 이곳으로 왔어요"},
-  {id:"unsure", label:"아직 모르겠음", desc:"머물지 떠날지 아직 정하지 못했어요"},
-];
-// "이 마음을 몇 명에게 말해봤나요?" — 답이 곧 하루의 시간대가 된다.
-// 많이 말했을수록 낮, 아무에게도 말하지 않았을수록 밤.
-const SHARES = [
-  {id:"many",  label:"여러 사람에게", time:"day"},
-  {id:"close", label:"가까운 사람에게", time:"afternoon"},
-  {id:"few",   label:"한 두 명만", time:"evening"},
-  {id:"none",  label:"나눈 적 없음", time:"night"},
-];
-
-const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
+// 지역·상태·키워드는 statistics/shared/survey-taxonomy.js 하나에서 온다.
+// 머무름의 지도의 통계 집계가 같은 값을 읽는다 — 여기에 다시 적어 두면 갈라진다.
+const REGIONS = SURVEY_TAXONOMY.REGIONS;
+const STATES = SURVEY_TAXONOMY.STATES;
+const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
 
 // 시연용 목업 시드 데이터
 let entries = [
@@ -988,6 +973,17 @@ render();
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+// 파도·팔레트·배 토큰은 머무름의 지도(statistics/)와 같은 파일에서 온다.
+// 예전에는 두 화면이 각자 같은 표를 적어 두고 있었고, 한쪽만 고치면 소리 없이 갈라졌다.
+// 고칠 곳은 statistics/shared/ 안의 파일 하나뿐이다.
+// (공유 코드가 statistics/ 안에 있는 이유는 그 파일들 머리말 참고 — 지도는 그 폴더만
+//  따로 배포되므로 폴더 밖의 파일은 배포에 들어가지 않는다)
+import { GERSTNER_WAVES, WAVE_WRAP_DOMAIN, GERSTNER_GLSL, waveHeightAt, wrapWave }
+  from "./statistics/shared/ocean-core.js";
+import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND, KEYWORD_COLOR, KEYWORD_PROP }
+  from "./statistics/shared/palette.js";
+import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
+
 // 레포 구조 기준 상대경로 (index.html 은 루트, 모델은 assets/ 안)
 const MODEL_URL = "./assets/Scene.glb";
 
@@ -995,7 +991,7 @@ const MODEL_URL = "./assets/Scene.glb";
 // +X 축과 다를 때 여기서만 맞춘다. 헤딩 로직(headingY)은 건드리지 않으므로
 // "0 = 섬(+X)을 향함 / Math.PI = 섬을 등짐" 이라는 의미가 그대로 유지됨.
 // 모델을 다시 뽑아서 방향이 또 달라지면 0 / ±Math.PI/2 / Math.PI 중에서 이 값만 바꿀 것.
-const SHIP_FORWARD_OFFSET = Math.PI;
+// (SHIP_FORWARD_OFFSET 은 statistics/shared/ship-tokens.js 에서 온다)
 
 // GLB의 Ship 노드가 씬 원점 기준으로 들고 있던 좌표 (블렌더에서 잡아둔 정박 자리).
 // 이 자리를 배 앵커의 원점(0,0,0)으로 삼기 때문에, 섬(Rock/Beachhouse)은 같은 값만큼
@@ -1023,7 +1019,7 @@ const ISLAND_CLEARANCE = -0.6;   // 뱃머리와 오두막 사이 여유. 닿기
 // 흘수(배가 물에 잠기는 깊이). Ship 원점이 선체 중간쯤이라 0으로 두면 절반이 잠긴다.
 // 선체(Ship Body)는 원점 기준 y −0.225 ~ +0.212, 즉 높이 0.437.
 // 파도를 세게 하거나 모델을 다시 뽑으면 다른 데 건드리지 말고 이 숫자만 조절할 것.
-const SHIP_DRAFT = 0.17;
+// (SHIP_DRAFT 는 statistics/shared/ship-tokens.js 에서 온다)
 
 
 // 안개 범위는 카메라 거리에 물려서 같이 움직인다. 고정값으로 두면 줌아웃한 결과 화면에서
@@ -1144,49 +1140,11 @@ const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2
 // shadow는 그림자 짙기(0이면 그림자 없음).
 // 처음 화면(스플래시·온보딩)이 쓰는 시간대. 병에 들어간 뒤 배경 하늘도 여기로 돌아온다.
 // 처음 화면 색을 바꾸고 싶으면 이 키만 바꾸면 둘이 같이 따라간다.
-const INITIAL_TIME_KEY = "day";
-const TIME_OF_DAY = {
-  day: {
-    sky: ["#3fa9d6", "#8fd6e8", "#bfe9ef", "#e9f7f2"],
-    fog: 0xbfe9ef,
-    ocean: 0x2fb3e6, skyRefl: 0xeafaff, exposure: 1.18,
-    sun: 0xfff7e2, sunI: 1.05, sunPos: [2.5, 3.5, 2.0],
-    rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.80,
-    spec: 0xfffcf2, specI: 3.0, shadow: 0.0,
-  },
-  afternoon: {
-    sky: ["#5fb0dd", "#9fd0e4", "#ffd9a6", "#ffeed2"],
-    // 노란기를 뺐다. R-B 차이가 52였는데 20으로 줄여 따뜻함만 남기고 누렇게 뜨는 걸 없앴다.
-    // 반사색(spec)은 그대로 둔다 — 물에 비치는 빛은 노랗게 남아야 오후처럼 보인다.
-    fog: 0xe8e0d4,
-    ocean: 0x2f9fd4, skyRefl: 0xfff0d6, exposure: 1.22,
-    sun: 0xffdca6, sunI: 1.15, sunPos: [2.8, 2.4, 1.4],
-    rim: 0xd8dcea, rimI: 0.30, amb: 0xfff2df, ambI: 0.88,
-    spec: 0xffe6bc, specI: 3.0, shadow: 0.0,
-  },
-  evening: {
-    // 위는 청록, 가운데는 노을, 지평선 바로 위에 자주색 띠, 바닥은 따뜻한 주황
-    sky: ["#2f6f92", "#e2705f", "#a05a8c", "#ffc184"],
-    fog: 0xdb9a86,
-    ocean: 0x2a6d99, skyRefl: 0xffd2a6, exposure: 1.26,
-    sun: 0xffa063, sunI: 1.30, sunPos: [3.0, 1.8, -1.4],
-    rim: 0x8f7fb8, rimI: 0.42, amb: 0xffd9bd, ambI: 0.82,
-    spec: 0xffb070, specI: 3.2, shadow: 0.34,
-  },
-  night: {
-    sky: ["#0a1128", "#16264a", "#22345e", "#33507e"],
-    fog: 0x2a3f68,
-    ocean: 0x16345f, skyRefl: 0xa8c2ee, exposure: 1.12,
-    sun: 0xb6cdff, sunI: 0.60, sunPos: [-2.0, 3.0, 1.2],
-    rim: 0x6d84c4, rimI: 0.38, amb: 0x9fb3dc, ambI: 0.68,
-    spec: 0xaecbff, specI: 1.6, shadow: 0.0,
-  },
-};
+// (INITIAL_TIME_KEY · TIME_OF_DAY 는 statistics/shared/palette.js 에서 온다)
 
 const TIME_MOVE_SEC = 2.0;
 
-// 3D 전체 밝기 배수. 조명 세기와 물 노출에 함께 곱해진다.
-const SCENE_BRIGHTNESS = 1.1;
+// (SCENE_BRIGHTNESS 는 statistics/shared/palette.js 에서 온다)
 
 // ── 물결(리플) ──────────────────────────────────────────────────────────
 // 물에 잠긴 물체 둘레에 흰 테두리가 겹겹이 도는 연출.
@@ -1306,28 +1264,7 @@ const CAM_RADIUS = (function () {
   return { near: Math.min.apply(null, all), far: widest };
 })();
 
-const REGION_SAND = {
-  "아산": 0xd9b98c,
-  "천안": 0xe0a868,
-  "기타 충남": 0xc9b880,
-  "충남 밖": 0x9aa7b0,
-  "비공개": 0xb0aca4,
-};
-
-// 키워드 → 색상 (선택 1번째: 캐빈 색, 2번째: 깃발 색)
-const KEYWORD_COLOR = {
-  "일": 0x6b7fd7, "관계": 0xe28ea0, "가족": 0xe0a868, "창작": 0xd4b896,
-  "익숙함": 0xb89a6a, "주거": 0x8fae8b, "불안": 0x8a6a9a, "자유": 0x7ec8d9,
-  "소속감": 0xd6c08a, "우연": 0xaaaaaa,
-};
-
-// 키워드 → 갑판에 붙는 소품. 여기 없는 키워드는 아무것도 안 붙는다.
-// 고른 키워드 중 하나라도 해당되면 그 소품이 붙는다(둘 다 붙을 수도, 아무것도 안 붙을 수도 있음).
-// 소품을 더 늘리거나 매핑을 바꾸려면 여기만 고치면 된다.
-const KEYWORD_PROP = {
-  "자유": "gull",
-  "관계": "tube",
-};
+// (REGION_SAND · KEYWORD_COLOR · KEYWORD_PROP 는 statistics/shared/palette.js 에서 온다)
 
 const ACTIVE_STEPS = ["onboard","region","state","sentence","share","keywords","consent","result"];
 
@@ -1401,7 +1338,7 @@ class BottleScene {
     //   1144 / (2.2/1.0) = 520,  1144 / (1.3/0.5) = 440,  1144 / (0.8/0.7) = 1001  → 전부 정수 ✓
     // (예전 값 114.4는 dirX를 빼먹어서 3번째 파도가 0.1사이클=36° 어긋났고,
     //  오래 항해하면 랩 순간 바다가 미세하게 튀었음. 아래 자기검증이 이걸 잡아준다.)
-    this.WAVE_WRAP_DOMAIN = 1144;
+    this.WAVE_WRAP_DOMAIN = WAVE_WRAP_DOMAIN;   // statistics/shared/ocean-core.js
 
     this.scene = new THREE.Scene();
     this.scene.background = makeSkyTexture();
@@ -1672,27 +1609,7 @@ class BottleScene {
         uniform float uFlowPhase;
         varying vec3 vWorldPos;
 
-        vec3 gerstnerSum (vec2 worldXZ, float t) {
-          vec3 r = vec3(0.0);
-          float k; float theta; float amp; float c;
-
-          k = 6.28318530718 / 2.2;
-          theta = k * (1.0 * worldXZ.x + 0.15 * worldXZ.y) - (1.1 * t + uFlowPhase);
-          amp = 0.05 * uAmpScale; c = cos(theta);
-          r.x += uChop * amp * 1.0 * c; r.z += uChop * amp * 0.15 * c; r.y += amp * sin(theta);
-
-          k = 6.28318530718 / 1.3;
-          theta = k * (0.5 * worldXZ.x + -0.85 * worldXZ.y) - (1.6 * t + uFlowPhase);
-          amp = 0.03 * uAmpScale; c = cos(theta);
-          r.x += uChop * amp * 0.5 * c; r.z += uChop * amp * -0.85 * c; r.y += amp * sin(theta);
-
-          k = 6.28318530718 / 0.8;
-          theta = k * (-0.7 * worldXZ.x + 0.4 * worldXZ.y) - (2.1 * t + uFlowPhase);
-          amp = 0.018 * uAmpScale; c = cos(theta);
-          r.x += uChop * amp * -0.7 * c; r.z += uChop * amp * 0.4 * c; r.y += amp * sin(theta);
-
-          return r;
-        }
+${GERSTNER_GLSL}
 
         void main () {
           // [버그1] 무한 바다 — 타일은 매 프레임 배 위치로 재중심되고(JS: waterMesh.position.x),
@@ -1892,11 +1809,7 @@ class BottleScene {
     this.waterMesh = mesh;
 
     // 배 들썩임 계산(_waveHeightAt)용 — 위 셰이더 gerstnerSum과 값이 반드시 같아야 함
-    this.gerstnerWaves = [
-      { dirX: 1.0, dirZ: 0.15, wavelength: 2.2, ampBase: 0.05, speed: 1.1 },
-      { dirX: 0.5, dirZ: -0.85, wavelength: 1.3, ampBase: 0.03, speed: 1.6 },
-      { dirX: -0.7, dirZ: 0.4, wavelength: 0.8, ampBase: 0.018, speed: 2.1 },
-    ];
+    this.gerstnerWaves = GERSTNER_WAVES;   // statistics/shared/ocean-core.js
   }
 
   async _loadModels() {
@@ -2812,23 +2725,14 @@ class BottleScene {
     return url;
   }
 
-  _wrapWave(x) {
-    const D = this.WAVE_WRAP_DOMAIN;
-    return x - D * Math.round(x / D);
-  }
+  _wrapWave(x) { return wrapWave(x); }   // statistics/shared/ocean-core.js
 
   // 네 번째 인자는 "흐름 세기"가 아니라 이미 누적된 "흐름 위상"이다 (셰이더 uFlowPhase와 동일).
   // 셰이더의 gerstnerSum과 식이 한 글자라도 어긋나면 배가 수면에서 뜨거나 잠긴다.
   _waveHeightAt(x, z, t, flowPhase) {
-    const ampScale = 0.5 + 0.9 * this.windT;
-    let dy = 0;
-    for (let w = 0; w < this.gerstnerWaves.length; w++) {
-      const wave = this.gerstnerWaves[w];
-      const k = (2 * Math.PI) / wave.wavelength;
-      const theta = k * (wave.dirX * x + wave.dirZ * z) - (wave.speed * t + (flowPhase || 0));
-      dy += wave.ampBase * ampScale * Math.sin(theta);
-    }
-    return dy;
+    // 수식은 statistics/shared/ocean-core.js 하나에만 있다 — 셰이더의 gerstnerSum도
+    // 같은 표에서 생성되므로 둘이 어긋날 수가 없다.
+    return waveHeightAt(x, z, t, flowPhase, 0.5 + 0.9 * this.windT);
   }
 
   _spawnSmoke(dt) {

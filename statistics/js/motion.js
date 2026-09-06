@@ -116,12 +116,26 @@ export class SlotPool {
     }
   }
 
-  take() {
+  /**
+   * 빈 자리 하나. nearX/nearDepth 를 주면 그 지점에서 가장 가까운 빈 자리를 준다.
+   *
+   * 새 기록은 카메라 앞에 크게 제시된 뒤 자기 자리로 이동한다. 그런데 자리를 아무거나
+   * 주면 띠 반대편(40 단위 밖)이 걸리기도 해서, 배가 흐름 속도의 수십 배로 화면을
+   * 가로질러 날아간다. 가장 가까운 자리를 주면 이동 거리가 몇 단위로 줄어, 제시된
+   * 자리에서 자연스럽게 대열에 합류하는 것처럼 보인다.
+   */
+  take(nearX, nearDepth) {
+    let best = null, bestD = Infinity;
     for (const i of this.order) {
       const s = this.slots[i];
-      if (!s.used) { s.used = true; return s; }
+      if (s.used) continue;
+      if (nearX === undefined) { s.used = true; return s; }
+      const dx = s.x0 - nearX, dz = s.depth - nearDepth;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) { bestD = d; best = s; }
     }
-    return null;
+    if (best) best.used = true;
+    return best;
   }
 
   release(slot) { if (slot) slot.used = false; }

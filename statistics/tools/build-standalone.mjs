@@ -38,6 +38,8 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 
 // 이어붙이는 순서 = 최상위에서 평가되는 순서. const/class는 호이스팅되지 않으므로
 // "먼저 평가돼야 하는 것"이 앞에 와야 한다 (panel.js의 METRICS가 config의 STATE_LABEL을 읽는 식).
+// shared/ 가 먼저다 — config.js가 그 값들을 다시 내보내기 때문에 앞에 평가돼 있어야 한다.
+const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
   "fleet.js", "camera.js", "store.js", "panel.js", "selfcheck.js", "main.js",
@@ -53,7 +55,11 @@ function flatten(src) {
     .replace(/^import\s+["'][^"']+["'];\s*$/gm, "")
     // export 키워드만 떼어낸다. 선언 자체는 그대로 둔다.
     .replace(/^export\s+(const|let|function|class|async)\b/gm, "$1")
-    .replace(/^export\s*\{[\s\S]*?\};?\s*$/gm, "");
+    // 다시 내보내기(`export { A } from "..."`). 한 스코프에 다 있으므로 지우면 된다.
+    // [주의] 한 줄 안에서만 매칭해야 한다 — 여는 중괄호부터 아무 `};`까지 여러 줄을
+    // 훑게 두면, 첫 재수출부터 한참 뒤의 다른 블록까지 통째로 먹어버린다(실제로 겪음).
+    .replace(/^export\s*\{[^}]*\}\s*from\s*["'][^"']+["'];[ \t]*$/gm, "")
+    .replace(/^export\s*\{[^}]*\};?[ \t]*$/gm, "");
 }
 
 /**
@@ -92,7 +98,20 @@ const gltfLoader = [
 ].join("\n");
 
 const configSrc = read(path.join(STAT, "js", "config.js"));
+// main.js가 `import * as C` 로 쓰므로, 평평하게 편 뒤에도 C.가 살아야 한다.
+// config.js는 자기가 선언한 것과 shared/ 에서 다시 내보내는 것 두 종류를 갖는다.
 const configNames = [...configSrc.matchAll(/^export\s+const\s+([A-Za-z0-9_$]+)/gm)].map((m) => m[1]);
+// `export { A, B as C } from "..."` — 이름만 옮기는 것이라 평평하게 펴면 사라진다.
+// 별칭(B as C)은 한 스코프 안에서 별도의 선언으로 되살려야 한다.
+const reexportAliases = [];
+for (const m of configSrc.matchAll(/^export\s*\{([^}]*)\}\s*from\s*["'][^"']+["'];/gm)) {
+  for (const part of m[1].split(",")) {
+    const [from, to] = part.trim().split(/\s+as\s+/);
+    if (!from) continue;
+    configNames.push(to || from);
+    if (to) reexportAliases.push(`const ${to} = ${from};`);
+  }
+}
 
 // REWRITES — 원본과 달라지는 유일한 세 군데.
 const REWRITES = [
@@ -108,7 +127,11 @@ const REWRITES = [
   ],
 ];
 
-let bundle = MODULE_ORDER.map((f) => {
+let bundle = SHARED_ORDER.map(
+  (f) => `\n/* ══════ shared/${f} ══════ */\n` + flatten(read(path.join(STAT, "shared", f)))
+).join("\n");
+
+bundle += MODULE_ORDER.map((f) => {
   let src = read(path.join(STAT, "js", f));
   for (const [from, to] of REWRITES) {
     if (f === "main.js") {
@@ -122,13 +145,19 @@ let bundle = MODULE_ORDER.map((f) => {
 // config.js는 main.js가 `import * as C`로 통째로 쓴다. 평평하게 편 뒤에도 C.가 살아야 한다.
 bundle = bundle.replace(
   "/* ══════ motion.js ══════ */",
-  `const C = { ${configNames.join(", ")} };\n\n/* ══════ motion.js ══════ */`
+  `${reexportAliases.join("\n")}\nconst C = { ${configNames.join(", ")} };\n\n/* ══════ motion.js ══════ */`
 );
+
+// 설문 분류값은 클래식 스크립트라 전역에 얹힌다. 번들 전체가 하나의 <script> 안에
+// 들어가므로, 앞에 붙여만 두면 config.js가 읽는 globalThis.SURVEY_TAXONOMY 가 생긴다.
+const taxonomy = read(path.join(STAT, "shared", "survey-taxonomy.js"));
 
 // index.html에서 <body> 안의 마크업만 가져온다 (importmap·모듈 스크립트·css 링크는 뺀다).
 const indexHtml = read(path.join(STAT, "index.html"));
 const bodyMarkup = indexHtml
   .slice(indexHtml.indexOf("<body>") + 6, indexHtml.indexOf('<script type="importmap">'))
+  // 분류값 스크립트는 아래에서 인라인으로 넣으므로 태그는 뺀다 (파일이 없어 404가 난다)
+  .replace(/<script src="\.\/shared\/survey-taxonomy\.js"><\/script>/, "")
   .trim();
 
 const sceneDoc = `<!doctype html>
@@ -140,6 +169,7 @@ ${bodyMarkup}
 <script>${three}<\/script>
 <script>${gltfLoader}<\/script>
 <script>
+${taxonomy}
 const __GLB = Uint8Array.from(atob("${glbB64}"), (c) => c.charCodeAt(0)).buffer;
 ${bundle}
 <\/script>
@@ -189,10 +219,10 @@ const shell = `<!doctype html>
 <script>
   const SCENE = "${sceneB64}";
   const html = new TextDecoder("utf-8").decode(Uint8Array.from(atob(SCENE), (c) => c.charCodeAt(0)));
-  const TIMES = [["night","밤"],["evening","노을"],["afternoon","오후"],["day","낮"]];
+  const TIMES = [["day","낮"],["afternoon","오후"],["evening","노을"],["night","밤"]];
   const bar = document.getElementById("bar");
   const stage = document.getElementById("stage");
-  let cur = "night";
+  let cur = "day";   // 설문 페이지와 같은 기본 시간대
   function load(key) {
     cur = key;
     // __PARAMS를 문서 맨 앞에 끼워 넣는다 (씬 코드가 location.search 대신 이걸 읽는다).

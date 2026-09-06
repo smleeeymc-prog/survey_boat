@@ -23,111 +23,42 @@
 // `node statistics/tools/sync-model.mjs` 로 맞춰야 두 화면의 배가 갈라지지 않는다.
 export const MODEL_URLS = ["./assets/Scene.glb", "../assets/Scene.glb"];
 
-// 원본: SHIP_FORWARD_OFFSET — 블렌더에서 뽑은 Ship의 정면이 코드가 가정하는 +X와 달라서
-// 모델을 한 번만 돌려두는 보정값. 지도에서는 이 회전을 지오메트리에 구워버리므로
-// 인스턴스 행렬에는 "진짜 헤딩"만 들어간다.
-export const SHIP_FORWARD_OFFSET = Math.PI;
-
-// 원본: 흘수(배가 물에 잠기는 깊이). 배 크기에 비례해서 같이 곱해야 잠기는 비율이 유지된다.
-export const SHIP_DRAFT = 0.17;
-
 // 지도 전용: 배 크기. 온보딩은 3.38(배 1척이 주인공)이지만, 지도는 배 수십 척과
 // 넓은 바다를 한 화면에 담아야 하므로 절반 이하로 줄인다. 파도 파장(2.2/1.3/0.8)은
 // 월드 값이라 그대로이므로, 배가 작아지는 만큼 상대적으로 너울이 커 보인다 —
 // "넓은 바다"를 만드는 게 목적이라 오히려 원하는 방향이다.
 export const FLEET_SHIP_SCALE = 1.5;
 
-// ── 파도 (원본 그대로) ───────────────────────────────────────────────────────
-// 셰이더 gerstnerSum과 JS waveHeightAt이 이 표 하나를 같이 본다. 한 글자라도
-// 어긋나면 배가 수면에서 뜨거나 잠긴다 (원본 주석).
-export const GERSTNER_WAVES = [
-  { dirX: 1.0, dirZ: 0.15, wavelength: 2.2, ampBase: 0.05, speed: 1.1 },
-  { dirX: 0.5, dirZ: -0.85, wavelength: 1.3, ampBase: 0.03, speed: 1.6 },
-  { dirX: -0.7, dirZ: 0.4, wavelength: 0.8, ampBase: 0.018, speed: 2.1 },
-];
+// ── 파도 · 팔레트 · 배 토큰 (공유) ───────────────────────────────────────────
+// 아래 값들은 온보딩 씬(../../index.html)과 이 화면이 같이 쓴다. 예전에는 이 파일에
+// 옮겨 적어 두고 있었는데, 그러면 한쪽만 고쳤을 때 두 화면이 소리 없이 갈라진다.
+// 이제 원본은 statistics/shared/ 안에 하나뿐이고 여기서는 그대로 다시 내보내기만 한다
+// — 이 파일을 import 하던 다른 모듈들은 손댈 필요가 없다.
+export { GERSTNER_WAVES, WAVE_WRAP_DOMAIN } from "../shared/ocean-core.js";
+export { TIME_OF_DAY, SCENE_BRIGHTNESS, KEYWORD_COLOR, KEYWORD_PROP } from "../shared/palette.js";
+export { SHIP_FORWARD_OFFSET, SHIP_DRAFT, CABIN_BASE_COLOR } from "../shared/ship-tokens.js";
 
-// 원본: float32 정밀도 보호용 랩 도메인.
-// 위상은 k*(dirX*x + dirZ*z) 이므로 축별 "유효 파장"은 wavelength/dir 이다.
-// 온보딩은 배가 +X로만 나아가서 X축 공배수만 확인하면 됐지만, 지도는 카메라가
-// XZ 평면 위를 자유롭게 흐르므로 Z축도 공배수여야 한다. 다행히 1144는 둘 다 맞는다:
-//   X: 1144/(2.2/1.00)=520, 1144/(1.3/0.50)=440, 1144/(0.8/0.70)=1001
-//   Z: 1144/(2.2/0.15)=78,  1144/(1.3/0.85)=748, 1144/(0.8/0.40)=572
-// 전부 정수 → 랩 순간 위상이 정확히 2π의 배수만큼 옮겨가 화면엔 아무 티도 안 난다.
-// (selfcheck.js가 매 로드마다 이걸 다시 검산한다)
-export const WAVE_WRAP_DOMAIN = 1144;
-
-// ── 시간대 팔레트 (원본 그대로) ───────────────────────────────────────────────
-// ?time=day|afternoon|evening|night 로 바꿀 수 있다. 기본값은 아래 DEFAULT_TIME_KEY.
-export const TIME_OF_DAY = {
-  day: {
-    sky: ["#3fa9d6", "#8fd6e8", "#bfe9ef", "#e9f7f2"],
-    fog: 0xbfe9ef,
-    ocean: 0x2fb3e6, skyRefl: 0xeafaff, exposure: 1.18,
-    sun: 0xfff7e2, sunI: 1.05, sunPos: [2.5, 3.5, 2.0],
-    rim: 0xbfe7ef, rimI: 0.30, amb: 0xffffff, ambI: 0.80,
-    spec: 0xfffcf2, specI: 3.0,
-  },
-  afternoon: {
-    sky: ["#5fb0dd", "#9fd0e4", "#ffd9a6", "#ffeed2"],
-    fog: 0xe8e0d4,
-    ocean: 0x2f9fd4, skyRefl: 0xfff0d6, exposure: 1.22,
-    sun: 0xffdca6, sunI: 1.15, sunPos: [2.8, 2.4, 1.4],
-    rim: 0xd8dcea, rimI: 0.30, amb: 0xfff2df, ambI: 0.88,
-    spec: 0xffe6bc, specI: 3.0,
-  },
-  evening: {
-    sky: ["#2f6f92", "#e2705f", "#a05a8c", "#ffc184"],
-    fog: 0xdb9a86,
-    ocean: 0x2a6d99, skyRefl: 0xffd2a6, exposure: 1.26,
-    sun: 0xffa063, sunI: 1.30, sunPos: [3.0, 1.8, -1.4],
-    rim: 0x8f7fb8, rimI: 0.42, amb: 0xffd9bd, ambI: 0.82,
-    spec: 0xffb070, specI: 3.2,
-  },
-  night: {
-    sky: ["#0a1128", "#16264a", "#22345e", "#33507e"],
-    fog: 0x2a3f68,
-    ocean: 0x16345f, skyRefl: 0xa8c2ee, exposure: 1.12,
-    sun: 0xb6cdff, sunI: 0.60, sunPos: [-2.0, 3.0, 1.2],
-    rim: 0x6d84c4, rimI: 0.38, amb: 0x9fb3dc, ambI: 0.68,
-    spec: 0xaecbff, specI: 1.6,
-  },
-};
-// 설문 페이지(루트 index.html)의 INITIAL_TIME_KEY와 같은 값을 쓴다.
+// 기본 시간대도 온보딩과 같은 값을 쓴다 (설문 페이지가 처음 보여주는 하늘).
 // 바다 색을 팔레트에서 떼어내 하나만 바꿀 수는 없다 — 하늘·안개·조명·반사색이 한 세트라
 // 바다만 밝은 하늘색으로 바꾸면 남색 하늘 아래 청록 바다가 뜬다.
-// 세트를 day로 맞추면 바다가 설문 페이지의 기본 바다색(#2fb3e6)과 정확히 같아진다.
-export const DEFAULT_TIME_KEY = "day";
+export { INITIAL_TIME_KEY as DEFAULT_TIME_KEY } from "../shared/palette.js";
 
-// 원본: 3D 전체 밝기 배수. 조명 세기와 물 노출에 함께 곱해진다.
-export const SCENE_BRIGHTNESS = 1.1;
-
-// ── 설문 분류값 (원본 그대로 — 온보딩과 어긋나면 집계가 갈라진다) ──────────────
-export const REGIONS = ["아산", "천안", "기타 충남", "충남 밖", "비공개"];
-
-export const STATES = [
-  { id: "stay", label: "머무르는 중" },
-  { id: "leaving", label: "떠날 준비 중" },
-  { id: "between", label: "오가는 중" },
-  { id: "returned", label: "돌아온 사람" },
-  { id: "unsure", label: "아직 모르겠음" },
-];
-export const STATE_LABEL = Object.fromEntries(STATES.map((s) => [s.id, s.label]));
-
-export const KEYWORDS = ["일", "관계", "가족", "창작", "익숙함", "주거", "불안", "자유", "소속감", "우연"];
-
-// 원본: 키워드 → 색상. 온보딩에서 "첫 번째 키워드 = 캐빈 색"이었던 규칙을 지도에서도
-// 그대로 쓴다. 인스턴스 컬러는 캐빈 그룹에만 먹인다 (fleet.js 참고).
-export const KEYWORD_COLOR = {
-  "일": 0x6b7fd7, "관계": 0xe28ea0, "가족": 0xe0a868, "창작": 0xd4b896,
-  "익숙함": 0xb89a6a, "주거": 0x8fae8b, "불안": 0x8a6a9a, "자유": 0x7ec8d9,
-  "소속감": 0xd6c08a, "우연": 0xaaaaaa,
-};
-// 키워드 없는 배의 캐빈 색 (원본 cabinMat 기본값)
-export const CABIN_BASE_COLOR = 0xf3e6cf;
-
-// 원본: 키워드 → 갑판 소품. 지도에서도 같은 매핑을 쓰되, 소품마다 InstancedMesh를
-// 따로 만들고 "그 키워드를 고른 배"에만 인스턴스를 배정한다.
-export const KEYWORD_PROP = { "자유": "gull", "관계": "tube" };
+// ── 설문 분류값 (공유) ──────────────────────────────────────────────────────
+// 온보딩의 설문 UI는 클래식 <script> 안에 있어서 import를 못 쓴다(인라인 onclick
+// 핸들러가 전역을 참조한다). 그래서 분류값만 클래식 스크립트로 두고 전역에 얹었다.
+// index.html이 모듈보다 앞에서 그 파일을 불러 두므로 여기서는 읽기만 하면 된다.
+// (모듈은 defer라 문서에 먼저 나온 클래식 스크립트가 항상 먼저 실행된다)
+const TAXONOMY = globalThis.SURVEY_TAXONOMY;
+if (!TAXONOMY) {
+  throw new Error(
+    "[config] shared/survey-taxonomy.js 가 안 실려 있다 — " +
+    "index.html에서 모듈보다 앞에 <script src>로 넣어야 한다"
+  );
+}
+export const REGIONS = TAXONOMY.REGIONS;
+export const STATES = TAXONOMY.STATES;
+export const STATE_LABEL = Object.fromEntries(STATES.map((x) => [x.id, x.label]));
+export const KEYWORDS = TAXONOMY.KEYWORDS;
 
 // ── 표현 채널의 출처 ────────────────────────────────────────────────────────
 // [시안 단계] 어떤 답변이 배의 무엇을 바꿀지는 아직 확정되지 않았다. 그래서 채널의
@@ -200,8 +131,15 @@ export const CAM_SWAY_SEC = 71;
 
 // 새 기록 연출 (기획서: 5~8초간 크게 제시된 뒤 기존 기록들 사이로 이동)
 export const ARRIVAL_HOLD_SEC = 6.5;   // 크게 제시하는 시간
-export const ARRIVAL_TRAVEL_SEC = 2.6; // 자기 자리로 미끄러져 가는 시간
+// 자기 자리로 물러나는 시간. 이동 거리는 짧지만(가장 가까운 빈 자리를 받는다) 크기가
+// 2.6배에서 1배로 줄어드는 구간이라, 짧게 잡으면 "쑥 빨려 들어가는" 것처럼 보인다.
+// 다른 배들이 40초에 화면을 건너는 화면에서 혼자 급하게 움직이면 그것만 눈에 띈다.
+export const ARRIVAL_TRAVEL_SEC = 5.0;
 export const ARRIVAL_SCALE = 2.6;      // 제시 중 배 크기 배수
+// 크기는 이동보다 먼저 끝난다. 끝까지 같이 줄이면 "멀어져서 작아지는" 게 아니라
+// "작아지면서 날아가는" 걸로 읽힌다. 이동 구간의 앞 65%에서 크기를 다 줄이고,
+// 남은 구간은 제 크기로 자리만 잡는다.
+export const ARRIVAL_SHRINK_RATIO = 0.65;
 
 // 패널 통계 자동 전환 주기(초) — 원본 UI 시안과 같은 5.2초
 export const STAT_ROTATE_SEC = 5.2;

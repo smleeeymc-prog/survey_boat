@@ -156,7 +156,10 @@ class MapScene {
   }
 
   _addRecord(record, announce) {
-    const slot = this.slots.take();
+    // 등장 연출을 할 배는 무대(카메라 앞 중앙) 근처의 자리를 받는다.
+    // 그래야 제시가 끝난 뒤 몇 단위만 움직여 대열에 합류한다 (SlotPool.take 주석 참고).
+    const stage = announce ? this.cam.stagePoint(ARRIVAL_DIST) : null;
+    const slot = stage ? this.slots.take(stage.x, stage.z) : this.slots.take();
     if (!slot) return;
     const boat = makeBoat(record, slot);
     // "이 배가 어떻게 생겼는지"는 전부 여기서 한 번 정해진다 (style.js).
@@ -182,7 +185,7 @@ class MapScene {
     this._reindex();
 
     if (announce) {
-      if (!this.arriving) { this._beginArrival(boat); return; }
+      if (!this.arriving) { this._beginArrival(boat, stage); return; }
       // 제시는 한 번에 9초 남짓 걸린다. 관람객이 몰려 제출이 그보다 빨리 들어오면
       // 줄이 계속 길어져서, "방금 도착한 문장" 카드가 몇 분 전 문장을 보여주게 된다.
       // 줄이 길면 앞쪽(가장 오래 기다린 것)부터 버린다 — 배는 이미 바다에 놓였고,
@@ -223,8 +226,8 @@ class MapScene {
    * 계수 1.17은 세로 화면(FOV 50, 카메라 높이 8, 제시 거리 11) 기준으로 배가
    * 화면 58% 자리에 오도록 역산한 값이다. 카드는 78%부터 시작하므로 겹치지 않는다.
    */
-  _beginArrival(boat) {
-    const stage = this.cam.stagePoint(ARRIVAL_DIST);
+  _beginArrival(boat, stage) {
+    if (!stage) stage = this.cam.stagePoint(ARRIVAL_DIST);
     boat.phase = "arriving";
     boat.phaseT = 0;
     boat.stageX = stage.x; boat.stageZ = stage.z; boat.stageHeading = stage.heading;
@@ -256,13 +259,17 @@ class MapScene {
     const e = easeInOutCubic(k);
     b.renderX = b.stageX + (b.x - b.stageX) * e;
     b.renderZ = b.stageZ + (b.z - b.stageZ) * e;
-    b.renderHeading = Math.atan2(b.z - b.stageZ, b.x - b.stageX);
-    b.renderScale = C.ARRIVAL_SCALE + (1 - C.ARRIVAL_SCALE) * e;
+    // 이동 거리가 짧으면 헤딩이 흔들린다(거의 제자리에서 atan2를 재는 꼴). 남은 거리가
+    // 배 한 척보다 짧아지면 흐름 방향으로 되돌려, 대열에 합류한 채로 끝나게 한다.
+    const dx = b.x - b.renderX, dz = b.z - b.renderZ;
+    b.renderHeading = (dx * dx + dz * dz) > 2.0 ? Math.atan2(dz, dx) : b.heading;
+    const shrink = easeOutCubic(Math.min(1, k / C.ARRIVAL_SHRINK_RATIO));
+    b.renderScale = C.ARRIVAL_SCALE + (1 - C.ARRIVAL_SCALE) * shrink;
     this._focusBeyond(b.renderX, b.renderZ, (1 - e) * 0.9);
 
     // 항적은 이 배에만 준다 (셰이더 슬롯이 하나뿐이고, 실제로 나아가는 배도 이것뿐이다).
     const wake = this.water.material.uniforms.uWake.value;
-    wake.set(b.renderX, b.renderZ, b.renderHeading, Math.sin(Math.PI * k) * 0.9);
+    wake.set(b.renderX, b.renderZ, b.renderHeading, Math.sin(Math.PI * Math.min(1, k / 0.7)) * 0.75);
 
     if (k >= 1) {
       b.phase = null; b.renderScale = 1;

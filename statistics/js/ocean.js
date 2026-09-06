@@ -16,34 +16,16 @@
 
 import * as THREE from "three";
 import {
-  GERSTNER_WAVES, WAVE_WRAP_DOMAIN,
   WATER_TILE_SIZE, WATER_TILE_SEGMENTS,
   WATER_FADE_NEAR, WATER_FADE_FAR,
 } from "./config.js";
+// 파도 수식은 온보딩 씬과 같은 파일에서 온다 — 한쪽만 고쳐 두 화면이 갈라지는 걸 막는다.
+// GERSTNER_GLSL(정점 셰이더)과 waveHeightAt(JS 파고)은 같은 표에서 생성되므로
+// 손으로 두 벌을 맞출 일이 없다.
+import { GERSTNER_GLSL, waveHeightAt, wrapWave } from "../shared/ocean-core.js";
+export { waveHeightAt, wrapWave };
 
 export const RIPPLE_MAX = 8;   // 셰이더 루프 상한이라 상수여야 한다 (원본과 동일)
-
-/** 파도장은 WAVE_WRAP_DOMAIN을 주기로 반복된다. 좌표를 그 안으로 접어 float32를 보호한다. */
-export function wrapWave(x) {
-  const D = WAVE_WRAP_DOMAIN;
-  return x - D * Math.round(x / D);
-}
-
-/**
- * 임의 좌표의 파고. 셰이더 gerstnerSum의 y성분과 값이 반드시 같아야 한다 —
- * 어긋나면 배가 수면에서 뜨거나 잠긴다. (selfcheck.js가 랩 정합성을 검산한다)
- * @param {number} flowPhase 이미 누적된 흐름 "위상" (세기가 아니다 — 원본 [버그6] 참고)
- */
-export function waveHeightAt(x, z, t, flowPhase, ampScale) {
-  let dy = 0;
-  for (let w = 0; w < GERSTNER_WAVES.length; w++) {
-    const wave = GERSTNER_WAVES[w];
-    const k = (2 * Math.PI) / wave.wavelength;
-    const theta = k * (wave.dirX * x + wave.dirZ * z) - (wave.speed * t + (flowPhase || 0));
-    dy += wave.ampBase * ampScale * Math.sin(theta);
-  }
-  return dy;
-}
 
 /**
  * 물 재질.
@@ -100,27 +82,7 @@ export function buildWaterMaterial() {
       uniform float uFlowPhase;
       varying vec3 vWorldPos;
 
-      vec3 gerstnerSum (vec2 worldXZ, float t) {
-        vec3 r = vec3(0.0);
-        float k; float theta; float amp; float c;
-
-        k = 6.28318530718 / 2.2;
-        theta = k * (1.0 * worldXZ.x + 0.15 * worldXZ.y) - (1.1 * t + uFlowPhase);
-        amp = 0.05 * uAmpScale; c = cos(theta);
-        r.x += uChop * amp * 1.0 * c; r.z += uChop * amp * 0.15 * c; r.y += amp * sin(theta);
-
-        k = 6.28318530718 / 1.3;
-        theta = k * (0.5 * worldXZ.x + -0.85 * worldXZ.y) - (1.6 * t + uFlowPhase);
-        amp = 0.03 * uAmpScale; c = cos(theta);
-        r.x += uChop * amp * 0.5 * c; r.z += uChop * amp * -0.85 * c; r.y += amp * sin(theta);
-
-        k = 6.28318530718 / 0.8;
-        theta = k * (-0.7 * worldXZ.x + 0.4 * worldXZ.y) - (2.1 * t + uFlowPhase);
-        amp = 0.018 * uAmpScale; c = cos(theta);
-        r.x += uChop * amp * -0.7 * c; r.z += uChop * amp * 0.4 * c; r.y += amp * sin(theta);
-
-        return r;
-      }
+      ${GERSTNER_GLSL}
 
       void main () {
         // 무한 바다: 타일은 매 프레임 카메라 발밑으로 재중심되고(JS: waterMesh.position),

@@ -8,6 +8,11 @@
 statistics/
 ├─ index.html        화면 골격 · importmap · 리퀴드 글래스 SVG 필터
 ├─ vercel.json       이 폴더만 따로 배포할 때의 설정 (레포 루트에는 두지 않는다)
+├─ shared/           ★ 온보딩 씬(../index.html)과 이 화면이 같이 읽는 원본
+│  ├─ ocean-core.js      파도 표 · 셰이더 GLSL · 파고 계산 · 랩 도메인
+│  ├─ palette.js         시간대 팔레트 · 키워드/지역 색
+│  ├─ ship-tokens.js     뱃머리 보정 · 흘수 · GLB 노드 이름
+│  └─ survey-taxonomy.js 지역 · 상태 · 키워드 (클래식 스크립트)
 ├─ assets/
 │  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
 ├─ tools/
@@ -124,6 +129,47 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
   그쪽으로 돌리는 게 안전합니다(약 1.4MB). 지금은 온보딩 씬과 같은 방식을 유지했습니다.
 - **캐시**: `statistics/vercel.json`이 `assets/` 만 1년 immutable로 잡습니다.
   HTML·JS·CSS는 Vercel 기본값이라 전시 중 코드를 고치면 새로고침으로 반영됩니다.
+
+## 온보딩 씬과 공유하는 것 — `shared/`
+
+두 화면은 같은 바다·같은 배·같은 분류값을 쓴다. 예전에는 각자 자기 파일에 같은 표를
+옮겨 적어 두고 있었고, **한쪽만 고치면 소리 없이 갈라졌다.** 지금은 원본이 `shared/`
+안에 하나뿐이고 양쪽이 거기서 읽는다.
+
+| 파일 | 담긴 것 | 읽는 쪽 |
+|---|---|---|
+| `ocean-core.js` | Gerstner 파도 표, 셰이더 GLSL, `waveHeightAt`, `WAVE_WRAP_DOMAIN` | 루트 모듈 / `js/ocean.js` |
+| `palette.js` | `TIME_OF_DAY`, `INITIAL_TIME_KEY`, 밝기, `KEYWORD_COLOR`, `KEYWORD_PROP`, `REGION_SAND` | 루트 모듈 / `js/config.js` |
+| `ship-tokens.js` | `SHIP_FORWARD_OFFSET`, `SHIP_DRAFT`, GLB 노드 이름 | 루트 모듈 / `js/fleet.js` |
+| `survey-taxonomy.js` | `REGIONS`, `STATES`, `KEYWORDS` | 루트 설문 UI / `js/config.js` |
+
+**파도는 표 하나에서 GLSL과 JS가 같이 생성됩니다.** 정점 셰이더의 `gerstnerSum`은
+`GERSTNER_WAVES` 표에서 문자열로 만들어지고, 배가 들썩일 높이를 재는 `waveHeightAt`도
+같은 표를 돈다. 예전에는 이 둘을 손으로 맞춰야 했고(한 글자만 어긋나도 배가 수면에서
+뜨거나 잠긴다), 심지어 화면마다 두 벌씩 있었다. 이제 표만 고치면 넷이 같이 따라온다.
+
+**확인된 동작**: `shared/ocean-core.js`의 파장을 2.2 → 3.7로, `shared/palette.js`의
+바다색을 `#2fb3e6` → `#ff00aa`로 바꿔 봤더니 **두 화면의 셰이더·파고·색이 모두** 따라왔다.
+
+### 왜 `shared/` 가 `statistics/` 안에 있나
+
+지도는 Vercel에서 Root Directory를 `statistics`로 잡아 따로 배포된다. Vercel은 **그 폴더
+밖의 파일을 배포에 포함하지 않으므로**, 공유 파일이 레포 루트에 있으면 지도 배포에서
+404가 난다. 그래서 공유 코드는 `statistics/` 안에 두고 루트의 온보딩 씬이
+`./statistics/shared/`로 가져다 쓴다. **위치가 이상해 보여도 옮기지 말 것** — 옮기는
+순간 지도 배포가 깨진다.
+
+### `survey-taxonomy.js` 만 클래식 스크립트인 이유
+
+이 값들을 쓰는 온보딩의 설문 UI는 클래식 `<script>` 안에 있고(인라인 `onclick` 핸들러가
+전역을 참조해서 모듈로 바꿀 수 없다), 클래식 스크립트는 `import`를 못 쓴다. 그래서
+전역에 얹는 방식으로 두 쪽 다 읽게 했다. 두 HTML 모두 모듈보다 **앞에** 이 파일을
+`<script src>`로 넣어 둔다 (모듈은 defer라 먼저 나온 클래식 스크립트가 항상 먼저 실행된다).
+
+### 아직 공유 안 되는 것
+
+`Scene.glb` 는 파일이라 import로 묶을 수 없다. `statistics/assets/`에 사본이 있고
+`sync-model.mjs`로 맞춘다 (아래 "GLB 사본에 대해" 참고).
 
 ## 인수인계 문서에서 미결정이었던 것들 — 이번에 정한 것
 
