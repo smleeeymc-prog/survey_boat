@@ -46,5 +46,5 @@ var SURVEY_TAXONOMY = (function () {
   ];
 
   const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
-  return { REGIONS, STATES, KEYWORDS };
+  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q };
 })();

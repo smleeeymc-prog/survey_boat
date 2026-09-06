@@ -38,8 +38,13 @@
 파도는 표 하나에서 셰이더 GLSL과 JS 파고 함수가 같이 생성된다.
 자세한 건 `statistics/README.md`의 shared/ 항목.
 
-공유가 아직 안 되는 건 `assets/Scene.glb` 하나다 (파일이라 import로 못 묶는다).
-모델을 다시 뽑으면 `statistics/tools/sync-model.mjs` 로 두 벌을 맞춘다.
+모델 GLB는 import로 묶을 수 없는 파일이라 사본으로 공유한다. **두 화면 모두
+`statistics/assets/Scene.glb` 를 읽는다** — shared/ 와 같은 이유로, 지도가 Vercel에서
+Root Directory를 `statistics` 로 잡아 따로 배포되면 그 폴더 밖의 파일을 못 읽기 때문이다.
+루트 `assets/` 는 **백업 겸 블렌더 산출물이 떨어지는 자리**로 남겨 둔다
+(`Scene.baked.glb` 도 거기 있다). 모델을 다시 뽑으면 루트에 넣고
+`node statistics/tools/sync-model.mjs` 로 `statistics/assets/` 에 밀어 넣어야
+실제 화면이 바뀐다 — 이 한 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
 
 **설문 쪽에서 지역·키워드·팔레트·파도를 바꿀 때는 `index.html`에 표를 다시 적지 말고
 `statistics/shared/` 안의 파일을 고친다.** `index.html`은 거기서 `import` 해 온다.
@@ -181,9 +186,14 @@ Firebase를 붙이기 전에 한쪽으로 정해야 한다.
 
 ```
 survey_boat/
-├─ index.html          전부 여기 있다 (2,345줄)
+├─ index.html          설문 페이지 전부 (씬 + UI)
 ├─ HANDOFF.md          이 문서
-└─ assets/Scene.glb    블렌더 모델 (Ship / Rock / Beachhouse / Seagull / Tube)
+├─ assets/             백업 · 블렌더 산출물 자리 (화면이 읽는 곳이 아니다)
+│   ├─ Scene.glb       원본
+│   └─ Scene.baked.glb 현재 배치·크기를 구워 넣은 것
+└─ statistics/
+    ├─ assets/Scene.glb   ★ 두 화면이 실제로 읽는 모델
+    └─ shared/            ★ 두 화면이 같이 읽는 표 (파도·팔레트·배·분류값)
 ```
 
 `index.html` 안은 크게 셋으로 나뉜다.
@@ -546,7 +556,8 @@ git push --dry-run origin main
 (baked를 그대로 덮으면 섬이 두 번 밀리고 뱃머리가 두 번 돌아간다 — 11장 참조)
 
 받으면 할 일:
-1. `assets/Scene.glb` 교체
+1. `assets/Scene.glb` 교체 → **`node statistics/tools/sync-model.mjs` 실행**
+   (이걸 빠뜨리면 화면은 옛날 배를 그대로 쓴다 — 화면이 읽는 건 `statistics/assets/` 쪽이다)
 2. 노드 목록을 뽑아 **"배선됨 / 미배선"** 으로 정리해 사용자에게 보여주기
 3. 하드코딩된 두 값을 다시 재서 반영 — `islandRestX`의 `0.479`(Beachhouse가 자기 원점
    기준 앞으로 뻗는 거리)와 `0.49`(선체가 배 원점 기준 뻗는 거리)
