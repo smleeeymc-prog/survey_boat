@@ -1061,6 +1061,9 @@ function bottleRadiusAtU(u) {
   }
   return 0;
 }
+// 병이 나타나는 구간과 바다가 빠지는 구간. 겹치되 병이 먼저 자리를 잡는다.
+const BOTTLE_IN_UNTIL = 0.60;   // bottleT가 여기 닿으면 병은 이미 다 보인다
+const BOTTLE_SEA_FROM = 0.30;   // 바다는 여기부터 빠지기 시작한다
 const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
 
 // 프리셋 값은 가로가 넉넉한 화면(비율 1.6) 기준으로 잡은 것이다. 세로 FOV가 고정이라
@@ -3272,10 +3275,21 @@ ${GERSTNER_GLSL}
         widen: a.widen + (b.widen - a.widen) * k,
       };
     }
-    this.bottleMat.opacity = 0.28 * this.bottleT;
-    this.bottleRimMat.opacity = 0.62 * this.bottleT;
-    this.bottleCorkMat.opacity = 0.9 * this.bottleT;
-    this.bottleWaterMat.opacity = 0.9 * this.bottleT;
+    // 병이 나타나는 곡선과 바다가 빠지는 곡선을 떼어 놓는다.
+    //
+    // 예전에는 둘 다 bottleT에 그대로 비례했다. 수치로는 교차 페이드인데 눈에는 아니었다 —
+    // 배경이 바다일 때는 반쯤 켜진 코르크와 안쪽 물이 묻혀 안 보이다가, 배경이 크림색으로
+    // 밝아지고 나서야 같은 불투명도가 갑자기 드러난다. "페이드가 끝났을 때 병 아래쪽이랑
+    // 물이 갑자기 나타난다"는 게 이것이다.
+    //
+    // 그래서 병은 앞쪽에 몰아서 먼저 자리를 잡고, 바다는 조금 늦게 빠지기 시작한다.
+    // 바다가 사라질 무렵 병은 이미 거기 있다.
+    const bIn = THREE.MathUtils.smoothstep(this.bottleT, 0.0, BOTTLE_IN_UNTIL);
+    const seaOut = THREE.MathUtils.smoothstep(this.bottleT, BOTTLE_SEA_FROM, 1.0);
+    this.bottleMat.opacity = 0.28 * bIn;
+    this.bottleRimMat.opacity = 0.62 * bIn;
+    this.bottleCorkMat.opacity = 0.9 * bIn;
+    this.bottleWaterMat.opacity = 0.9 * bIn;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
     // 병은 scene에 직접 붙어 있어 배를 따라가지 않았다. '오가는 중'처럼 배가 이동하는
     // 상태로 결과 화면에 오면 병만 원점에 남아 화면 밖으로 사라진다.
@@ -3285,11 +3299,10 @@ ${GERSTNER_GLSL}
     // 병 크기까지 좁혀와서, 바다가 병 속으로 빨려드는 것처럼 보이게 한다.
     const wc = this.waterMesh.material.uniforms;
     if (this.bottleT > 0.01) {
-      const t = Math.min(1, this.bottleT);
       const bx = this.boat.position.x + BOTTLE_SHIFT_X;
       wc.uClipOn.value = 1.0;
       wc.uClipCenter.value.set(bx, BOTTLE_Y, BOTTLE_SHIFT_Z);
-      wc.uClipT.value = t;
+      wc.uClipT.value = seaOut;
     } else {
       wc.uClipOn.value = 0.0;
     }
