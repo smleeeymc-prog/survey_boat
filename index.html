@@ -1189,6 +1189,21 @@ const RIPPLE_OUT_LEVEL = 0.75;   // 파동1 대비 밝기
 const RIPPLE_MASK_SPEED = 1.10;  // 0.30에서 올림 — 빠르게 바뀐다
 const RIPPLE_MASK_LO = 0.00, RIPPLE_MASK_HI = 0.55;
 
+// 수면에 깔린 옅은 자국. 월드 좌표에 고정돼 있어서, 카메라가 배를 따라가는 동안
+// 저절로 뒤로 흘러간다 — 배가 나아간다는 유일한 시차 단서다.
+//
+// 실측: '오가는 중'에서 배와 카메라가 정확히 같이 움직이고(상대이동 0), 물 타일도 배를
+// 따라 재중심되므로(waterMesh.position.x = boat.position.x) 화면에서 움직이는 것이
+// 하나도 없었다. 파도 위상만 월드에 고정돼 있지만 프레임당 이동이 파장의 3%라
+// 무늬가 자기유사해서 눈에 띄지 않는다 — 화면 무늬 이동을 재보니 0px이었다.
+const DRIFT_ON = 1.0;            // 0이면 통째로 끈다
+const DRIFT_FREQ = 3.4;          // 진행 방향과 직각(Z)으로 얼마나 촘촘한가
+const DRIFT_MEANDER = 1.1;       // 줄기가 굽이치는 정도
+const DRIFT_WIDTH = 0.30;        // 줄기의 굵기 (0~1)
+const DRIFT_SEG = 0.45;          // 줄기를 토막내는 정도 (클수록 짧은 조각)
+const DRIFT_LEVEL = 0.28;        // 밝기 — 파도를 덮지 않을 만큼만
+const DRIFT_FLOW = 0.10;         // 물 자체가 흐르는 속도 (배와 무관하게 아주 느리게)
+
 const RIPPLE_SPEED = 0.6;       // 웅얼거리는 속도
 const RIPPLE_WAVE_FOLLOW = 0.9; // 파고를 따라 안팎으로 밀리는 정도
 const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
@@ -1696,6 +1711,30 @@ ${GERSTNER_GLSL}
         uniform vec4 uSdfIslandMeta;
 
         /**
+         * 수면에 깔린 옅은 자국. 월드 좌표로 만들므로 카메라가 배를 따라가면 뒤로 흘러간다.
+         *
+         * 두 방향의 긴 무늬를 겹쳐 만든다. 한 방향만 쓰면 줄무늬로 읽히고, 둘을 곱하면
+         * 길쭉한 조각들이 흩어진 것처럼 보인다 — 실제 수면의 잔물결에 가깝다.
+         * 파고를 섞어 마루 쪽에 더 모이게 했다. 골에만 있으면 물이 아니라 무늬로 보인다.
+         */
+        float driftAt(vec2 p, float waveH) {
+          float t = uTime * ${DRIFT_FLOW.toFixed(3)};
+          // 진행 방향(X)으로 길게 늘인 줄기. Z로는 촘촘하고 X로는 완만하게 굽이친다 —
+          // 점이면 거품으로 읽히고, 길쭉해야 "지나간다"로 읽힌다.
+          float phase = p.y * ${DRIFT_FREQ.toFixed(3)}
+                      + sin(p.x * 0.55 + t) * ${DRIFT_MEANDER.toFixed(3)};
+          float m = 0.62 * sin(phase)
+                  + 0.38 * sin(p.y * 1.7 - p.x * 0.23 - t * 0.7);
+          float streak = smoothstep(1.0 - ${DRIFT_WIDTH.toFixed(3)}, 1.0, m);
+          // 줄기를 토막낸다 — 끝없이 이어지면 무늬로 보인다
+          float seg = smoothstep(${DRIFT_SEG.toFixed(3)}, ${(DRIFT_SEG + 0.35).toFixed(3)},
+                                 0.5 + 0.5 * sin(p.x * 0.85 + p.y * 0.37 + t * 0.5));
+          // 파고를 섞어 마루 쪽에 모이게 한다. 골에만 있으면 물이 아니라 무늬로 보인다.
+          float crest = smoothstep(-0.05, 0.18, waveH);
+          return streak * seg * (0.45 + 0.55 * crest);
+        }
+
+        /**
          * 물체가 물에 닿는 윤곽선까지의 거리. 안쪽은 음수, 바깥은 양수.
          *
          * 거리장은 물체 좌표계에 구워져 있으므로 물체가 돌면 같이 돈다.
@@ -1815,7 +1854,8 @@ ${GERSTNER_GLSL}
           if (uRippleOn > 0.5) {
             vec2 pXZ = vWorldPos.xz;
             float foam = contactFoam(pXZ, uSdfBoat, uSdfBoatXf, uSdfBoatGrid, uSdfBoatMeta, vWorldPos.y)
-                       + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y);
+                       + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y)
+                       + driftAt(pXZ, vWorldPos.y) * ${(DRIFT_LEVEL * DRIFT_ON).toFixed(3)};
             color += uRippleColor * min(1.0, foam) * 0.55;
           }
           // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
