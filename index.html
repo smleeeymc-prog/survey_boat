@@ -1171,17 +1171,19 @@ const RIPPLE_SLICES = [-0.12, -0.04, 0.04, 0.12];
 
 // 파동1 — 윤곽선(거리 0)에서 시작해 바깥으로 번지는 판.
 // 웅얼거림을 거리에 비례시키므로 물체와 맞닿는 안쪽은 변위가 0이다.
-const RIPPLE_IN_WIDTH = 0.17;
-const RIPPLE_IN_WOBBLE = 0.40;
-// 파동2 — 조금 떨어진 띠. 웅얼거림이 더 크고, 보이는 조각이 계속 바뀐다.
+// 굵기는 예전 0.17에서 70%로 줄였다.
+const RIPPLE_IN_WIDTH = 0.119;
+const RIPPLE_IN_WOBBLE = 0.22;   // 0.40에서 낮춤
+// 파동2 — 조금 떨어진 띠. 보이는 조각이 계속 바뀐다.
+// 예전에는 굵기와 웅얼거림이 둘 다 커서, 바깥으로 갈수록 같은 흔들림이 증폭돼 보였다.
 const RIPPLE_OUT_GAP = 0.27;     // 윤곽선에서 떨어진 거리
-const RIPPLE_OUT_WIDTH = 0.075;
-const RIPPLE_OUT_WOBBLE = 0.70;  // 굵기의 웅얼거림
-const RIPPLE_OUT_WANDER = 0.12;  // 안팎으로 흔들리는 폭
+const RIPPLE_OUT_WIDTH = 0.0525; // 0.075의 70%
+const RIPPLE_OUT_WOBBLE = 0.30;  // 0.70에서 낮춤
+const RIPPLE_OUT_WANDER = 0.06;  // 0.12에서 낮춤 — 안팎으로 덜 흔들린다
 const RIPPLE_OUT_LEVEL = 0.75;   // 파동1 대비 밝기
-// 조각 마스크 — 둘레를 따라 일부만 드러나고, 드러나는 자리가 천천히 옮겨간다.
-// 문턱이 좁을수록 조각이 또렷하고 적게 보인다.
-const RIPPLE_MASK_SPEED = 0.30;
+// 조각 마스크 — 둘레를 따라 일부만 드러나고, 드러나는 자리가 옮겨간다.
+// 흔들림을 줄인 만큼 "보이는 자리가 바뀌는" 쪽으로 움직임을 옮겼다.
+const RIPPLE_MASK_SPEED = 1.10;  // 0.30에서 올림 — 빠르게 바뀐다
 const RIPPLE_MASK_LO = 0.00, RIPPLE_MASK_HI = 0.55;
 
 const RIPPLE_SPEED = 0.6;       // 웅얼거리는 속도
@@ -1190,11 +1192,6 @@ const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
 // 배가 나아갈 때 선미 뒤로 끌리는 자국.
 // 배 좌표계에서 그린다 — 예전에는 X속도의 부호만 보고 방향을 0 아니면 파이로 정해서,
 // 배가 선회하는 동안 자국이 따라 돌지 않고 그 자리에 누워 있었다.
-const WAKE_SPREAD = 0.10;       // 뒤로 갈수록 벌어지는 비율 (선체 너비에서 출발한다)
-const WAKE_WIDTH = 0.10;        // 두 줄기의 굵기
-const WAKE_FADE = 0.42;         // 뒤로 갈수록 옅어지는 속도
-const WAKE_INNER = 0.30;        // 두 줄기 사이를 채우는 옅은 자국의 세기
-const WAKE_WOBBLE = 0.22;       // 줄기가 흔들리는 정도
 // 카메라 기본 각도. 셰이더 앵커(_updateSpecAnchor)와 드래그 제한이 같은 값을 봐야 한다.
 const BASE_YAW = -0.45, BASE_PITCH = 0.60;
 const basePitchOf = () => BASE_PITCH;
@@ -1617,8 +1614,6 @@ class BottleScene {
         uSdfIslandXf: { value: new THREE.Vector4(0, 0, 1, 0) },
         uSdfIslandGrid: { value: new THREE.Vector4(0, 0, 1, 1) },
         uSdfIslandMeta: { value: new THREE.Vector4(1.5, RIPPLE_SDF_MAXD, 0, 0) },
-        // 배 항적 — x는 선체 반길이, y는 반너비, z는 세기 (배 좌표계에서 그린다)
-        uWake: { value: new THREE.Vector4(0, 0, 0, 0) },
         // 유리병이 나타나면 바다를 병 안쪽으로 가둔다.
         // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
         uFadeNear: { value: 100.0 },
@@ -1696,7 +1691,6 @@ ${GERSTNER_GLSL}
         uniform vec4 uSdfIslandXf;
         uniform vec4 uSdfIslandGrid;
         uniform vec4 uSdfIslandMeta;
-        uniform vec4 uWake;
 
         /**
          * 물체가 물에 닿는 윤곽선까지의 거리. 안쪽은 음수, 바깥은 양수.
@@ -1759,27 +1753,6 @@ ${GERSTNER_GLSL}
           return (inner + band * ${RIPPLE_OUT_LEVEL.toFixed(3)} * mask) * meta.z;
         }
 
-        /**
-         * 선미 뒤로 끌리는 자국. 이미 배 좌표계로 옮겨 놓은 loc 을 그대로 쓴다 —
-         * 접촉 거리장과 같은 좌표라 배가 돌면 자국도 함께 돈다.
-         * loc.x 가 뱃머리 쪽(+), loc.y 가 좌우다.
-         */
-        float wakeLocal(vec2 loc) {
-          if (uWake.z <= 0.001) return 0.0;
-          float behind = -loc.x - uWake.x;          // 선미보다 뒤쪽만
-          if (behind <= 0.0) return 0.0;
-          float wob = sin(loc.x * 3.3 - uTime * 1.1) + sin(loc.y * 5.1 + uTime * 0.7);
-          // 선체 너비에서 출발해 뒤로 갈수록 조금씩 벌어진다
-          float spread = uWake.y + behind * ${WAKE_SPREAD.toFixed(3)}
-                       + wob * ${(WAKE_WOBBLE * 0.5).toFixed(3)} * behind;
-          float w = ${WAKE_WIDTH.toFixed(3)} * (1.0 + 0.35 * wob);
-          float arm = 1.0 - smoothstep(0.0, max(w, 1e-3), abs(abs(loc.y) - spread));
-          // 두 줄기 사이의 뒤흔들린 물
-          float inner = (1.0 - smoothstep(spread * 0.75, spread * 1.05, abs(loc.y)))
-                      * ${WAKE_INNER.toFixed(3)};
-          return (arm + inner) * exp(-behind * ${WAKE_FADE.toFixed(3)}) * uWake.z;
-        }
-
         // 병 옆면의 반지름은 축을 따라 변한다. 축 위치 ax(스케일 전)에서의 반지름.
         // 병 밖이면 0을 돌려주므로 그 구간의 물은 통째로 사라진다.
         float bottleRadiusAt(float ax) {
@@ -1838,12 +1811,8 @@ ${GERSTNER_GLSL}
           vec3 color = sky + water + sparkle;
           if (uRippleOn > 0.5) {
             vec2 pXZ = vWorldPos.xz;
-            vec2 relB = pXZ - uSdfBoatXf.xy;
-            vec2 locB = vec2(relB.x * uSdfBoatXf.z - relB.y * uSdfBoatXf.w,
-                             relB.x * uSdfBoatXf.w + relB.y * uSdfBoatXf.z);
             float foam = contactFoam(pXZ, uSdfBoat, uSdfBoatXf, uSdfBoatGrid, uSdfBoatMeta, vWorldPos.y)
-                       + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y)
-                       + wakeLocal(locB);
+                       + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y);
             color += uRippleColor * min(1.0, foam) * 0.55;
           }
           // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
@@ -2307,9 +2276,7 @@ ${GERSTNER_GLSL}
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.generateMipmaps = false;
     tex.needsUpdate = true;
-    // 항적이 선체 폭에서 출발하도록 발자국 크기를 같이 담는다 (여백 P를 뺀 것)
-    return { tex, x0, z0, invSX: 1 / sx, invSZ: 1 / sz, res, restY,
-             halfLen: Math.max(0.05, (sx - P * 2) * 0.5), halfW: Math.max(0.05, (sz - P * 2) * 0.5) };
+    return { tex, x0, z0, invSX: 1 / sx, invSZ: 1 / sz, res, restY };
   }
 
   /**
@@ -2455,19 +2422,6 @@ ${GERSTNER_GLSL}
     apply(this._sdfIsland, this.islandGroup, this.islandGroup.rotation.y, islandFade,
           wu.uSdfIslandXf.value, wu.uSdfIslandGrid.value, wu.uSdfIslandMeta.value);
 
-    const bp = this.boat.position;
-    // 항적 — 실제로 움직인 2D 거리를 뱃머리 방향에 투영해 "앞으로 나아간 속도"만 센다.
-    // 예전에는 X속도만 봐서, 배가 돌면 방향이 0/파이 둘 중 하나로 튀었다.
-    const yawB = this.boat.rotation.y;
-    const fx = Math.cos(yawB), fz = -Math.sin(yawB);      // 뱃머리(로컬 +X)의 월드 방향
-    const dx = bp.x - (this._wakePrevX ?? bp.x), dz = bp.z - (this._wakePrevZ ?? bp.z);
-    this._wakePrevX = bp.x; this._wakePrevZ = bp.z;
-    const fwd = dt > 0 ? (dx * fx + dz * fz) / dt : 0;
-    const speed = Math.min(1, Math.max(0, fwd) / 1.2);
-    this._wakeStrength = (this._wakeStrength ?? 0) + (speed - (this._wakeStrength ?? 0)) * Math.min(1, dt * 2.5);
-    const bk = this._sdfBoat;
-    wu.uWake.value.set(bk ? bk.halfLen : 0, bk ? bk.halfW : 0,
-                       (bk && this.boat.visible) ? this._wakeStrength : 0, 0);
   }
 
   /** 카메라 높이가 구름 층에 가까울 때만 짙어진다 — 지나가면 곧 사라진다. */
