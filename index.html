@@ -1187,10 +1187,14 @@ const RIPPLE_MASK_LO = 0.00, RIPPLE_MASK_HI = 0.55;
 const RIPPLE_SPEED = 0.6;       // 웅얼거리는 속도
 const RIPPLE_WAVE_FOLLOW = 0.9; // 파고를 따라 안팎으로 밀리는 정도
 const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
-// 배가 나아갈 때 뒤로 끌리는 V자 항적
-const WAKE_SPREAD = 0.42;       // 뒤로 갈수록 벌어지는 각
-const WAKE_WIDTH = 0.13;
-const WAKE_FADE = 0.55;         // 뒤로 갈수록 옅어지는 속도
+// 배가 나아갈 때 선미 뒤로 끌리는 자국.
+// 배 좌표계에서 그린다 — 예전에는 X속도의 부호만 보고 방향을 0 아니면 파이로 정해서,
+// 배가 선회하는 동안 자국이 따라 돌지 않고 그 자리에 누워 있었다.
+const WAKE_SPREAD = 0.10;       // 뒤로 갈수록 벌어지는 비율 (선체 너비에서 출발한다)
+const WAKE_WIDTH = 0.10;        // 두 줄기의 굵기
+const WAKE_FADE = 0.42;         // 뒤로 갈수록 옅어지는 속도
+const WAKE_INNER = 0.30;        // 두 줄기 사이를 채우는 옅은 자국의 세기
+const WAKE_WOBBLE = 0.22;       // 줄기가 흔들리는 정도
 // 카메라 기본 각도. 셰이더 앵커(_updateSpecAnchor)와 드래그 제한이 같은 값을 봐야 한다.
 const BASE_YAW = -0.45, BASE_PITCH = 0.60;
 const basePitchOf = () => BASE_PITCH;
@@ -1613,7 +1617,7 @@ class BottleScene {
         uSdfIslandXf: { value: new THREE.Vector4(0, 0, 1, 0) },
         uSdfIslandGrid: { value: new THREE.Vector4(0, 0, 1, 1) },
         uSdfIslandMeta: { value: new THREE.Vector4(1.5, RIPPLE_SDF_MAXD, 0, 0) },
-        // 배 항적 — xy는 배 월드 XZ, z는 진행 방향(라디안), w는 세기
+        // 배 항적 — x는 선체 반길이, y는 반너비, z는 세기 (배 좌표계에서 그린다)
         uWake: { value: new THREE.Vector4(0, 0, 0, 0) },
         // 유리병이 나타나면 바다를 병 안쪽으로 가둔다.
         // uClipOn이 0이면 아무 일도 하지 않으므로 평소 렌더에는 영향이 없다.
@@ -1755,17 +1759,25 @@ ${GERSTNER_GLSL}
           return (inner + band * ${RIPPLE_OUT_LEVEL.toFixed(3)} * mask) * meta.z;
         }
 
-        /** 나아가는 배 뒤로 끌리는 V자 항적. 배 기준 좌표로 옮겨 놓고 그린다. */
-        float wakeAt(vec2 p) {
-          if (uWake.w <= 0.001) return 0.0;
-          vec2 rel = p - uWake.xy;
-          float c = cos(-uWake.z), s = sin(-uWake.z);
-          vec2 loc = vec2(rel.x * c - rel.y * s, rel.x * s + rel.y * c);
-          float behind = -loc.x;                       // 진행 방향 반대쪽만
+        /**
+         * 선미 뒤로 끌리는 자국. 이미 배 좌표계로 옮겨 놓은 loc 을 그대로 쓴다 —
+         * 접촉 거리장과 같은 좌표라 배가 돌면 자국도 함께 돈다.
+         * loc.x 가 뱃머리 쪽(+), loc.y 가 좌우다.
+         */
+        float wakeLocal(vec2 loc) {
+          if (uWake.z <= 0.001) return 0.0;
+          float behind = -loc.x - uWake.x;          // 선미보다 뒤쪽만
           if (behind <= 0.0) return 0.0;
-          float spread = 0.42 * behind;
-          float arm = 1.0 - smoothstep(0.0, 0.13, abs(abs(loc.y) - spread));
-          return arm * exp(-behind * 0.55) * uWake.w;
+          float wob = sin(loc.x * 3.3 - uTime * 1.1) + sin(loc.y * 5.1 + uTime * 0.7);
+          // 선체 너비에서 출발해 뒤로 갈수록 조금씩 벌어진다
+          float spread = uWake.y + behind * ${WAKE_SPREAD.toFixed(3)}
+                       + wob * ${(WAKE_WOBBLE * 0.5).toFixed(3)} * behind;
+          float w = ${WAKE_WIDTH.toFixed(3)} * (1.0 + 0.35 * wob);
+          float arm = 1.0 - smoothstep(0.0, max(w, 1e-3), abs(abs(loc.y) - spread));
+          // 두 줄기 사이의 뒤흔들린 물
+          float inner = (1.0 - smoothstep(spread * 0.75, spread * 1.05, abs(loc.y)))
+                      * ${WAKE_INNER.toFixed(3)};
+          return (arm + inner) * exp(-behind * ${WAKE_FADE.toFixed(3)}) * uWake.z;
         }
 
         // 병 옆면의 반지름은 축을 따라 변한다. 축 위치 ax(스케일 전)에서의 반지름.
@@ -1826,9 +1838,12 @@ ${GERSTNER_GLSL}
           vec3 color = sky + water + sparkle;
           if (uRippleOn > 0.5) {
             vec2 pXZ = vWorldPos.xz;
+            vec2 relB = pXZ - uSdfBoatXf.xy;
+            vec2 locB = vec2(relB.x * uSdfBoatXf.z - relB.y * uSdfBoatXf.w,
+                             relB.x * uSdfBoatXf.w + relB.y * uSdfBoatXf.z);
             float foam = contactFoam(pXZ, uSdfBoat, uSdfBoatXf, uSdfBoatGrid, uSdfBoatMeta, vWorldPos.y)
                        + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y)
-                       + wakeAt(pXZ);
+                       + wakeLocal(locB);
             color += uRippleColor * min(1.0, foam) * 0.55;
           }
           // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
@@ -2197,7 +2212,10 @@ ${GERSTNER_GLSL}
    */
   _bakeContactSDF(root, restY) {
     root.updateWorldMatrix(true, true);
-    const yaw = root.rotation.y, cs = Math.cos(-yaw), sn = Math.sin(-yaw);
+    // 월드 → 물체는 역회전이다. 예전에는 cos(-yaw)/sin(-yaw)를 넣어 정회전이 됐고,
+    // 굽기와 읽기가 같은 식이라 "굽을 때 각도"에서만 맞았다. 배가 돌면 오차가 2Δθ로
+    // 벌어져 선회 중에 물결이 반대로 도는 것처럼 보였다.
+    const yaw = root.rotation.y, cs = Math.cos(yaw), sn = Math.sin(yaw);
     const ox = root.position.x, oz = root.position.z, oy = root.position.y;
     const v = new THREE.Vector3();
     const tris = [];               // [ax,ay,az, bx,by,bz, cx,cy,cz] — 물체 좌표, y는 물체 원점 기준
@@ -2209,6 +2227,7 @@ ${GERSTNER_GLSL}
       out[0] = rx * cs - rz * sn; out[1] = v.y - oy; out[2] = rx * sn + rz * cs;
     };
     const a = [0, 0, 0], b = [0, 0, 0], c = [0, 0, 0];
+    const meshes = [];             // 메쉬마다 [삼각형 시작, 끝, 최저y, 최고y]
     root.traverse((o) => {
       const g = o.geometry;
       if (!g || !g.attributes.position) return;
@@ -2216,6 +2235,8 @@ ${GERSTNER_GLSL}
       // 부모가 꺼져 있어도 안 되므로 위로 올라가며 확인한다.
       for (let q = o; q && q !== root.parent; q = q.parent) if (!q.visible) return;
       const idx = g.index, n = idx ? idx.count : g.attributes.position.count;
+      const startTri = tris.length;
+      let lo = Infinity, hi = -Infinity;
       for (let i = 0; i < n; i += 3) {
         const i0 = idx ? idx.getX(i) : i, i1 = idx ? idx.getX(i + 1) : i + 1, i2 = idx ? idx.getX(i + 2) : i + 2;
         toLocal(o, i0, a); toLocal(o, i1, b); toLocal(o, i2, c);
@@ -2223,8 +2244,10 @@ ${GERSTNER_GLSL}
         for (const q of [a, b, c]) {
           if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0];
           if (q[2] < z0) z0 = q[2]; if (q[2] > z1) z1 = q[2];
+          if (q[1] < lo) lo = q[1]; if (q[1] > hi) hi = q[1];
         }
       }
+      if (tris.length > startTri) meshes.push([startTri, tris.length, lo, hi]);
     });
     if (!tris.length) return null;
 
@@ -2239,28 +2262,38 @@ ${GERSTNER_GLSL}
     const data = new Uint8Array(res * res * 4);
     const cover = new Uint8Array(res * res);
     const dist = new Float32Array(res * res);
-    const clipped = [];
+    const seg = [];                // 단면 교선 [x1,z1, x2,z2, ...] 두 점이 한 선분
 
     for (let k = 0; k < 4; k++) {
       const h = restY + RIPPLE_SLICES[k];
       cover.fill(0);
-      for (let t = 0; t < tris.length; t += 9) {
-        // 삼각형을 y = h 로 자른다. 잘린 조각은 삼각형 하나 또는 사각형(=삼각형 둘)이다.
-        clipped.length = 0;
-        for (let e = 0; e < 3; e++) {
-          const p0 = t + e * 3, p1 = t + ((e + 1) % 3) * 3;
-          const y0 = tris[p0 + 1], y1 = tris[p1 + 1];
-          if (y0 <= h) clipped.push(tris[p0], tris[p0 + 2]);
-          if ((y0 < h) !== (y1 < h)) {
-            const f = (h - y0) / (y1 - y0);
-            clipped.push(tris[p0] + (tris[p1] - tris[p0]) * f,
-                         tris[p0 + 2] + (tris[p1 + 2] - tris[p0 + 2]) * f);
+      for (const [t0, t1, lo, hi] of meshes) {
+        if (lo >= h) continue;                       // 통째로 물 위 — 닿지 않는다
+        if (hi <= h) {                               // 통째로 잠김 — 실루엣 전체
+          for (let t = t0; t < t1; t += 9) {
+            this._rasterTri(cover, res, x0, z0, stepX, stepZ,
+              tris[t], tris[t + 2], tris[t + 3], tris[t + 5], tris[t + 6], tris[t + 8]);
           }
+          continue;
         }
-        for (let f = 2; f * 2 < clipped.length; f++) {
-          this._rasterTri(cover, res, x0, z0, stepX, stepZ,
-            clipped[0], clipped[1], clipped[(f - 1) * 2], clipped[(f - 1) * 2 + 1], clipped[f * 2], clipped[f * 2 + 1]);
+        // 수면을 가로지른다 — 그 높이의 단면을 채운다.
+        // "아래 전부를 위에서 본 그림자"로 채우면, 물속에서 더 넓어지는 바위가
+        // 수면에 드러난 크기보다 큰 자국을 남긴다. 실제로 그렇게 보였다.
+        seg.length = 0;
+        for (let t = t0; t < t1; t += 9) {
+          let n = 0;
+          for (let e = 0; e < 3; e++) {
+            const p0 = t + e * 3, p1 = t + ((e + 1) % 3) * 3;
+            const y0 = tris[p0 + 1], y1 = tris[p1 + 1];
+            if ((y0 < h) === (y1 < h)) continue;
+            const f = (h - y0) / (y1 - y0);
+            seg.push(tris[p0] + (tris[p1] - tris[p0]) * f,
+                     tris[p0 + 2] + (tris[p1 + 2] - tris[p0 + 2]) * f);
+            n++;
+          }
+          if (n === 1) seg.length -= 2;              // 꼭짓점만 스친 것은 버린다
         }
+        this._fillSection(cover, res, x0, z0, stepX, stepZ, seg);
       }
       this._chamferSDF(cover, dist, res, stepX, stepZ);
       for (let i = 0; i < res * res; i++) {
@@ -2274,7 +2307,37 @@ ${GERSTNER_GLSL}
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.generateMipmaps = false;
     tex.needsUpdate = true;
-    return { tex, x0, z0, invSX: 1 / sx, invSZ: 1 / sz, res, restY };
+    // 항적이 선체 폭에서 출발하도록 발자국 크기를 같이 담는다 (여백 P를 뺀 것)
+    return { tex, x0, z0, invSX: 1 / sx, invSZ: 1 / sz, res, restY,
+             halfLen: Math.max(0.05, (sx - P * 2) * 0.5), halfW: Math.max(0.05, (sz - P * 2) * 0.5) };
+  }
+
+  /**
+   * 단면 교선(선분 묶음)을 짝수-홀수 규칙으로 채운다.
+   *
+   * 닫힌 메쉬를 평면으로 자르면 교선은 닫힌 고리가 된다. 고리를 굳이 잇지 않고,
+   * 격자 한 줄마다 선분과의 교차점을 모아 정렬한 뒤 짝을 지어 칠하면 같은 결과가 된다.
+   */
+  _fillSection(cover, res, x0, z0, stepX, stepZ, seg) {
+    if (seg.length < 4) return;
+    const xs = [];
+    for (let j = 0; j < res; j++) {
+      const zr = z0 + (j + 0.5) * stepZ;
+      xs.length = 0;
+      for (let k = 0; k + 3 < seg.length; k += 4) {
+        const za = seg[k + 1], zb = seg[k + 3];
+        if ((za <= zr) === (zb <= zr)) continue;
+        const f = (zr - za) / (zb - za);
+        xs.push(seg[k] + (seg[k + 2] - seg[k]) * f);
+      }
+      if (xs.length < 2) continue;
+      xs.sort((p, q) => p - q);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        let i0 = Math.max(0, Math.round((xs[k] - x0) / stepX - 0.5));
+        let i1 = Math.min(res - 1, Math.round((xs[k + 1] - x0) / stepX - 0.5));
+        for (let i = i0; i <= i1; i++) cover[j * res + i] = 1;
+      }
+    }
   }
 
   /** 삼각형 하나를 커버리지 격자에 채운다 (바운딩박스 + 무게중심 판정). */
@@ -2368,8 +2431,16 @@ ${GERSTNER_GLSL}
     };
     const step = RIPPLE_SLICES[1] - RIPPLE_SLICES[0];
     const apply = (bake, obj, yaw, strength, xf, grid, meta) => {
-      if (!bake) { meta.z = 0; return; }
-      const c = Math.cos(-yaw), sn = Math.sin(-yaw);
+      // 인트로에서 배는 하늘에 있고 boat.visible이 false다. 그때도 그리면 배가
+      // 떨어지기 전부터 수면에 접촉면이 나타난다.
+      if (!bake || !obj.visible) { meta.z = 0; return; }
+      // 수면이 구워 둔 단면 범위를 벗어나면(물체가 물에서 떠올랐거나 잠겼으면) 사라진다
+      const rel = -obj.position.y - bake.restY;
+      const span = RIPPLE_SLICES[3] - RIPPLE_SLICES[0];
+      const over = Math.max(RIPPLE_SLICES[0] - rel, rel - RIPPLE_SLICES[3]);
+      strength *= Math.max(0, 1 - over / (span * 0.5));
+      if (strength <= 0.001) { meta.z = 0; return; }
+      const c = Math.cos(yaw), sn = Math.sin(yaw);   // 굽기와 같은 역회전
       xf.set(obj.position.x, obj.position.z, c, sn);
       grid.set(bake.x0, bake.z0, bake.invSX, bake.invSZ);
       // rotation.z는 배의 긴 축(로컬 X)을 중심으로 한 앞뒤 기울기다. 로컬 x에 있는 점은
@@ -2385,12 +2456,18 @@ ${GERSTNER_GLSL}
           wu.uSdfIslandXf.value, wu.uSdfIslandGrid.value, wu.uSdfIslandMeta.value);
 
     const bp = this.boat.position;
-    // 항적 — 배가 실제로 움직인 거리에서 속도를 낸다. 멈추면 저절로 사라진다.
-    const vx = dt > 0 ? (bp.x - (this._wakePrevX ?? bp.x)) / dt : 0;
-    this._wakePrevX = bp.x;
-    const speed = Math.min(1, Math.abs(vx) / 1.2);
+    // 항적 — 실제로 움직인 2D 거리를 뱃머리 방향에 투영해 "앞으로 나아간 속도"만 센다.
+    // 예전에는 X속도만 봐서, 배가 돌면 방향이 0/파이 둘 중 하나로 튀었다.
+    const yawB = this.boat.rotation.y;
+    const fx = Math.cos(yawB), fz = -Math.sin(yawB);      // 뱃머리(로컬 +X)의 월드 방향
+    const dx = bp.x - (this._wakePrevX ?? bp.x), dz = bp.z - (this._wakePrevZ ?? bp.z);
+    this._wakePrevX = bp.x; this._wakePrevZ = bp.z;
+    const fwd = dt > 0 ? (dx * fx + dz * fz) / dt : 0;
+    const speed = Math.min(1, Math.max(0, fwd) / 1.2);
     this._wakeStrength = (this._wakeStrength ?? 0) + (speed - (this._wakeStrength ?? 0)) * Math.min(1, dt * 2.5);
-    wu.uWake.value.set(bp.x, bp.z, vx >= 0 ? 0 : Math.PI, this._wakeStrength);
+    const bk = this._sdfBoat;
+    wu.uWake.value.set(bk ? bk.halfLen : 0, bk ? bk.halfW : 0,
+                       (bk && this.boat.visible) ? this._wakeStrength : 0, 0);
   }
 
   /** 카메라 높이가 구름 층에 가까울 때만 짙어진다 — 지나가면 곧 사라진다. */
