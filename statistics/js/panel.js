@@ -65,7 +65,9 @@ export class Panel {
   }
 
   _renderStat(instant) {
-    const { label, html } = this.pinned || this.deck.render(this.records);
+    const { label, html, sec } = this.pinned || this.deck.render(this.records);
+    // 칸마다 머무는 시간이 다르다. 문장 벽은 5.2초로는 한 문장도 다 못 읽는다.
+    this._dwell = sec || STAT_ROTATE_SEC;
 
     const apply = () => {
       if (this.el.statLabel) this.el.statLabel.textContent = label;
@@ -104,7 +106,7 @@ export class Panel {
     }
 
     this._rotateT += dt;
-    if (!this.pinned && this._rotateT >= STAT_ROTATE_SEC) {
+    if (!this.pinned && this._rotateT >= (this._dwell || STAT_ROTATE_SEC)) {
       this._rotateT = 0;
       this.deck.advance();
       this._renderStat(false);

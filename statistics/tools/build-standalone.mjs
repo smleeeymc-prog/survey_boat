@@ -154,6 +154,31 @@ bundle += MODULE_ORDER.map((f) => {
   return `\n/* ══════ ${f} ══════ */\n` + flatten(src);
 }).join("\n");
 
+// 한 스코프에 전부 펴 넣으므로 최상위 이름이 겹치면 그 자리에서 죽는다
+// ("Identifier 'f' has already been declared"). 모듈로 열 때는 파일마다 스코프가
+// 따로라 멀쩡하고, 시안을 굽기 전까지 아무도 모른다 — 실제로 겪었다(shared/ocean-core.js의
+// GLSL 리터럴용 f 와 js/stats/views.js의 SVG 숫자 포맷용 f). 여기서 먼저 잡는다.
+{
+  const owner = new Map();
+  const dup = [];
+  const DECL = /^(?:export\s+)?(?:async\s+function|function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/gm;
+  for (const chunk of bundle.split(/\/\* ══════ /).slice(1)) {
+    const file = chunk.slice(0, chunk.indexOf(" ══════"));
+    const body = chunk.slice(chunk.indexOf("*/") + 2);
+    for (const m of body.matchAll(DECL)) {
+      const name = m[1];
+      if (owner.has(name)) dup.push(`  ${name}  — ${owner.get(name)} 와 ${file}`);
+      else owner.set(name, file);
+    }
+  }
+  if (dup.length) {
+    throw new Error(
+      "[build] 최상위 이름이 겹친다. 단일 파일에서는 모두 한 스코프라 그대로 죽는다:\n" +
+      dup.join("\n") + "\n둘 중 하나의 이름을 바꿀 것."
+    );
+  }
+}
+
 // config.js는 main.js가 `import * as C`로 통째로 쓴다. 평평하게 편 뒤에도 C.가 살아야 한다.
 bundle = bundle.replace(
   "/* ══════ motion.js ══════ */",

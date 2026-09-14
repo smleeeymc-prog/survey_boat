@@ -7,11 +7,40 @@
  *
  * 색은 전부 토큰을 쓴다 — 원값은 shared/tokens.css(설문 페이지와 공유) 한 곳에 있고,
  * 패널 전용 별칭(--c-accent 등)은 panel.css :root 에 있다. 설문 톤과 같이 움직인다.
- * 값이 여기서 새로 정의되면 그 연결이 끊기므로, 새 뷰를 만들어도 토큰을 쓸 것.
  *
  * 크기는 --stat-base 에 곱해서 쓴다. 화면이 세로냐 가로냐에 따라 그 값이 vw/vh 로
  * 바뀌므로(panel.css 하단), 여기서 vw 를 직접 쓰면 가로 화면에서 혼자 어긋난다.
+ *
+ * ── 색을 쓰는 규칙 ────────────────────────────────────────────────────────
+ * 크기 비교(히트맵)는 한 색상의 밝기 계단 하나(시퀀셜). 0을 기준으로 양쪽으로 갈리는
+ * 값(정착 온도)만 따뜻함/차가움 두 색에 무채색 중앙(다이버징). 카테고리 색을 돌려
+ * 쓰는 뷰는 하나도 없다 — 이 화면에서 색이 "정체성"을 나타내는 지표가 없기 때문이다.
+ * 양극은 CVD 분리 ΔE 13.9, 크림 바탕 대비 3:1 이상으로 검산했다.
+ *
+ * ── 이 화면에는 hover 가 없다 ─────────────────────────────────────────────
+ * 전시장 기기에 입력장치가 없어서 툴팁을 띄울 방법이 없다. 그래서 모든 값이 화면에
+ * 직접 적혀 있다 — 색은 보조일 뿐이고 색만으로 읽어야 하는 값은 없다.
  * ========================================================================== */
+
+:root {
+  /* 시퀀셜 — 히트맵. 금색 계열 한 색상. 밝기만 변한다(크림 바탕 위 알파). */
+  --sv-seq: 148, 116, 63;
+
+  /* 다이버징 — 정착 온도. 따뜻함(머무름) ↔ 차가움(떠남), 중앙은 무채색.
+     차가운 쪽을 바다색 계열에서 고른 건 배·바다 은유와 맞물리게 하려는 것이다. */
+  --sv-warm: #a87f42;
+  --sv-cool: #4f7d99;
+  --sv-mid:  #c3bdb3;
+
+  /* 강조가 아닌 것들의 한 회색. 값마다 색을 달리하지 않는다. */
+  --sv-rest: #6d6a64;
+  --sv-track: rgba(26, 26, 26, .10);
+}
+
+/* 통계 칸은 높이가 서로 다르다. 그대로 두면 칸이 넘어갈 때마다 패널 전체가
+   늘었다 줄었다 하고, 그 아래 바다의 보이는 높이까지 같이 흔들린다. 가장 높은
+   칸에 맞춰 자리를 잡아 두고 내용을 위에서부터 채운다. */
+.p-rows { min-height: 30vw; }
 
 /* ── ranking — 낱말이 빈도순으로 작아지는 한 문단 (시안 스크린샷) ──────────── */
 .sv-ranking {
@@ -25,16 +54,16 @@
 .sv-rank-item.t1 { color: var(--c-accent); font-weight: 700; }
 .sv-rank-item.t2 { color: var(--ink); font-weight: 600; }
 .sv-rank-item.t3 { color: var(--ink2); font-weight: 500; }
-.sv-rank-item.t4 { color: #6d6a64; font-weight: 500; }
+.sv-rank-item.t4 { color: var(--sv-rest); font-weight: 500; }
 .sv-rank-item.t5 { color: #97938c; font-weight: 500; }
 
 /* ── bars — 전체 대비 비율 막대 ────────────────────────────────────────────── */
 .sv-bars {
-  /* 행마다 grid를 따로 두면 열 폭이 행마다 달라져서 막대 시작점이 어긋나고, 길이를
-     눈으로 비교할 수가 없다. 그래서 바깥을 하나의 grid로 두고 행은 display:contents 로
+  /* 행마다 grid 를 따로 두면 열 폭이 행마다 달라져서 막대 시작점이 어긋나고, 길이를
+     눈으로 비교할 수가 없다. 그래서 바깥을 하나의 grid 로 두고 행은 display:contents 로
      펴서, 세 열이 전체에서 한 번만 결정되게 한다.
      라벨 열이 max-content 인 이유: 고정 폭으로 잡으면 "떠날 준비 중" 같은 긴 항목이
-     잘리고, 지표마다 라벨 길이가 다르므로 상수로는 맞출 수가 없다. */
+     잘리고, 지표마다 라벨 길이가 달라 상수로는 맞출 수가 없다. */
   display: grid;
   grid-template-columns: minmax(0, max-content) 1fr 2.6em;
   align-items: center;
@@ -50,17 +79,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sv-bar-track {
-  height: .46em;
-  border-radius: 99px;
-  background: rgba(26, 26, 26, .10);
-  overflow: hidden;
-}
+.sv-bar-track { height: .46em; border-radius: 99px; background: var(--sv-track); overflow: hidden; }
 .sv-bar-fill {
   display: block;
   height: 100%;
   border-radius: 99px;
-  background: #6d6a64;
+  background: var(--sv-rest);
   /* 값이 갈릴 때 길이가 미끄러진다. 크로스페이드(.5s)보다 살짝 길게 둬서
      막대가 다 자란 뒤에 눈이 따라오게 한다. */
   transition: width .62s cubic-bezier(.22, .61, .36, 1);
@@ -71,9 +95,36 @@
   color: var(--c-label);
   font-weight: 600;
   text-align: right;
+  /* 세로로 줄맞춤되는 숫자라 등폭이 맞다 (큰 표제 숫자에는 쓰지 않는다) */
   font-variant-numeric: tabular-nums;
 }
 .sv-bar-pct i { font-style: normal; font-size: .74em; opacity: .7; }
+
+/* ── bubble — 1위를 가운데 먹색으로, 나머지는 회색으로 둘러 ─────────────────── */
+.sv-bubble { display: block; }
+.sv-bubble svg {
+  display: block;
+  width: 100%;
+  /* viewBox 가 내용에 딱 맞춰져 있어서(views.js packBubbles) 폭을 다 쓴다.
+     높이는 그 비율에서 따라오지만, 항목 수에 따라 비율이 변하므로 상한을 둔다. */
+  height: 19vw;
+  overflow: visible;
+}
+.sv-bub circle { fill: #d6d1c8; }
+.sv-bub.lead circle { fill: var(--ink); }
+.sv-bub text { fill: var(--ink2); font-weight: 600; text-anchor: middle; }
+.sv-bub text.in { fill: var(--c-ground); }
+.sv-bub.lead text.in { fill: var(--c-ground); font-weight: 700; }
+.sv-bub:not(.lead) text.in { fill: var(--ink2); }
+.sv-bub text.out { fill: var(--c-label); font-weight: 600; }
+.sv-bub-head {
+  display: block;
+  margin-top: .7em;
+  font-size: calc(var(--stat-base) * .40);
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--c-count);
+}
 
 /* ── headline — 1위 하나만 크게 ───────────────────────────────────────────── */
 .sv-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3em; }
@@ -87,7 +138,6 @@
   font-size: calc(var(--stat-base) * .52);
   font-weight: 600;
   color: var(--c-count);
-  font-variant-numeric: tabular-nums;
 }
 .sv-head-share i { font-style: normal; font-size: .66em; opacity: .7; }
 .sv-head-rest {
@@ -95,4 +145,181 @@
   font-size: calc(var(--stat-base) * .34);
   color: var(--c-label);
   margin-top: .35em;
+}
+
+/* ── heatmap — 지역 × 상태 ────────────────────────────────────────────────── */
+.sv-heatmap { display: block; font-size: calc(var(--stat-base) * .27); margin-top: .6em; }
+.sv-hm-grid {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) repeat(var(--cols), minmax(0, 1fr));
+  /* 칸을 맞붙이지 않고 바탕색 틈을 둔다. 테두리를 그리는 것보다 조용하다. */
+  gap: 2px;
+  align-items: stretch;
+}
+.sv-hm-corner { }
+.sv-hm-col, .sv-hm-rowlabel {
+  color: var(--c-label);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-hm-col { text-align: center; padding-bottom: .25em; }
+.sv-hm-rowlabel { align-self: center; padding-right: .5em; }
+.sv-hm-row { display: contents; }
+.sv-hm-cell {
+  /* --t 는 최대값 대비 비율(0~1). 한 색상의 알파만 움직이므로 색상은 하나뿐이고
+     밝기만 단조 변한다 — 무지개 램프가 아니라 시퀀셜이다. */
+  background: rgba(var(--sv-seq), calc(var(--t) * .92));
+  color: var(--ink2);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: .42em 0;
+  border-radius: 3px;
+  min-width: 0;
+}
+.sv-hm-cell.deep { color: var(--c-ground); }
+.sv-hm-cell.zero { color: transparent; }
+.sv-hm-legend {
+  display: flex;
+  align-items: center;
+  gap: .5em;
+  margin-top: .7em;
+  color: var(--c-label);
+  font-weight: 600;
+}
+.sv-hm-swatches { display: flex; gap: 2px; }
+.sv-hm-swatches i {
+  display: block;
+  width: 1.5em; height: .55em;
+  border-radius: 2px;
+  background: rgba(var(--sv-seq), calc(var(--t) * .92));
+}
+.sv-hm-legend-txt { font-variant-numeric: tabular-nums; }
+
+/* ── network — 함께 고른 이유들 ────────────────────────────────────────────── */
+.sv-network { display: block; }
+.sv-network svg { display: block; width: 100%; height: 21vw; overflow: visible; }
+.sv-net-links path { fill: none; stroke: var(--c-accent); stroke-linecap: round; }
+.sv-net-node circle { fill: var(--ink); }
+.sv-net-node text {
+  fill: var(--ink2);
+  font-weight: 600;
+  font-size: .30px;           /* viewBox 단위 — 가로 10 기준 */
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+.sv-net-note {
+  display: block;
+  margin-top: .5em;
+  font-size: calc(var(--stat-base) * .30);
+  color: var(--c-label);
+  font-weight: 600;
+}
+.sv-net-note b { color: var(--c-count); font-weight: 700; }
+
+/* ── thermo — 정착 온도 (다이버징) ─────────────────────────────────────────── */
+.sv-thermo {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr 2.6em;
+  align-items: center;
+  gap: .5em .7em;
+  font-size: calc(var(--stat-base) * .32);
+  margin-top: .5em;
+}
+.sv-th-row { display: contents; }
+.sv-th-label { color: var(--c-sub); font-weight: 600; white-space: nowrap; }
+.sv-th-track { position: relative; height: .72em; background: var(--sv-track); border-radius: 3px; }
+.sv-th-zero {
+  /* 0 자리를 눈에 보이게 세워 둔다. 이게 없으면 막대가 어디서 갈리는지 알 수 없다. */
+  position: absolute; left: 50%; top: -.14em; bottom: -.14em;
+  width: 1px; background: var(--sv-mid); transform: translateX(-.5px);
+}
+.sv-th-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.sv-th-row.warm .sv-th-fill { background: var(--sv-warm); }
+.sv-th-row.cool .sv-th-fill { background: var(--sv-cool); }
+.sv-th-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sv-th-row.warm .sv-th-val { color: var(--sv-warm); }
+.sv-th-row.cool .sv-th-val { color: var(--sv-cool); }
+.sv-th-axis {
+  grid-column: 2 / 3;
+  display: flex;
+  justify-content: space-between;
+  margin-top: .15em;
+  font-size: .8em;
+  color: var(--c-label);
+  font-weight: 600;
+}
+
+/* ── pulse — 유입 속도 (스탯 타일 + 스파크라인) ────────────────────────────── */
+.sv-pulse { display: block; margin-top: .4em; }
+.sv-pulse-head { display: flex; align-items: baseline; gap: .35em; }
+.sv-pulse-num {
+  font-size: calc(var(--stat-base) * 1.15);
+  font-weight: 700;
+  color: var(--c-count);
+  line-height: 1;
+  /* 큰 표제 숫자에는 등폭을 쓰지 않는다 — 자릿수가 벌어져 보인다. */
+}
+.sv-pulse-unit { font-size: calc(var(--stat-base) * .32); font-weight: 600; color: var(--c-sub); }
+.sv-pulse-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 7vw;
+  margin-top: .6em;
+}
+.sv-pulse-spark i {
+  flex: 1;
+  background: var(--sv-rest);
+  border-radius: 3px 3px 0 0;   /* 바닥은 축에 붙어 있으므로 위쪽만 둥글린다 */
+  opacity: .55;
+}
+.sv-pulse-spark i.now { background: var(--c-accent); opacity: 1; }
+.sv-pulse-foot {
+  display: block;
+  margin-top: .5em;
+  font-size: calc(var(--stat-base) * .29);
+  color: var(--c-label);
+  font-weight: 600;
+}
+
+/* ── textwall — 문장을 그대로 흘려보낸다 ──────────────────────────────────── */
+.sv-textwall {
+  display: block;
+  height: 26vw;
+  overflow: hidden;
+  position: relative;
+  margin-top: .4em;
+  /* 위아래 끝에서 문장이 잘려 나가는 대신 흐려지며 사라진다 */
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+}
+.sv-tw-belt {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+  font-size: calc(var(--stat-base) * .32);
+  /* 목록을 두 번 이어 붙여 두고 정확히 절반만큼 올린다 — 이음매가 안 보인다. */
+  animation: sv-tw-scroll var(--tw-sec, 24s) linear infinite;
+}
+@keyframes sv-tw-scroll { to { transform: translateY(-50%); } }
+.sv-tw-item { display: block; }
+.sv-tw-text { display: block; color: var(--ink2); font-weight: 600; line-height: 1.45; }
+.sv-tw-meta { display: block; margin-top: .15em; font-size: .76em; color: var(--c-label); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-tw-belt { animation: none; }
+  .sv-bar-fill { transition: none; }
+}
+
+/* 가로 화면에서는 --stat-base 가 vh 로 바뀐다(panel.css). 높이를 잡아 둔 것들도
+   같이 vh 로 가야 세로에서만 맞는 레이아웃이 되지 않는다. */
+@media (orientation: landscape) {
+  .p-rows { min-height: 25vh; }
+  .sv-bubble svg { height: 16vh; }
+  .sv-network svg { height: 17vh; }
+  .sv-pulse-spark { height: 6vh; }
+  .sv-textwall { height: 21vh; }
 }
