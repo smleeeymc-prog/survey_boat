@@ -1042,7 +1042,7 @@ const fogRangeFor = (radius) => ({ near: radius + 2.5, far: radius + 7.0 });
 // (나머지는 전부 1.61 이하). 그래서 축과 반경 배율을 분리해, 필요한 만큼만 굵히고
 // 길이는 덜 늘렸다. 물 클리핑 셰이더도 같은 두 값을 쓴다.
 const BOTTLE_SCALE_X = 2.45;                 // 축(길이) 배율
-const BOTTLE_SCALE_R = 2.8;                  // 반경(굵기) 배율
+const BOTTLE_SCALE_R = 3.3;                  // 반경(굵기) 배율
 // 병을 배 기준으로 +x로 밀면, 병 안에서 풍경이 입구(-x) 쪽으로 온다.
 const BOTTLE_SHIFT_X = 1.70;
 // 섬을 옆으로 비켜 놓으면 내용물의 z 중심도 같이 옮겨간다. 병 축이 z=0에 그대로 있으면
@@ -1064,6 +1064,10 @@ function bottleRadiusAtU(u) {
 // 병이 나타나는 구간과 바다가 빠지는 구간. 겹치되 병이 먼저 자리를 잡는다.
 const BOTTLE_IN_UNTIL = 0.60;   // bottleT가 여기 닿으면 병은 이미 다 보인다
 const BOTTLE_SEA_FROM = 0.30;   // 바다는 여기부터 빠지기 시작한다
+// 바다는 병 주변부터 먼저 걷힌다. 균일하게 빠지면 병의 아래쪽 윤곽이 수평선의 바다와
+// 같은 시점에야 드러나서 "병 아래쪽이 늦게 나온다"로 보인다.
+const BOTTLE_CLEAR_SPAN = 1.8;  // 먼저 걷히는 띠의 폭 (병 표면에서 바깥으로, 월드 단위)
+const BOTTLE_CLEAR_EARLY = 1.9; // 병에 붙은 자리가 얼마나 앞서 걷히는지 (배수)
 const BOTTLE_Y = 0.55;                       // 배 몸통 한가운데 높이 (SHIP_SCALE에 맞춰 올림)
 
 // 프리셋 값은 가로가 넉넉한 화면(비율 1.6) 기준으로 잡은 것이다. 세로 FOV가 고정이라
@@ -1826,8 +1830,13 @@ ${GERSTNER_GLSL}
             float rad = bottleRadiusAt(ax) * uClipScaleR;
             // 병 안쪽이면 1, 바깥이면 0. 경계는 살짝 부드럽게 이어준다.
             float inside = 1.0 - smoothstep(rad - 0.08, rad + 0.08, length(rel.yz));
-            // uClipT가 0이면 전부 그대로 보이고, 1이면 병 바깥이 완전히 사라진다.
-            clipA = mix(1.0, inside, uClipT);
+            // 바다를 병 주변부터 걷는다. 병 표면에 붙은 자리는 uClipT가 아직 낮을 때
+            // 이미 다 걷히고, 멀리 있는 바다는 제 속도로 따라온다. 균일하게 빼면
+            // 병의 아래쪽 윤곽이 수평선과 같은 시점에야 드러나서 늦게 나온 것처럼 보인다.
+            float dOut = max(0.0, length(rel.yz) - rad);
+            float near = exp(-dOut / ${BOTTLE_CLEAR_SPAN.toFixed(3)});
+            float tLocal = clamp(uClipT * (1.0 + ${BOTTLE_CLEAR_EARLY.toFixed(3)} * near), 0.0, 1.0);
+            clipA = mix(1.0, inside, tLocal);
             if (clipA < 0.004) discard;
           }
 
