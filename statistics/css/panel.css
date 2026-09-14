@@ -155,24 +155,15 @@ html[data-glass="flat"] .panel {
   color: var(--c-label);
   transition: opacity .5s ease;
 }
+/* 통계가 들어앉는 자리. 배치는 여기서 정하지 않는다 — 가로로 흐를지 줄로 쌓일지는
+   표시 방식마다 다르고, 그건 css/stats.css 의 .sv-* 블록이 각자 정한다.
+   여기서 주는 건 글자 크기 기준(--stat-base)과 갈릴 때의 페이드뿐이다. */
 .p-rows {
-  /* gap이 em이라 컨테이너 글자 크기를 기준값에 맞춰 둔다 (항목마다 크기가 다르므로) */
   font-size: var(--stat-base);
   margin-top: .34em;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: .12em .32em;
   transition: opacity .5s ease;
 }
 .p-label.fading, .p-rows.fading { opacity: 0; }
-
-.stat-item { line-height: 1.14; white-space: nowrap; }
-.t1 { color: var(--c-accent); font-weight: 700; }
-.t2 { color: #1a1a1a; font-weight: 600; }
-.t3 { color: #3d3d3d; font-weight: 500; }
-.t4 { color: #6d6a64; font-weight: 500; }
-.t5 { color: #97938c; font-weight: 500; }
 
 /* ── 새 기록 카드 ────────────────────────────────────────────────────────── */
 /* 새로 제출된 기록은 배가 크게 제시되는 동안 문장도 같이 떠 있는다.

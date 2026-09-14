@@ -8,7 +8,13 @@
  * 연출로 바꾸면서 카메라를 세웠다 — 카메라가 도는 동안 흐름 방향이 화면 안에서
  * 계속 바뀌면 "화면 끝에서 등장해 반대쪽으로 퇴장"이라는 규칙 자체가 성립하지 않고,
  * 배의 속도와 카메라의 속도가 더해져 화면에서의 체감 속도가 들쭉날쭉해진다.
- * 이제 움직이는 건 배고, 카메라는 눈치채지 못할 만큼만 숨쉰다.
+ * 이제 흐름 중에는 카메라가 서 있고, 움직이는 건 배다.
+ *
+ * [변경 이력 2] 다만 새 기록을 제시할 때만은 카메라가 그 배 앞까지 다녀온다.
+ * 배를 화면 한가운데로 끌어와 부풀리던 예전 방식은 배가 제 속도의 몇 배로 날아가
+ * "급히 제자리로 돌아가는" 것처럼 보였다. 카메라가 대신 가면 배는 가만히 있어도 된다.
+ * 흐름 규칙이 깨지지 않는 건 카메라가 회전이 아니라 평행이동만 하기 때문이다 —
+ * 시선 방향(+Z)이 그대로라 흐름 축과 화면 가로축의 정렬이 유지된다.
  *
  * 화면 구성상 위쪽 절반은 리퀴드 글래스 패널이 덮는다. 그래서 수평선이 화면
  * 15% 부근(패널 뒤)에 오도록 높이와 시선 거리를 잡았다 — 유리 뒤로 하늘과
@@ -33,6 +39,11 @@ export class TourCamera {
     this._speedTarget = 1;
     this.pos = new THREE.Vector3();
     this.target = new THREE.Vector3();
+    // 카메라의 수면 위 자리. 평소엔 원점이고, 새 기록을 제시할 때만 그 배 앞으로
+    // 옮겨 간다(main.js의 _updateArrival). 예전에는 시선만 끌어당기고 자리는 못
+    // 옮겨서, 멀리 있는 배를 크게 보이려면 배 쪽을 부풀리는 수밖에 없었다.
+    this.eyeX = 0;
+    this.eyeZ = 0;
     // 카메라는 +Z를 바라본다. 그러면 배가 흐르는 축(X)이 화면 가로축과 나란해진다 —
     // "화면 끝에서 끝까지"를 계산할 수 있는 건 이 정렬 덕분이다.
     this._dir = new THREE.Vector2(0, 1);
@@ -55,6 +66,9 @@ export class TourCamera {
     return slant * Math.tan((CAM_FOV * Math.PI) / 360) * this.aspect;
   }
 
+  /** 카메라를 이 수면 좌표 위로 옮긴다. 높이와 숨쉬기는 그대로 얹힌다. */
+  setEye(x, z) { this.eyeX = x; this.eyeZ = z; }
+
   /** 연출 중인 배 쪽으로 시선을 끌어당긴다. w=0이면 평소대로. */
   setFocus(x, z, w) {
     this._focus = w > 0.001 ? { x, z, w } : null;
@@ -68,7 +82,7 @@ export class TourCamera {
     // 완전히 고정하면 화면이 죽는다. 파도에 얹힌 정도로만 흔든다.
     const bob = Math.sin((this.t / CAM_BOB_SEC) * Math.PI * 2) * CAM_BOB;
     const sway = Math.sin((this.t / CAM_SWAY_SEC) * Math.PI * 2) * CAM_SWAY;
-    this.pos.set(0, CAM_HEIGHT + bob, 0);
+    this.pos.set(this.eyeX, CAM_HEIGHT + bob, this.eyeZ);
     this._dir.set(Math.sin(sway), Math.cos(sway));
 
     let tx = this._dir.x * CAM_LOOK_AHEAD;
@@ -92,15 +106,6 @@ export class TourCamera {
   /** 물 타일을 재중심할 지점 — 카메라 발밑이다. */
   groundX() { return this.pos.x; }
   groundZ() { return this.pos.z; }
-
-  /** 새 기록을 세울 자리: 카메라 앞 dist 만큼, 화면 한가운데. */
-  stagePoint(dist) {
-    return {
-      x: this.pos.x + this._dir.x * dist,
-      z: this.pos.z + this._dir.y * dist,
-      heading: Math.atan2(this._dir.y, this._dir.x) + Math.PI * 0.62,
-    };
-  }
 
   setAspect(aspect) {
     this.aspect = aspect;

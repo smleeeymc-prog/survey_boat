@@ -8,6 +8,8 @@
 <!-- 전시장 송출 화면이라 검색 노출은 불필요하고, 온보딩 페이지와 내용이 겹친다 -->
 <meta name="robots" content="noindex" />
 <link rel="stylesheet" href="./css/panel.css" />
+<!-- 통계 표시 모듈 전용. panel.css(껍데기)와 갈라 둔 이유는 그 파일 머리말 참고 -->
+<link rel="stylesheet" href="./css/stats.css" />
 </head>
 <body>
 
@@ -26,6 +28,7 @@
         ?debug=1                            프레임/인스턴스 정보 오버레이
         ?interactive=1                      드래그로 시점 조작 (리허설용)
         ?seed=46&interval=14                목업 데이터 초기 개수·유입 간격(초)
+        ?depths=1                           등장 깊이 보정 — 주요 깊이마다 배 한 척 + 숫자
   ===========================================================================
 -->
 

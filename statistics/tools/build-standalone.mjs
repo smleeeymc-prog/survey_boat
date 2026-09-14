@@ -42,7 +42,11 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
-  "fleet.js", "camera.js", "store.js", "panel.js", "selfcheck.js", "main.js",
+  "fleet.js", "camera.js", "store.js",
+  // 통계 모듈은 panel.js 보다 먼저다 — Panel 생성자가 StatDeck 을 만들고, StatDeck 은
+  // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
+  "stats/metrics.js", "stats/views.js", "stats/index.js",
+  "panel.js", "selfcheck.js", "main.js",
 ];
 
 const read = (p) => fs.readFileSync(p, "utf8");
@@ -79,7 +83,8 @@ function jsmModule(file, exports) {
 }
 
 // ── 씬 문서(iframe 안에 들어갈 진짜 화면) ────────────────────────────────────
-const css = read(path.join(STAT, "css", "panel.css"));
+// 패널 껍데기 + 통계 뷰. 갈라 둔 이유는 css/stats.css 머리말 참고 (여기서는 이어 붙인다).
+const css = read(path.join(STAT, "css", "panel.css")) + "\n" + read(path.join(STAT, "css", "stats.css"));
 const glbB64 = fs.readFileSync(path.join(ROOT, "assets", "Scene.glb")).toString("base64");
 
 // three.min.js는 r160의 전역(UMD) 빌드다. 열리자마자 deprecation 경고를 찍는데,

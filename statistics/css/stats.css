@@ -1,0 +1,97 @@
+/* =============================================================================
+ * stats.css — 통계 표시 모듈의 스타일. js/stats/views.js 와 한 쌍이다.
+ *
+ * 패널 껍데기(panel.css)와 일부러 갈라 두었다. 통계 시각화는 나중에 이 화면 밖으로
+ * 나갈 수 있고(다른 레이아웃·다른 페이지), 그때 가져갈 것은 views.js 의 함수 하나와
+ * 여기 같은 이름 블록 하나뿐이면 된다.
+ *
+ * 색은 전부 panel.css :root 의 토큰을 쓴다 — 설문 페이지 톤과 한 번에 같이 움직인다.
+ * 값이 여기서 새로 정의되면 그 연결이 끊기므로, 새 뷰를 만들어도 토큰을 쓸 것.
+ *
+ * 크기는 --stat-base 에 곱해서 쓴다. 화면이 세로냐 가로냐에 따라 그 값이 vw/vh 로
+ * 바뀌므로(panel.css 하단), 여기서 vw 를 직접 쓰면 가로 화면에서 혼자 어긋난다.
+ * ========================================================================== */
+
+/* ── ranking — 낱말이 빈도순으로 작아지는 한 문단 (시안 스크린샷) ──────────── */
+.sv-ranking {
+  /* gap 이 em 이라 컨테이너 글자 크기가 기준값이어야 한다 (항목마다 크기가 다르므로) */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .12em .32em;
+}
+.sv-rank-item { line-height: 1.14; white-space: nowrap; }
+.sv-rank-item.t1 { color: var(--c-accent); font-weight: 700; }
+.sv-rank-item.t2 { color: #1a1a1a; font-weight: 600; }
+.sv-rank-item.t3 { color: #3d3d3d; font-weight: 500; }
+.sv-rank-item.t4 { color: #6d6a64; font-weight: 500; }
+.sv-rank-item.t5 { color: #97938c; font-weight: 500; }
+
+/* ── bars — 전체 대비 비율 막대 ────────────────────────────────────────────── */
+.sv-bars {
+  /* 행마다 grid를 따로 두면 열 폭이 행마다 달라져서 막대 시작점이 어긋나고, 길이를
+     눈으로 비교할 수가 없다. 그래서 바깥을 하나의 grid로 두고 행은 display:contents 로
+     펴서, 세 열이 전체에서 한 번만 결정되게 한다.
+     라벨 열이 max-content 인 이유: 고정 폭으로 잡으면 "떠날 준비 중" 같은 긴 항목이
+     잘리고, 지표마다 라벨 길이가 다르므로 상수로는 맞출 수가 없다. */
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr 2.6em;
+  align-items: center;
+  gap: .62em .8em;
+  font-size: calc(var(--stat-base) * .34);
+  margin-top: .5em;
+}
+.sv-bar-row { display: contents; }
+.sv-bar-label {
+  color: var(--c-sub);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sv-bar-track {
+  height: .46em;
+  border-radius: 99px;
+  background: rgba(26, 26, 26, .10);
+  overflow: hidden;
+}
+.sv-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: #6d6a64;
+  /* 값이 갈릴 때 길이가 미끄러진다. 크로스페이드(.5s)보다 살짝 길게 둬서
+     막대가 다 자란 뒤에 눈이 따라오게 한다. */
+  transition: width .62s cubic-bezier(.22, .61, .36, 1);
+}
+.sv-bar-row.lead .sv-bar-label { color: var(--c-count); font-weight: 700; }
+.sv-bar-row.lead .sv-bar-fill { background: var(--c-accent); }
+.sv-bar-pct {
+  color: var(--c-label);
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sv-bar-pct i { font-style: normal; font-size: .74em; opacity: .7; }
+
+/* ── headline — 1위 하나만 크게 ───────────────────────────────────────────── */
+.sv-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3em; }
+.sv-head-word {
+  font-size: calc(var(--stat-base) * 1.25);
+  font-weight: 700;
+  color: var(--c-accent);
+  line-height: 1.05;
+}
+.sv-head-share {
+  font-size: calc(var(--stat-base) * .52);
+  font-weight: 600;
+  color: var(--c-count);
+  font-variant-numeric: tabular-nums;
+}
+.sv-head-share i { font-style: normal; font-size: .66em; opacity: .7; }
+.sv-head-rest {
+  flex-basis: 100%;
+  font-size: calc(var(--stat-base) * .34);
+  color: var(--c-label);
+  margin-top: .35em;
+}
