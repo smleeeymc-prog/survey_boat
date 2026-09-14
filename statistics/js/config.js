@@ -37,6 +37,7 @@ export const FLEET_SHIP_SCALE = 1.5;
 export { GERSTNER_WAVES, WAVE_WRAP_DOMAIN } from "../shared/ocean-core.js";
 export { TIME_OF_DAY, SCENE_BRIGHTNESS, KEYWORD_COLOR, KEYWORD_PROP } from "../shared/palette.js";
 export { SHIP_FORWARD_OFFSET, SHIP_DRAFT, CABIN_BASE_COLOR } from "../shared/ship-tokens.js";
+export { GLB_NODES, GLB_PROPS } from "../shared/glb-nodes.js";
 
 // 기본 시간대도 온보딩과 같은 값을 쓴다 (설문 페이지가 처음 보여주는 하늘).
 // 바다 색을 팔레트에서 떼어내 하나만 바꿀 수는 없다 — 하늘·안개·조명·반사색이 한 세트라

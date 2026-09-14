@@ -5,7 +5,8 @@
  * 나갈 수 있고(다른 레이아웃·다른 페이지), 그때 가져갈 것은 views.js 의 함수 하나와
  * 여기 같은 이름 블록 하나뿐이면 된다.
  *
- * 색은 전부 panel.css :root 의 토큰을 쓴다 — 설문 페이지 톤과 한 번에 같이 움직인다.
+ * 색은 전부 토큰을 쓴다 — 원값은 shared/tokens.css(설문 페이지와 공유) 한 곳에 있고,
+ * 패널 전용 별칭(--c-accent 등)은 panel.css :root 에 있다. 설문 톤과 같이 움직인다.
  * 값이 여기서 새로 정의되면 그 연결이 끊기므로, 새 뷰를 만들어도 토큰을 쓸 것.
  *
  * 크기는 --stat-base 에 곱해서 쓴다. 화면이 세로냐 가로냐에 따라 그 값이 vw/vh 로
@@ -22,8 +23,8 @@
 }
 .sv-rank-item { line-height: 1.14; white-space: nowrap; }
 .sv-rank-item.t1 { color: var(--c-accent); font-weight: 700; }
-.sv-rank-item.t2 { color: #1a1a1a; font-weight: 600; }
-.sv-rank-item.t3 { color: #3d3d3d; font-weight: 500; }
+.sv-rank-item.t2 { color: var(--ink); font-weight: 600; }
+.sv-rank-item.t3 { color: var(--ink2); font-weight: 500; }
 .sv-rank-item.t4 { color: #6d6a64; font-weight: 500; }
 .sv-rank-item.t5 { color: #97938c; font-weight: 500; }
 
