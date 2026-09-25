@@ -969,6 +969,7 @@ render();
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 
 // 파도·팔레트·배 토큰은 머무름의 지도(statistics/)와 같은 파일에서 온다.
 // 예전에는 두 화면이 각자 같은 표를 적어 두고 있었고, 한쪽만 고치면 소리 없이 갈라졌다.
@@ -977,16 +978,17 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 //  따로 배포되므로 폴더 밖의 파일은 배포에 들어가지 않는다)
 import { GERSTNER_WAVES, WAVE_WRAP_DOMAIN, GERSTNER_GLSL, waveHeightAt, wrapWave }
   from "./statistics/shared/ocean-core.js";
-import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND, KEYWORD_COLOR, KEYWORD_PROP }
+import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND }
   from "./statistics/shared/palette.js";
 import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
-import { GLB_NODES, GLB_PROPS } from "./statistics/shared/glb-nodes.js";
+import { GLB_NODES, GLB_PROPS, KEYWORD_NODES, CODE_MADE_NODES } from "./statistics/shared/glb-nodes.js";
 import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
 // Directory를 statistics 로 잡아 따로 배포되므로 그 폴더 밖의 파일을 못 읽는다.
 // 두 화면이 한 파일을 보게 두어야 모델을 다시 구웠을 때 조용히 갈라지지 않는다.
-// 루트 assets/ 는 백업으로 남겨 둔다 (Scene.baked.glb 도 거기 있다).
+// 루트 assets/ 는 백업이자 굽기 원본이다 — 블렌더에서 뽑은 scene_baked.glb 를
+// tools/build_scene_glb.py 가 아틀라스 한 장짜리 Scene.glb 로 굽고, sync-model.mjs 가 여기로 옮긴다.
 const MODEL_URL = "./statistics/assets/Scene.glb";
 
 // 배 모델의 "기본 뱃머리 방향" 보정값 — 블렌더에서 뽑은 Ship의 정면이 코드가 가정하는
@@ -995,12 +997,15 @@ const MODEL_URL = "./statistics/assets/Scene.glb";
 // 모델을 다시 뽑아서 방향이 또 달라지면 0 / ±Math.PI/2 / Math.PI 중에서 이 값만 바꿀 것.
 // (SHIP_FORWARD_OFFSET 은 statistics/shared/ship-tokens.js 에서 온다)
 
-// GLB의 Ship 노드가 씬 원점 기준으로 들고 있던 좌표 (블렌더에서 잡아둔 정박 자리).
-// 이 자리를 배 앵커의 원점(0,0,0)으로 삼기 때문에, 섬(Rock/Beachhouse)은 같은 값만큼
-// 반대로 밀어줘야 블렌더에서 잡은 배↔섬 간격이 그대로 유지된다.
-// 모델을 다시 뽑아 배 위치가 달라지면 GLB의 Ship 노드 translation을 그대로 여기 옮겨 적을 것.
-// (y는 흘수 SHIP_DRAFT가 대신하므로 쓰지 않는다 — 수면 높이는 GLB에 없는 값이라 눈으로 맞춰야 함)
-const SHIP_GLB_POS = { x: -0.604, z: 0.147 };
+// 섬 좌표계(GLB의 Island 노드) 원점을 배 기준 z로 얼마나 옮겨 둘지.
+// 예전 GLB에는 Island 노드가 없어 Rock·Beachhouse가 씬 원점 기준이었고 배(Ship)는 z=0.147에
+// 있었다. 그 배치를 배 기준으로 옮기려고 −0.147을 더해 왔다(예전 이름 SHIP_GLB_POS.z).
+// 새 GLB의 Island 노드 안쪽 좌표는 예전 씬 좌표와 똑같다(Rock 로컬 = 예전 Rock 월드, 실측).
+// 그래서 같은 값을 그대로 두면 화면 구도가 한 치도 안 바뀐다.
+// 블렌더에서 Island를 옮겨 둔 값(1.641, −0.416)은 쓰지 않는다 — x는 _measureIslandRest가
+// 지오메트리에서 재고, z는 세로 화면 구도(ISLAND_SIDE_SHIFT)로 맞춘 값이라서다.
+// 블렌더의 Ship 위치·회전·배율도 쓰지 않는다 — 코드가 매번 덮어쓴다(_loadModels 참고).
+const ISLAND_BASE_Z = -0.147;
 
 // 배 전체 크기 배율. 1.0이 GLB 원본 크기.
 // 흘수(SHIP_DRAFT)도 같이 곱해야 잠기는 "비율"이 유지된다 — 안 그러면 키울수록 더 깊이 잠긴다.
@@ -1310,7 +1315,22 @@ const CAM_RADIUS = (function () {
   return { near: Math.min.apply(null, all), far: widest };
 })();
 
-// (REGION_SAND · KEYWORD_COLOR · KEYWORD_PROP 는 statistics/shared/palette.js 에서 온다)
+// (REGION_SAND 는 statistics/shared/palette.js 에서, 키워드 → 요소 매핑 KEYWORD_NODES 는
+//  statistics/shared/glb-nodes.js 에서 온다. 키워드는 더 이상 캐빈 색을 바꾸지 않는다)
+
+// '우연' — 뱃머리 옆면에 붙는 네잎클로버 데칼. GLB에 없는 요소라 코드가 그려서 붙인다.
+// 전부 눈으로 맞추는 값이다. 모양·색을 바꾸려면 _drawClover(), 자리·크기는 여기만.
+// 방향은 블렌더 기준이다: 뱃머리가 +X(섬 쪽)일 때 오른쪽(우현) = +Z = 블렌더 정면 뷰에서 보이는 면.
+// 주의: '머무르는 중·떠나는 중·오가는 중'에는 배가 뒤돌아 서서(헤딩 π) 우현이 카메라 반대편이 된다.
+const CLOVER = {
+  side: "starboard",   // "starboard"(우현, 오른쪽) | "port"(좌현, 왼쪽)
+  along: 0.62,         // 배 가운데(0) → 뱃머리 끝(1) 사이 어디쯤
+  height: 0.33,        // 수면 위 높이 (월드 단위)
+  size: 0.30,          // 데칼 한 변 (월드 단위)
+  spin: -0.35,         // 데칼 면 안에서 돌리는 각도 (라디안, +는 반시계)
+  leaf: "#4e9f4b",     // 잎
+  vein: "#2f6f33",     // 잎맥·테두리
+};
 
 const ACTIVE_STEPS = ["onboard","region","state","sentence","share","keywords","consent","result"];
 
@@ -1431,8 +1451,8 @@ class BottleScene {
     // islandGroup 전체가 슬라이드해 나가는 거리 기준값 (섬 등장 X 위치 - 퇴장 X 위치)
     // 예전엔 _buildShore()가 절차적 지오메트리를 만들면서 같이 정했는데, 이제 Shore는
     // 비동기로 로드되는 실제 모델(Rock)이라 지오메트리와 무관하게 여기서 먼저 정해둠.
-    // 배 앵커를 GLB의 Ship 자리로 옮겼으므로(SHIP_GLB_POS) 섬도 같은 만큼 밀어야
-    // 블렌더에서 잡은 배↔섬 상대 배치가 그대로 유지된다.
+    // 배 앵커를 GLB의 Ship 자리로 옮겼으므로 섬도 같은 만큼 밀어야(ISLAND_BASE_Z)
+    // 배↔섬 상대 배치가 그대로 유지된다.
     // 배가 커진 만큼 섬을 더 밀어야 선체가 선착장을 뚫고 들어가지 않는다.
     //
     // 아래 두 수(0.49, 0.479)는 이제 **폴백**이다. GLB가 로드되면 _measureIslandRest()가
@@ -1445,7 +1465,7 @@ class BottleScene {
     // 2.45로는 아직 또렷하게 보이는 중에 사라져 버렸다.
     // 안개가 삼킬 만큼 멀리 보낸다(안개 끝이 카메라 거리+7이므로 그보다 더 가야 한다).
     this.islandGoneX = this.islandRestX + 12;
-    this.islandGroup.position.z = -SHIP_GLB_POS.z + this.islandSideShift;
+    this.islandGroup.position.z = ISLAND_BASE_Z + this.islandSideShift;
 
     this._buildWater();
     this._buildShadowCatcher();
@@ -1910,10 +1930,24 @@ ${GERSTNER_GLSL}
       const loader = new GLTFLoader();
       const gltf = await loader.loadAsync(MODEL_URL);
       const root = gltf.scene;
+      root.updateMatrixWorld(true);
 
       const rock = root.getObjectByName(GLB_NODES.rock);
       const beachhouse = root.getObjectByName(GLB_NODES.beachhouse);
       const ship = root.getObjectByName(GLB_NODES.ship);
+
+      // ── 섬 ──
+      // islandGroup의 좌표계 = GLB의 Island 노드 좌표계. 섬 풍경은 GLB상 자리가 제각각이다
+      // (Rock·Beachhouse는 Island 아래, 뒷산·등대는 씬 바로 아래). 그래서 add()로 로컬 값을
+      // 그대로 쓰지 않고, 월드 배치를 Island 기준으로 옮겨 꽂는다 — 블렌더에서 잡은 서로의
+      // 자리가 그대로 유지된다. Island가 없는 GLB(예전 것)라면 씬 원점이 기준이 된다.
+      const islandFrame = root.getObjectByName(GLB_NODES.island) || root;
+      const toIsland = new THREE.Matrix4().copy(islandFrame.matrixWorld).invert();
+      const plantOnIsland = (obj) => {
+        new THREE.Matrix4().multiplyMatrices(toIsland, obj.matrixWorld)
+          .decompose(obj.position, obj.quaternion, obj.scale);
+        this.islandGroup.add(obj);
+      };
 
       if (rock) {
         this.rockMats = [];
@@ -1923,19 +1957,43 @@ ${GERSTNER_GLSL}
             this.rockMats.push(child.material);
           }
         });
-        this.islandGroup.add(rock);
+        plantOnIsland(rock);
         if (this._pendingRegionHex !== undefined) this._applyRockColor(this._pendingRegionHex);
       }
-
-      if (beachhouse) {
-        this.islandGroup.add(beachhouse);
+      if (beachhouse) plantOnIsland(beachhouse);
+      for (const name of [GLB_NODES.backMountain, GLB_NODES.lighthouse]) {
+        const obj = root.getObjectByName(name);
+        console.assert(obj, `[selfCheck] GLB에 "${name}" 노드가 없음 — 이름이 바뀌었는지 확인`);
+        if (obj) plantOnIsland(obj);
       }
 
       // 멀어질 때 서서히 지우려면 재질을 투명하게 다룰 수 있어야 한다.
       // 안개만으로는 '안개색 덩어리'가 남아 하늘과 어긋나 보인다(바다 경계와 같은 문제).
+      // 섬 재질은 섬 전용으로 복제한다 — 아틀라스 재질 하나를 배의 소품(갈매기·램프…)도 같이 쓰므로,
+      // 원본을 투명하게 만들면 섬이 멀어질 때 배 위의 소품까지 같이 흐려진다.
+      // 먼 풍경(뒷산·등대)은 병보다 커서 결과 화면에서 바다와 같이 걷어낸다(_animate 병 구간).
+      // 그래서 재질을 한 번 더 따로 복제한다 — 섬 나머지(같은 아틀라스 재질의 비치하우스)는 남아야 한다.
+      this.sceneryObjs = [GLB_NODES.backMountain, GLB_NODES.lighthouse]
+        .map((n) => this.islandGroup.getObjectByName(n)).filter(Boolean);
+      const isScenery = (o) => {
+        for (let q = o; q && q !== this.islandGroup; q = q.parent) if (this.sceneryObjs.includes(q)) return true;
+        return false;
+      };
       this.islandMats = [];
+      this.sceneryMats = [];
+      const islandOwn = new Map();   // 원본 재질 → 섬 전용 복제본
+      const sceneryOwn = new Map();  // 원본 재질 → 먼 풍경 전용 복제본
+      const rockMats = new Set(this.rockMats || []);
       this.islandGroup.traverse((c) => {
         if (!c.isMesh || !c.material) return;
+        if (!rockMats.has(c.material)) {
+          const own = isScenery(c) ? sceneryOwn : islandOwn;
+          if (!own.has(c.material)) {
+            own.set(c.material, c.material.clone());
+            if (own === sceneryOwn) this.sceneryMats.push(own.get(c.material));
+          }
+          c.material = own.get(c.material);
+        }
         if (this.islandMats.indexOf(c.material) === -1) {
           c.material.transparent = true;
           this.islandMats.push(c.material);
@@ -1943,76 +2001,57 @@ ${GERSTNER_GLSL}
       });
 
       if (ship) {
-        // Seagull(갈매기)·Tube(구명튜브)는 GLB상 Ship과 형제 노드지만, 실제 좌표는
-        // 배 바로 위(갈매기)와 뱃전(튜브)이다. attach()는 월드 변환을 유지한 채 부모만 바꾸므로
-        // 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어 항해·롤링·헤딩에 딸려 간다.
-        // (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
-        // 기본으로는 둘 다 숨겨두고, 키워드 선택에 따라 applyKeywords에서 켠다.
-        Object.keys(GLB_PROPS).forEach((name) => {
+        // ── 배에 타는 것들 ──
+        // 소품은 GLB상 Ship과 형제 노드지만 실제 좌표는 갑판 위·뱃전이다. attach()는 월드 변환을
+        // 유지한 채 부모만 바꾸므로 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어
+        // 항해·롤링·헤딩에 딸려 간다. (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
+        // 키워드 요소는 기본으로 숨겨두고 applyKeywords에서 켠다. 고양이는 늘 타고 있다.
+        // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
+        // 씬은 멀쩡히 돌아가고 소품만 없어서 한참 뒤에나 눈치챈다. 그래서 assert.
+        const board = (name) => {
           const obj = root.getObjectByName(name);
-          // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
-          // 씬은 멀쩡히 돌아가고 갈매기만 없어서 한참 뒤에나 눈치챈다.
           console.assert(obj, `[selfCheck] GLB에 "${name}" 노드가 없음 — 이름이 바뀌었는지 확인`);
-          if (!obj) return;
-          ship.attach(obj);
-          obj.visible = false;
-        });
-        this.gullMesh = ship.getObjectByName(GLB_NODES.gull);
-        this.tubeMesh = ship.getObjectByName(GLB_NODES.tube);
+          if (obj) ship.attach(obj);
+          return obj;
+        };
+        Object.keys(GLB_PROPS).forEach((name) => console.assert(
+          Object.values(KEYWORD_NODES).some((list) => list.indexOf(name) !== -1),
+          `[selfCheck] 지도 소품 "${name}"이 KEYWORD_NODES에 없다 — 설문 화면에서 안 보인다`));
+        this.keywordObjs = {};
+        for (const [kw, names] of Object.entries(KEYWORD_NODES)) {
+          this.keywordObjs[kw] = names
+            .filter((n) => CODE_MADE_NODES.indexOf(n) === -1)
+            .map(board).filter(Boolean);
+          this.keywordObjs[kw].forEach((o) => { o.visible = false; });
+        }
+        board(GLB_NODES.cat);
 
         // [삭제됨] 예전엔 "갈매기가 4마리 겹쳐 들어있다"고 보고 가장 큰 하나만 남기고 지웠다.
-        // 오판이었다. 실측해 보면 네 조각은 한 마리의 부위들이다 — 조각 중심 사이 최대 거리가
-        // 0.032인데 가장 큰 조각 자체가 0.040이라 서로 완전히 겹쳐 있다.
-        //   Gabbiano_Bianco(0.040) 몸통 / Gabbiano_Grigio(0.031) 날개끝
-        //   Gabbiano_Giallo(0.010) 부리 / Gabbiano_Rosa(0.007) 발
-        // 그래서 그 코드는 부리와 발을 지우고 흰 몸통만 남기고 있었다. 조각은 그대로 둔다.
+        // 오판이었다 — 네 조각은 한 마리의 부위(몸통·날개끝·부리·발)였다. 지금 GLB는 아틀라스로
+        // 구우면서 한 메쉬로 합쳐져 있다(tools/build_scene_glb.py).
 
-        const box = new THREE.Box3().setFromObject(ship);
-        const topLocal = new THREE.Vector3(
-          (box.max.x + box.min.x) / 2 - ship.position.x,
-          box.max.y - ship.position.y,
-          (box.max.z + box.min.z) / 2 - ship.position.z
-        );
+        // [삭제됨] 키워드 → 캐빈 색. 키워드는 이제 배에 나타나는 요소로만 표현한다.
+        // 캐빈은 GLB에 칠해 둔 크림색(Material_0 = 예전 CABIN_BASE_COLOR)을 그대로 쓴다.
 
-        // 캐빈은 배 모델의 일부라 나중에 배 UV 아틀라스에 텍스처가 붙는다.
-        // 그래서 재질을 새로 만들어 갈아끼우지 않는다 — 그러면 map과 UV가 통째로 날아간다.
-        // 대신 원래 재질을 clone해서(다른 메쉬와 공유될 수 있으므로) color만 바꾼다.
-        // three.js는 color를 map에 곱하므로, 텍스처가 붙은 뒤에도 키워드 색이 틴트로 그대로 먹는다.
-        // (텍스처는 밝은 회색조로 그려야 틴트가 눈에 보인다)
-        const cabin = ship.getObjectByName(GLB_NODES.cabin);
-        if (cabin) {
-          cabin.traverse((c) => {
-            if (!c.isMesh) return;
-            c.material = c.material ? c.material.clone()
-              : new THREE.MeshStandardMaterial({ roughness: 0.8 });
-            if (!this.cabinMat) this.cabinMat = c.material;
-          });
-          if (this.cabinMat) this.cabinMat.color.setHex(0xf3e6cf);
-        }
-
-        // 마스트/깃발은 삭제했다 — 배 바운딩박스 꼭대기(=굴뚝 위)에 매달려 있어서 갑판이 아니라
-        // 공중에 떠 보였고, 키워드 표시는 이제 갈매기/튜브가 대신한다.
-
+        // 연기 기준점 = 굴뚝 꼭대기. 굴뚝 노드는 음수 배율 + 180° 회전이 겹쳐 있어서
+        // 로컬 +Y가 실제로는 아래를 향한다 — 로컬 바운딩박스의 max.y를 쓰면 굴뚝 밑동에서
+        // 연기가 난다. 그래서 월드 바운딩박스로 꼭대기를 잡아 배 좌표로 옮긴다.
         const funnel = ship.getObjectByName(GLB_NODES.funnel);
         this.smokeAnchor = new THREE.Object3D();
-        if (funnel && funnel.geometry) {
-          funnel.geometry.computeBoundingBox();
-          const fb = funnel.geometry.boundingBox;
-          this.smokeAnchor.position.set((fb.max.x + fb.min.x) / 2, fb.max.y, (fb.max.z + fb.min.z) / 2);
-          funnel.add(this.smokeAnchor);
-        } else {
-          this.smokeAnchor.position.copy(topLocal);
-          ship.add(this.smokeAnchor);
-        }
+        const fb = new THREE.Box3().setFromObject(funnel || ship, true);
+        const top = new THREE.Vector3((fb.max.x + fb.min.x) / 2, fb.max.y, (fb.max.z + fb.min.z) / 2);
+        this.smokeAnchor.position.copy(ship.worldToLocal(top));
+        ship.add(this.smokeAnchor);
 
-        // [버그2] 뱃머리가 반대로 향하던 문제 — 모델을 한 번만 돌려두고 끝낸다.
-        // 마스트/깃발/연기 앵커/갈매기/튜브는 전부 ship의 자식이라 같이 돌아감.
-        ship.rotation.y += SHIP_FORWARD_OFFSET;
+        // [버그2] 뱃머리 방향 — 블렌더에서 Ship에 회전을 넣어 두든 안 넣어 두든 같은 결과가
+        // 나오도록 더하지 않고 "설정"한다(지도 fleet.js와 같은 방식). 예전 GLB는 회전 0이라
+        // += 로 됐지만, 지금 GLB는 Ship에 이미 180°가 들어 있어서 += 면 360°가 돼 뒤집힌다.
+        // 마스트/연기 앵커/소품은 전부 ship의 자식이라 같이 돈다.
+        ship.rotation.set(0, SHIP_FORWARD_OFFSET, 0);
 
-        // [버그3] 시작 위치 — Ship 노드가 GLB 씬 좌표(x≈-0.60, y≈0.29, z≈0.15)를 그대로 들고 있어서
-        // 배가 앵커에서 그만큼 떨어진 자리에 그려졌다. 게다가 헤딩 회전(boat.rotation.y)은 앵커
-        // 기준이라, 배가 제자리에서 도는 게 아니라 반경 0.6짜리 원을 크게 휘돌아 버렸다.
-        // 앵커 = 배 자신이 되도록 로컬 좌표를 비우고, 물에 잠기는 깊이만 흘수로 남긴다.
+        // [버그3] 시작 위치 — Ship 노드가 GLB 씬 좌표를 그대로 들고 있으면 배가 앵커에서 그만큼
+        // 떨어진 자리에 그려지고, 헤딩 회전(boat.rotation.y)이 앵커 기준이라 제자리에서 돌지 않고
+        // 큰 원을 휘돈다. 앵커 = 배 자신이 되도록 로컬 좌표를 비우고, 물에 잠기는 깊이만 흘수로 남긴다.
         ship.scale.setScalar(SHIP_SCALE);
         ship.position.set(0, SHIP_DRAFT * SHIP_SCALE, 0);
 
@@ -2021,6 +2060,12 @@ ${GERSTNER_GLSL}
         // 필요한 건 마스트·굴뚝·선체가 수면에 지는 그림자뿐이라 이걸로 충분하다.
         ship.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = false; } });
         this.boat.add(ship);
+        this.boat.updateMatrixWorld(true);
+
+        // '우연' 데칼 — 배가 제자리에 선 뒤에 붙여야 선체 표면에 정확히 투영된다.
+        const clover = this._buildClover(ship);
+        this.keywordObjs["우연"] = clover ? [clover] : [];
+
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
       }
 
@@ -2028,6 +2073,128 @@ ${GERSTNER_GLSL}
     } catch (err) {
       console.error("모델(GLB) 로드 실패:", err);
     }
+  }
+
+  /**
+   * '우연' 네잎클로버 데칼을 선체 뱃머리 옆면에 붙인다. 값은 CLOVER 상수.
+   *
+   * 선체 겉면에 DecalGeometry로 투영한다 — 평면을 띄워 붙이면 휜 선체에서 모서리가 뜨거나
+   * 파묻힌다. 뱃머리 방향은 배 좌표계에서 잰다: 코드가 Ship에 SHIP_FORWARD_OFFSET을 넣으므로
+   * 배 로컬 +X의 반대쪽 끝(-X)이 뱃머리이고, 우현은 로컬 -Z다(블렌더 정면 뷰에서 보이는 면).
+   * 선체를 못 찾으면 null — 화면이 멈추지 않게 조용히 건너뛴다(assert만 남긴다).
+   */
+  _buildClover(ship) {
+    let hull = null;
+    ship.traverse((o) => { if (!hull && o.isMesh && GLB_NODES.hull.test(o.name)) hull = o; });
+    console.assert(hull, "[selfCheck] 선체(Ship_Body)를 못 찾아 클로버 데칼을 못 붙였다");
+    if (!hull) return null;
+
+    // 배 좌표계에서 뱃머리 방향과 오른쪽. 코드가 Ship에 SHIP_FORWARD_OFFSET(θ)만큼 회전을 넣고
+    // "헤딩 0 = 월드 +X를 향함"이므로, 배 로컬에서 뱃머리는 R(-θ)·(+X) = (cosθ, 0, sinθ).
+    // 오른쪽 = 뱃머리 × 위 = (-sinθ, 0, cosθ). θ = π면 뱃머리 로컬 -X, 우현 로컬 -Z.
+    const th = SHIP_FORWARD_OFFSET;
+    const bow = new THREE.Vector3(Math.cos(th), 0, Math.sin(th));
+    const right = new THREE.Vector3(-Math.sin(th), 0, Math.cos(th));
+    if (CLOVER.side === "port") right.negate();
+
+    // 선체 꼭짓점을 배 좌표로 옮겨 뱃머리 방향으로 어디까지 뻗는지 잰다
+    const toShip = new THREE.Matrix4().copy(ship.matrixWorld).invert().multiply(hull.matrixWorld);
+    const p = hull.geometry.attributes.position, v = new THREE.Vector3();
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const t = v.fromBufferAttribute(p, i).applyMatrix4(toShip).dot(bow);
+      lo = Math.min(lo, t); hi = Math.max(hi, t);
+    }
+    const center = (lo + hi) / 2;
+    const along = center + (hi - center) * CLOVER.along;
+    // 수면 위 높이(월드) → 배 좌표: 배 원점은 수면에서 흘수만큼 위에 있다.
+    const sc = ship.getWorldScale(new THREE.Vector3()).x;
+    const onAxis = bow.clone().multiplyScalar(along).setY(CLOVER.height / sc - SHIP_DRAFT);
+
+    // 옆 바깥에서 선체 쪽으로 광선을 쏴 표면 점과 법선을 얻는다
+    const from = ship.localToWorld(onAxis.clone().addScaledVector(right, 5));
+    const aim = ship.localToWorld(onAxis.clone()).sub(from).normalize();
+    const hit = new THREE.Raycaster(from, aim).intersectObject(hull, false)[0];
+    console.assert(hit, "[selfCheck] 클로버 자리에서 선체 표면을 못 찾았다 — CLOVER.along/height 확인");
+    if (!hit) return null;
+    // 법선은 노멀 행렬로 옮긴다 — 선체 노드 배율이 0.304×0.15×0.012로 극단적으로 비균등해서
+    // 위치 행렬로 옮기면 방향이 크게 틀어진다.
+    const n = hit.face.normal.clone().applyMatrix3(new THREE.Matrix3().getNormalMatrix(hull.matrixWorld)).normalize();
+    if (n.dot(aim) > 0) n.negate();   // 양면 재질이라 안쪽 면에 맞을 수도 있다 — 바깥을 보게
+
+    const helper = new THREE.Object3D();
+    helper.position.copy(hit.point);
+    helper.lookAt(hit.point.clone().add(n));
+    helper.rotateZ(CLOVER.spin);
+    const s = CLOVER.size;
+    const geo = new DecalGeometry(hull, hit.point, helper.rotation, new THREE.Vector3(s, s, s * 0.5));
+    // 투영 상자 안에 든 면은 방향과 상관없이 다 찍힌다 — 뱃전 안쪽 면에 거울상 클로버가
+    // 생기지 않게, 바깥(법선 n)을 등진 삼각형은 버린다.
+    const gp = geo.attributes.position, gn = geo.attributes.normal, gu = geo.attributes.uv;
+    const keep = { position: [], normal: [], uv: [] };
+    for (let i = 0; i + 2 < gp.count; i += 3) {
+      let d = 0;
+      for (let k = 0; k < 3; k++) d += gn.getX(i + k) * n.x + gn.getY(i + k) * n.y + gn.getZ(i + k) * n.z;
+      if (d <= 0) continue;
+      for (let k = 0; k < 3; k++) {
+        keep.position.push(gp.getX(i + k), gp.getY(i + k), gp.getZ(i + k));
+        keep.normal.push(gn.getX(i + k), gn.getY(i + k), gn.getZ(i + k));
+        keep.uv.push(gu.getX(i + k), gu.getY(i + k));
+      }
+    }
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(keep.position, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(keep.normal, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(keep.uv, 2));
+    // DecalGeometry는 월드 좌표로 나온다 → 선체 좌표로 옮겨 선체의 자식으로 붙인다
+    geo.applyMatrix4(new THREE.Matrix4().copy(hull.matrixWorld).invert());
+
+    const tex = new THREE.CanvasTexture(this._drawClover());
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, transparent: true, alphaTest: 0.02, depthWrite: false, roughness: 0.85,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    const decal = new THREE.Mesh(geo, mat);
+    decal.name = "Clover";
+    decal.renderOrder = 1;
+    decal.visible = false;
+    hull.add(decal);
+    return decal;
+  }
+
+  /** 네잎클로버 그림 (투명 배경 캔버스). 하트 잎 네 장 + 줄기. */
+  _drawClover() {
+    const N = 256, c = document.createElement("canvas");
+    c.width = c.height = N;
+    const g = c.getContext("2d");
+    g.translate(N / 2, N / 2);
+    // 하트 한 장: 뾰족한 끝이 가운데(원점)를 향하고 둥근 쪽이 바깥(-y)으로
+    const heart = (r) => {
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.bezierCurveTo(-r * 0.15, -r * 0.35, -r * 1.05, -r * 0.55, -r * 0.62, -r * 1.02);
+      g.bezierCurveTo(-r * 0.36, -r * 1.28, -r * 0.04, -r * 1.12, 0, -r * 0.86);
+      g.bezierCurveTo(r * 0.04, -r * 1.12, r * 0.36, -r * 1.28, r * 0.62, -r * 1.02);
+      g.bezierCurveTo(r * 1.05, -r * 0.55, r * 0.15, -r * 0.35, 0, 0);
+      g.closePath();
+    };
+    // 줄기
+    g.strokeStyle = CLOVER.vein; g.lineWidth = N * 0.035; g.lineCap = "round";
+    g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(N * 0.06, N * 0.28, N * 0.16, N * 0.44); g.stroke();
+    const r = N * 0.3;
+    for (let k = 0; k < 4; k++) {
+      g.save();
+      g.rotate(k * Math.PI / 2 + Math.PI / 4);
+      heart(r);
+      g.fillStyle = CLOVER.leaf; g.fill();
+      g.lineWidth = N * 0.018; g.strokeStyle = CLOVER.vein; g.stroke();
+      // 잎맥
+      g.beginPath(); g.moveTo(0, -r * 0.08); g.lineTo(0, -r * 0.78);
+      g.lineWidth = N * 0.012; g.stroke();
+      g.restore();
+    }
+    return c;
   }
 
   /**
@@ -2069,7 +2236,9 @@ ${GERSTNER_GLSL}
     };
 
     // 선체는 Ship 노드 기준으로 재고 월드 배율을 곱한다 (= 예전의 0.49 * SHIP_SCALE).
-    const props = Object.keys(GLB_PROPS);
+    // 배에 태운 소품(키워드 요소·고양이)은 뺀다 — 선미 끝의 이젤 의자처럼 선체 가까이 있어도
+    // 켜고 끌 때마다 섬 자리가 바뀌면 안 된다.
+    const props = [].concat(...Object.values(KEYWORD_NODES), GLB_NODES.cat);
     const hull = xRange(ship, ship, props);
     const house = xRange(beachhouse, this.islandGroup, null);
     if (!hull || !house) {
@@ -2087,6 +2256,50 @@ ${GERSTNER_GLSL}
       `[치수] 섬 위치를 GLB에서 재서 잡음 — 선체 ${hullReach.toFixed(3)} + 집 ${houseBack.toFixed(3)}`
       + ` + 여유 ${ISLAND_CLEARANCE} = ${this.islandRestX.toFixed(3)} (생성자 값 ${before.toFixed(3)})`
     );
+    this._measureBottleFit();
+  }
+
+  /**
+   * 정박 자세(배 x=0, 섬 islandRestX)에서 각 요소가 병 안에 얼마나 여유 있게 드는지 잰다.
+   * 병 유리와 물 클리핑이 같은 프로파일(BOTTLE_PROFILE × 배율)을 쓰므로 그 반지름과 비교한다.
+   * 값은 월드 단위, 양수 = 유리까지 남은 여유, 음수 = 그만큼 삐져나옴.
+   * 화면을 바꾸지는 않는다 — 모델을 다시 뽑았을 때 병 크기를 손봐야 하는지 알려주는 용도다.
+   */
+  _measureBottleFit() {
+    const cx = BOTTLE_SHIFT_X, v = new THREE.Vector3();
+    const islandAt = new THREE.Vector3(this.islandRestX, 0, this.islandGroup.position.z);
+    const fit = (node, offset) => {
+      let worst = Infinity;
+      node.updateWorldMatrix(true, true);
+      node.traverse((o) => {
+        // 꺼져 있는 키워드 요소도 잰다 — 어떤 조합이 켜져도 병 안에 들어야 한다.
+        if (!o.isMesh || !o.geometry.attributes.position) return;
+        const p = o.geometry.attributes.position;
+        // 그룹(boat·islandGroup) 좌표 → 정박 자세의 월드 좌표
+        const toGroup = new THREE.Matrix4().copy(offset.group.matrixWorld).invert().multiply(o.matrixWorld);
+        for (let i = 0; i < p.count; i++) {
+          v.fromBufferAttribute(p, i).applyMatrix4(toGroup).add(offset.at);
+          const u = -(v.x - cx) / BOTTLE_SCALE_X;
+          const R = bottleRadiusAtU(u) * BOTTLE_SCALE_R;
+          const r = Math.hypot(v.y - BOTTLE_Y, v.z - BOTTLE_SHIFT_Z);
+          worst = Math.min(worst, R > 0 ? R - r : -r);
+        }
+      });
+      return worst;
+    };
+    const rows = [];
+    const ship = this.boat.getObjectByName(GLB_NODES.ship);
+    if (ship) rows.push(["배", fit(ship, { group: this.boat, at: new THREE.Vector3(0, 0, 0) })]);
+    for (const c of this.islandGroup.children) {
+      rows.push([c.name, fit(c, { group: this.islandGroup, at: islandAt })]);
+    }
+    const out = rows.filter(([, w]) => w < 0).map(([n]) => n);
+    const far = (this.sceneryObjs || []).map((o) => o.name);
+    console.log("[병] 유리까지 여유(음수 = 삐져나옴): "
+      + rows.map(([n, w]) => `${n} ${w >= 0 ? "+" : ""}${w.toFixed(2)}`).join(", ")
+      + (far.length ? ` — ${far.join("·")}는 결과 화면에서 바다와 같이 걷힌다` : ""));
+    const stuck = out.filter((n) => far.indexOf(n) === -1);
+    console.assert(!stuck.length, `[selfCheck] 병 밖으로 삐져나오는데 걷히지도 않는 것: ${stuck.join(", ")} — BOTTLE_SCALE_* 확인`);
   }
 
   _applyRockColor(hex) {
@@ -2661,16 +2874,12 @@ ${GERSTNER_GLSL}
   }
 
   applyKeywords(keywords) {
-    if (!this.cabinMat) { this._pendingKeywords = keywords; return; }
-    const picked = keywords || [];
-    const cols = picked.map((k) => KEYWORD_COLOR[k]);
-    this.cabinMat.color.setHex(cols[0] !== undefined ? cols[0] : 0xf3e6cf);
-
-    // 갑판 소품: 예전엔 깃발 색으로 두 번째 키워드를 표현했는데, 깃발(과 공중에 뜬 마스트)을
-    // 지우면서 갈매기/튜브가 그 역할을 맡는다. 고른 키워드 중 하나라도 해당되면 붙는다.
-    const props = new Set(picked.map((k) => KEYWORD_PROP[k]).filter(Boolean));
-    if (this.gullMesh) this.gullMesh.visible = props.has("gull");
-    if (this.tubeMesh) this.tubeMesh.visible = props.has("tube");
+    if (!this.keywordObjs) { this._pendingKeywords = keywords; return; }
+    // 고른 키워드의 요소만 켠다(세트는 같이). 캐빈 색은 건드리지 않는다.
+    const picked = new Set(keywords || []);
+    for (const [kw, objs] of Object.entries(this.keywordObjs)) {
+      for (const o of objs) o.visible = picked.has(kw);
+    }
   }
 
   setMode(mode) {
@@ -3260,6 +3469,7 @@ ${GERSTNER_GLSL}
       if (this.islandMats) {
         const fade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
         for (const m of this.islandMats) m.opacity = fade;
+        this._islandFade = fade;   // 먼 풍경은 병 구간에서 여기에 한 번 더 곱한다
       }
 
       let rotZ = 0;
@@ -3404,6 +3614,13 @@ ${GERSTNER_GLSL}
     this.bottleCorkMat.opacity = 0.9 * bIn;
     this.bottleWaterMat.opacity = 0.9 * bIn;
     if (this.bottleT < 0.01) this.bottleGroup.visible = false;
+    // 먼 풍경(뒷산·등대)은 병보다 커서 그대로 두면 유리 밖으로 삐져나온다 — 바다와 함께 걷는다.
+    // (얼마나 삐져나오는지는 로드할 때 [병] 로그로 찍힌다 — _measureBottleFit)
+    if (this.sceneryMats) {
+      const keep = 1 - seaOut;
+      for (const m of this.sceneryMats) m.opacity = (this._islandFade ?? 1) * keep;
+      for (const o of this.sceneryObjs) o.visible = keep > 0.003;
+    }
     // 병은 scene에 직접 붙어 있어 배를 따라가지 않았다. '오가는 중'처럼 배가 이동하는
     // 상태로 결과 화면에 오면 병만 원점에 남아 화면 밖으로 사라진다.
     this.bottleGroup.position.x = this.boat.position.x + BOTTLE_SHIFT_X;
@@ -3449,6 +3666,14 @@ function selfCheck(s) {
     `[selfCheck] three 리비전 불일치 — shared/deps.js는 ${THREE_VERSION}인데 로드된 건 r${THREE.REVISION} ` +
     `(importmap을 고쳤으면 shared/deps.js도 같이 올릴 것)`
   );
+
+  // 0-1) 설문의 키워드 10개가 전부 배의 요소와 이어져 있는가. 키워드를 새로 넣거나 이름을
+  //      바꾸면서 glb-nodes.js KEYWORD_NODES 를 빠뜨리면 그 키워드만 골라도 아무것도 안 나온다.
+  const kwTaxonomy = window.SURVEY_TAXONOMY.KEYWORDS;
+  const kwMissing = kwTaxonomy.filter((k) => !(KEYWORD_NODES[k] && KEYWORD_NODES[k].length));
+  const kwExtra = Object.keys(KEYWORD_NODES).filter((k) => kwTaxonomy.indexOf(k) === -1);
+  console.assert(!kwMissing.length && !kwExtra.length,
+    `[selfCheck] 키워드 ↔ 요소 매핑 불일치 — 요소 없음: ${kwMissing.join(",") || "-"} / 설문에 없는 키워드: ${kwExtra.join(",") || "-"}`);
 
   // 1) 파도 랩어라운드가 정말 "위상 불변"인가.
   //    깨지면 '오가는 중'으로 오래 항해할 때 바다가 순간적으로 튄다.

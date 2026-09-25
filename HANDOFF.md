@@ -41,10 +41,16 @@
 모델 GLB는 import로 묶을 수 없는 파일이라 사본으로 공유한다. **두 화면 모두
 `statistics/assets/Scene.glb` 를 읽는다** — shared/ 와 같은 이유로, 지도가 Vercel에서
 Root Directory를 `statistics` 로 잡아 따로 배포되면 그 폴더 밖의 파일을 못 읽기 때문이다.
-루트 `assets/` 는 **백업 겸 블렌더 산출물이 떨어지는 자리**로 남겨 둔다
-(`Scene.baked.glb` 도 거기 있다). 모델을 다시 뽑으면 루트에 넣고
-`node statistics/tools/sync-model.mjs` 로 `statistics/assets/` 에 밀어 넣어야
-실제 화면이 바뀐다 — 이 한 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
+루트 `assets/` 는 **블렌더 산출물이 떨어지는 자리이자 굽기 원본**이다. 모델을 다시 뽑으면:
+
+```
+python3 tools/build_scene_glb.py assets/scene_baked.glb assets/Scene.glb --report <폴더>
+node statistics/tools/sync-model.mjs
+```
+
+첫 줄이 텍스처를 아틀라스 한 장으로 굽고(14장), 둘째 줄이 `statistics/assets/` 로 밀어
+넣는다 — 둘째 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
+`--report` 폴더에 아틀라스 미리보기(`atlas_labeled.png`)와 요약이 떨어진다.
 
 ### `shared/` 에 지금 무엇이 있나 (2026-09-06 기준)
 
@@ -54,10 +60,10 @@ Root Directory를 `statistics` 로 잡아 따로 배포되면 그 폴더 밖의 
 | 파일 | 설문이 읽는가 | 지도가 읽는가 |
 |---|:--:|:--:|
 | `ocean-core.js` 파도 표·GLSL·`waveHeightAt`·랩 도메인 | ✓ | ✓ |
-| `palette.js` 시간대 4종·밝기·지역/키워드 색 | ✓ | ✓ (`config.js` 재수출) |
+| `palette.js` 시간대 4종·밝기·지역 색 (키워드 색·`KEYWORD_PROP`은 지도만) | ✓ | ✓ (`config.js` 재수출) |
 | `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) | ✓ `<link>` | ✓ `<link>` |
 | `ship-tokens.js` 뱃머리 보정·흘수·캐빈 기본색 | ✓ | ✓ |
-| `glb-nodes.js` GLB 노드 이름 전부 | ✓ | ✓ |
+| `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES`(설문만) | ✓ | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |
 | `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
 
@@ -65,6 +71,34 @@ Root Directory를 `statistics` 로 잡아 따로 배포되면 그 폴더 밖의 
 `GLB_PROPS`에서 온다. `panel.css`의 색이 `var()` 참조가 됐다. `selfcheck.js` 맨 앞에
 three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/assets/Scene.glb`를
 굽고 `tokens.css`도 인라인한다.
+
+### 2026-09-25 새 GLB로 교체 + 키워드 규칙 변경 — 지도 세션이 알아야 할 것
+
+설문 세션이 모델과 `shared/` 두 파일을 바꿨다. 지도 화면은 새 GLB로 떠서 확인했다
+(인스턴스 그룹 9 → 6개, 배 1척 3,086 → 3,444 tri, selfcheck 실패 없음).
+`statistics/js/*` 와 `statistics/README.md` 는 건드리지 않았다 — 아래는 지도 쪽이 판단할 것.
+
+- **`statistics/assets/Scene.glb` 가 바뀌었다** (345KB → 828KB). 텍스처가 WebP 아틀라스
+  한 장이고 `EXT_texture_webp` 가 **필수 확장**이다. 재질은 `Atlas_Lit`·`Atlas_Unlit`과
+  배 부품(Cabin·Funnel·Funnel_step·Ship_Body)·`Rock` 재질뿐이다.
+  `build-standalone.mjs` 산출물은 base64로 그만큼 커진다(약 1.1MB).
+- **`Ship` 노드에 회전 180°·배율 3.38·위치 (0, 0.575, 0)이 들어 있다.** `fleet.js`는
+  `rotation.set`/`scale.setScalar(1)`로 덮어써서 영향이 없다. (설문은 `+=` 였어서 고쳤다)
+- **`Funnel` 노드는 음수 배율 + 180° 회전이라 로컬 +Y가 아래를 향한다.** 굴뚝 꼭대기를
+  로컬 바운딩박스 `max.y`로 잡는 코드가 있다면 밑동을 가리킨다.
+- **`Cabin`에 재질이 생겼다** (`Material_0`, 크림색 = 예전 `CABIN_BASE_COLOR`, 굽기에서
+  비금속으로 맞춤). `fleet.js`의 "[함정 2] Cabin 노드에는 재질이 없다" 주석은 이제 옛말이다
+  (금속 대비 분기는 안 타고, 인스턴스 색은 그대로 먹는다).
+- **갈매기가 한 메쉬다** (부위 4개를 아틀라스 굽기에서 합쳤다). 그룹 수가 준 이유다.
+- **`KEYWORD_PROP`: 튜브가 '관계' → '가족'으로 옮겼다.** 사용자 지시로 키워드 → 요소 매핑이
+  새로 정해졌다(`glb-nodes.js` `KEYWORD_NODES`, 설문만 씀). 지도용 `KEYWORD_PROP`은 그
+  부분집합으로 맞췄다. 설문 `selfCheck`가 `GLB_PROPS`의 노드가 `KEYWORD_NODES`에 있는지 본다.
+- **사용자 결정: "키워드는 캐빈 색을 바꾸지 않는다. 오직 요소로만 나타낸다."** 설문은 캐빈
+  틴트를 지웠다. 지도(`style.js`)는 아직 `KEYWORD_COLOR`로 캐빈을 칠한다 — 지도도 따를지는
+  지도 쪽에서 사용자에게 확인할 것. `KEYWORD_COLOR`는 지도 때문에 남겨 두었다.
+- 새 요소(Toolbox·Lamp·Plant·Surfboard·Bell·Chair·Cup·Easel·Easelchair·Cat)는 GLB에
+  **씬 바로 아래** 노드로 있다. 지도가 더 많은 소품을 붙이려면 `GLB_PROPS`처럼 `attach()`
+  하면 된다. '우연'의 네잎클로버는 GLB에 없고 설문이 코드로 그리는 데칼이다.
 
 ### 방향을 정해야 한다 — 지금은 `shared/` 가 원본이다
 
@@ -102,6 +136,11 @@ three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/asset
    그 화면 콘솔에서 리비전 불일치 assert가 뜬다.
 7. **`SENTENCE_Q`·`SHARES`를 빠뜨리지 말 것.** 실제로 이 둘이 반환 객체에서 누락돼
    설문이 3단계에서 죽은 적이 있다(`5d96f59`). 반환 객체와 사용처를 대조할 것.
+8. **`KEYWORD_NODES`(설문)와 `KEYWORD_PROP`·`GLB_PROPS`(지도)는 따로 있지만 묶여 있다.**
+   지도용 둘은 설문 매핑의 부분집합이어야 한다. `KEYWORD_NODES`의 키는
+   `survey-taxonomy.js`의 `KEYWORDS`와 정확히 같아야 한다(설문 `selfCheck`가 대조).
+9. **노드 이름의 공백은 `_`가 된다.** 블렌더의 `Back Mountain`은 three.js에서
+   `Back_Mountain`이다. `glb-nodes.js`에는 three.js 쪽 이름을 적는다.
 
 싱크 스크립트에는 `--check`(고치지 않고 어긋난 것만 보고, 다르면 exit 1)를 꼭 둘 것.
 `sync-model.mjs`가 같은 방식이라 그대로 본뜨면 된다.
@@ -182,7 +221,7 @@ Firebase를 붙이기 전에 한쪽으로 정해야 한다.
 | `state` | 지금의 상태 | 머무름을 이분법(남는다/떠난다)이 아니라 **5가지 결**로 본다 | 배의 방향·속도·파도가 바뀐다. 섬이 있거나 멀어진다 |
 | `sentence` | 머무르게 하는 것 (80자) | **이 프로젝트의 본체.** 나머지는 이 한 문장을 감싸는 맥락이다 | 기본 시점 |
 | `share` | 이 마음을 몇 명과 나눠봤나 | 말해본 적 있는지를 통해 **그 마음이 얼마나 혼자만의 것인지**를 본다 | **하루의 시간대가 바뀐다** (아래 3장) |
-| `keywords` | 문장을 설명하는 키워드 (최대 2개) | 문장을 분류 가능한 축으로 환원 — 아카이브 필터용 | 카메라가 배로 바짝. 캐빈 색과 소품이 바뀐다 |
+| `keywords` | 문장을 설명하는 키워드 (최대 2개) | 문장을 분류 가능한 축으로 환원 — 아카이브 필터용 | 카메라가 배로 바짝. 고른 키워드의 요소가 배에 나타난다 |
 | `consent` | 공개 방식 + 활용 동의 | 전시·출판에 쓰이므로 필수 절차 | 기본 시점 |
 | `result` | — | 내 문장을 하나의 소장품처럼 보여준다 | **유리병이 씬을 감싼다 (ship in a bottle)** |
 | `archive` | — | 다른 사람들의 기록과 함께 쌓인 것을 확인 | 씬 종료, 카드 벽 |
@@ -200,7 +239,7 @@ Firebase를 붙이기 전에 한쪽으로 정해야 한다.
 | **섬 · 오두막 · 바위** | "이곳" — 머무는 자리, 돌아올 곳 |
 | **배와 섬의 거리** | 이곳과의 관계. 떠나면 섬이 멀어지고, 정하지 못하면 아예 사라진다 |
 | **하루의 시간대** | 그 마음을 얼마나 나눴는지. **많이 나눌수록 낮, 아무와도 안 나눴으면 밤** |
-| **캐빈 색 / 갈매기 · 튜브** | 고른 키워드 |
+| **배에 나타나는 요소** (공구함·램프·튜브·화분·서핑보드·네잎클로버·갈매기·종·의자와 컵·이젤과 의자) | 고른 키워드 두 개. 캐빈 색은 키워드와 무관하다 |
 | **유리병** | 제출된 기록. 풍경이 병 안에 봉해져 하나의 소장품이 된다 |
 
 ### 상태(state)별 배의 동작
@@ -248,9 +287,12 @@ Firebase를 붙이기 전에 한쪽으로 정해야 한다.
 survey_boat/
 ├─ index.html          설문 페이지 전부 (씬 + UI)
 ├─ HANDOFF.md          이 문서
-├─ assets/             백업 · 블렌더 산출물 자리 (화면이 읽는 곳이 아니다)
-│   ├─ Scene.glb       원본
-│   └─ Scene.baked.glb 현재 배치·크기를 구워 넣은 것
+├─ assets/             블렌더 산출물 자리 · 굽기 원본 (화면이 읽는 곳이 아니다)
+│   ├─ scene_baked.glb  블렌더에서 뽑은 원본 (요소마다 텍스처가 따로)
+│   ├─ scene_baked2.glb 같은 것의 텍스처 없는 판 (재질이 합쳐져 부품 색이 사라짐 — 안 쓴다)
+│   └─ Scene.glb        구운 결과 (아틀라스 한 장) → sync-model 로 statistics/ 에 복사
+├─ tools/
+│   └─ build_scene_glb.py  블렌더 GLB → 아틀라스 한 장짜리 웹용 GLB (14장)
 └─ statistics/
     ├─ assets/Scene.glb   ★ 두 화면이 실제로 읽는 모델
     └─ shared/            ★ 두 화면이 같이 읽는 것 — 여기만 고치면 양쪽이 따라온다
@@ -258,7 +300,7 @@ survey_boat/
         ├─ palette.js          3D 색: 시간대 · 밝기 · 지역/키워드 색
         ├─ tokens.css          UI 색·서체 (--ink --cream --gold …)
         ├─ ship-tokens.js      뱃머리 보정 · 흘수 · 캐빈 기본색
-        ├─ glb-nodes.js        GLB 노드 이름 전부
+        ├─ glb-nodes.js        GLB 노드 이름 전부 · 키워드 → 요소 매핑
         ├─ deps.js             three 버전 (양쪽 selfCheck가 대조)
         └─ survey-taxonomy.js  지역 · 상태 · 키워드 · 질문 문구
 ```
@@ -295,7 +337,9 @@ splash → onboard → region → state → sentence → share → keywords → 
 |---|---|---|
 | `SHIP_SCALE` | 3.38 | 배 크기. **연기 크기도 여기에 곱해진다** |
 | `SHIP_DRAFT` | 0.17 | 흘수. `SHIP_SCALE`과 함께 곱해져 잠기는 비율이 유지된다 |
-| `ISLAND_CLEARANCE` | 0.12 | 뱃머리와 오두막 사이 여유. 줄이면 배가 덱에 붙는다 |
+| `ISLAND_CLEARANCE` | -0.6 | 선체 끝과 오두막 사이 여유. 줄이면 배가 덱에 붙는다 (섬을 옆으로 비켜 놓아서 음수) |
+| `ISLAND_BASE_Z` | -0.147 | 섬 좌표계(GLB `Island` 노드)를 배 기준 z로 옮기는 값. 예전 `SHIP_GLB_POS.z` 그대로 — 화면 구도 유지용 |
+| `CLOVER` | 객체 | '우연' 네잎클로버 데칼의 자리(뱃머리 쪽 비율·수면 위 높이)·크기·회전·색. 모양은 `_drawClover()` |
 
 ### 카메라
 
@@ -397,10 +441,14 @@ splash → onboard → region → state → sentence → share → keywords → 
   **새 조작 요소를 넣으면 그 목록에 추가**해야 한다. 안 그러면 드래그가 캔버스로 새서 시점만 돈다.
 
 ### 6.8 GLB 노드는 씬 좌표를 들고 온다
-`Ship` 노드가 GLB의 씬 좌표(x≈-0.60)를 그대로 갖고 있어서, 그냥 붙이면 배가 앵커에서
-떨어진 자리에 그려지고 **헤딩 회전 시 반경 0.6짜리 원을 휘돈다.**
-로컬 좌표를 0으로 비우고, 섬을 같은 만큼 밀어 블렌더 배치를 보존한다.
-`Seagull` / `Tube`는 `attach()`로 옮긴다 — `add()`는 로컬 좌표로 재해석돼 엉뚱한 데로 간다.
+`Ship` 노드가 GLB의 씬 좌표·회전·배율을 그대로 갖고 있어서, 그냥 붙이면 배가 앵커에서
+떨어진 자리에 그려지고 **헤딩 회전 시 큰 원을 휘돈다.** 코드가 위치·회전·배율을 **덮어쓴다**
+(`rotation.set`, `+=` 아님 — 지금 GLB는 Ship에 180°가 이미 들어 있어서 `+=`면 뒤집힌다).
+배에 타는 소품은 전부 `attach()`로 옮긴다 — `add()`는 로컬 좌표로 재해석돼 엉뚱한 데로 간다.
+섬은 GLB `Island` 노드 좌표계로 통일해서 꽂는다(뒷산·등대는 GLB상 씬 바로 아래라서
+월드 배치를 Island 기준으로 환산). 블렌더에서 Island를 옮긴 값은 쓰지 않는다 — x는
+`_measureIslandRest`가, z는 `ISLAND_BASE_Z + ISLAND_SIDE_SHIFT`가 정한다.
+`Funnel`은 음수 배율 + 180° 회전이라 로컬 +Y가 아래다 — 연기 기준점은 월드 바운딩박스로 잡는다.
 
 ### 6.9 병 클리핑은 프로파일을 따라야 한다
 병은 축을 따라 반지름이 변하는 회전체다. 상수 반지름으로 자르면 좁은 목 쪽에서
@@ -616,7 +664,21 @@ git push --dry-run origin main
 페이지 작업을 먼저 하기로 하고 잠시 미뤄둔 항목들이다. 사용자가 블렌더 쪽 결정을 내려야
 진행할 수 있다.
 
-### A. 새 `Scene.glb` 받기 (사용자 작업 중)
+### A. 새 `Scene.glb` 받기 — **받아서 교체했다 (2026-09-25)**
+
+`assets/scene_baked.glb`(요소마다 텍스처 따로, 1.7MB)를 받아 아틀라스로 구워 교체했다.
+- 화면 구도는 예전과 같다(배 위치·방향·크기, 섬 바위 자리 — 이전 커밋과 나란히 렌더해 확인).
+  비치하우스는 새 모델이다. 섬 자리는 `[치수]` 로그상 1.515 → 1.559(새 집이 0.045 더 뻗어서).
+- 새로 붙은 것: 뒷산(`Back_Mountain`)·등대(`Lighthouse`) → 섬과 같이 움직인다.
+  **둘 다 유리병보다 커서** 결과 화면에서 바다와 같이 걷힌다(`[병]` 로그: 뒷산 −3.72,
+  등대 −0.30 삐져나옴). 병 안에 넣고 싶으면 블렌더에서 옮기거나 병을 키워야 한다.
+- 고양이(`Cat`)는 키워드 목록에 없어서 **늘 보이게** 두었다(사용자 확인 필요).
+- 키워드 → 요소: `glb-nodes.js` `KEYWORD_NODES`. 캐빈 색은 더 이상 안 바뀐다.
+- **배 방향에 따라 한쪽 뱃전의 요소가 선체에 가려진다.** 머무르는 중·떠나는 중·오가는 중
+  (헤딩 π)에는 서핑보드·종·네잎클로버가 카메라 반대편, 돌아온 사람·아직 모르겠음(헤딩 0)
+  에는 튜브가 반대편이다. 블렌더 배치 그대로다 — 아래 B(자세별 배치)가 이 문제다.
+
+아래는 받기 전에 적어 둔 절차(참고):
 
 사용자가 블렌더에서 배 모델링을 고치고 새 소품들을 추가해 다시 뽑기로 했다.
 `Scene.baked.glb`가 아니라 **원본 `Scene.glb`를 편집**하는 쪽으로 정했다.
@@ -629,14 +691,15 @@ git push --dry-run origin main
 3. ~~하드코딩된 두 값을 다시 재서 반영~~ — **자동화했다(2026-09-14).** `_measureIslandRest()`가
    GLB 로드 직후 지오메트리에서 직접 잰다. 모델을 다시 뽑아도 손댈 값이 없다.
    콘솔에 `[치수] …` 로 잰 값이 찍히니 확인만 하면 된다
-4. `SHIP_GLB_POS`(GLB의 Ship 노드 translation)도 바뀌었으면 옮겨 적기
-5. `Scene.baked.glb` 다시 굽기
+4. ~~`SHIP_GLB_POS` 옮겨 적기~~ — 없앴다. 섬은 `Island` 노드 좌표계로 꽂고 z는 `ISLAND_BASE_Z`
+5. `python3 tools/build_scene_glb.py` 로 굽기 (14장)
 
 **노드 이름을 바꿨다면 `statistics/shared/glb-nodes.js` 한 곳만 고치면 된다.**
 두 화면이 그 파일에서 이름을 읽는다 (예전에는 `index.html` 7곳과 `fleet.js` 2곳에
-문자열로 박혀 있었다). 지금 쓰는 이름 일곱:
-`Rock` `Beachhouse` `Ship` `Seagull` `Tube` `Cabin` `Funnel`
-그리고 지도 전용 선체 패턴 `/^Ship[_ ]?Body/`.
+문자열로 박혀 있었다). 지금 쓰는 이름: 배 `Ship` `Cabin` `Funnel`, 섬 `Island` `Rock`
+`Beachhouse` `Back_Mountain` `Lighthouse`, 늘 타는 `Cat`, 키워드 요소(`KEYWORD_NODES`)
+`Toolbox` `Lamp` `Tube` `Plant` `Surfboard` `Seagull` `Bell` `Chair` `Cup` `Easel` `Easelchair`,
+그리고 선체 패턴 `/^Ship[_ ]?Body/`(지도 틴트 + 설문 클로버 데칼).
 못 찾으면 양쪽 selfCheck가 콘솔에 assert를 남긴다 (실측으로 확인: 설문은
 `"…" 노드가 없음`, 지도는 `fleet.missing` 에 이름이 쌓이고 틴트 그룹이 2→1로 준다).
 
@@ -657,7 +720,7 @@ Ship
 ```
 
 코드가 `Ship` 아래에서 `_Away` / `_Toward` 접미사를 훑어 짝을 만들고 자세에 따라 하나만
-켠다. 키워드 토글(`KEYWORD_PROP`)은 그 위에 얹힌다 — "키워드가 켜라 했고 자세도 맞을 때"만 보인다.
+켠다. 키워드 토글(`KEYWORD_NODES`)은 그 위에 얹힌다 — "키워드가 켜라 했고 자세도 맞을 때"만 보인다.
 접미사 없는 노드는 지금처럼 자세와 무관하게 동작시켜 하위 호환을 유지한다.
 
 **용량 걱정은 없다** (실측): glTF는 노드가 메쉬를 가리키기만 하므로 블렌더에서
@@ -886,11 +949,56 @@ importmap에 한 줄 추가해 쓴다 — 빌드 도구는 계속 필요 없다.
 
 ---
 
-## 14. 텍스처 아틀라스 (대기 목록 — 분석·방향 확정, 모델링 뒤로 보류)
+## 14. 텍스처 아틀라스 — **굽는 도구를 만들어 적용했다 (2026-09-25)**
 
-**"내가 할 일 뭐 있었지?" 하면 12·13장과 함께 이 장도 읽을 것.**
-사용자가 방향(C안)까지 골랐으나, **모델링과 추가 요소 작업이 안 끝나서 보류**했다(2026-09-06).
-새 `Scene.glb`가 들어온 뒤에 진행한다 — 지금 하면 두 번 하게 된다.
+### 14.0 지금 어떻게 돌아가나
+
+사용자가 블렌더에서 요소마다 텍스처를 따로 입혀 `assets/scene_baked.glb`로 보냈다.
+`tools/build_scene_glb.py`가 이것을 **텍스처 한 장짜리** `assets/Scene.glb`로 굽는다.
+
+```
+python3 tools/build_scene_glb.py assets/scene_baked.glb assets/Scene.glb --report <폴더>
+node statistics/tools/sync-model.mjs
+```
+(필요: python3, numpy, pillow)
+
+하는 일:
+1. 안 쓰는 노드를 뺀다 — 코드가 따로 만드는 병(`Bottle.001`), 빈 노드(`Cube`·`Bed_table`),
+   메쉬 없는 `Sketchfab_model` 잔해
+2. **텍스처마다 UV가 실제로 덮는 영역만 잘라낸다** — UV 섬(정점을 공유하는 삼각형 묶음) 단위로.
+   큰 팩에서 요소 하나만 남기느라 텍스처는 큰데 쓰는 곳은 일부인 경우가 많았다
+   (Plant 512²에서 0.2%, Toolbox 64²에서 1.4%, Lamp 1024²에서 11%)
+3. 3px 이하 섬(팔레트 한 점을 찍는 UV)과 단색 재질은 16px 단색 칸으로 모은다
+4. 부드러운 그라데이션 조각은 해상도를 줄인다 — 줄였다 다시 늘린 결과가 원본과 최대 6/255,
+   평균 1/255 안에 들 때만. GPU 선형 보간이 똑같이 되살리므로 그라데이션은 그대로다.
+   (비치하우스의 큰 그라데이션 조각이 이 덕에 아틀라스의 40% → 몇 % 로 줄었다)
+5. NEAREST로 보던 도트 텍스처(Easel)는 4배로 키워 넣는다 — 아틀라스는 LINEAR라서
+6. MaxRects로 한 장에 싣고(가장 작은 2의 거듭제곱), 조각 가장자리를 8px 늘려 밉맵 번짐을 막는다
+7. UV를 다시 매핑하고, 같은 재질로 가게 된 프리미티브는 메쉬마다 하나로 합친다(드로우콜 감소)
+8. 재질 정리 — `Atlas_Lit` / `Atlas_Unlit`(원래 unlit이던 Cat·Lamp) 두 개가 WebP 한 장을 같이 쓴다
+
+**아틀라스에 넣지 않는 것:** 배 본체(Cabin·Funnel·Funnel_step·Ship_Body — 지도가 캐빈·선체에
+배마다 인스턴스 색을 입힌다)와 `Rock`(지역을 고를 때마다 `REGION_SAND`로 색이 바뀐다).
+바위 재질 10벌은 내용이 같아 `Rock` 하나로 합쳤다.
+
+**결과 (2026-09-25):** 1,702KB → 828KB. 아틀라스 1024² WebP 50KB. 재질 45 → 7,
+프리미티브 46 → 29. 남은 용량 대부분은 지오메트리다(약 12,000 tri). 줄이려면
+`KHR_mesh_quantization`(three.js 기본 지원, 디코더 불필요)이 다음 후보.
+
+**원본과 대조해 검증했다** — 요소마다 두 방향에서 원본 GLB와 새 GLB를 렌더해 비교,
+평균 오차 0~2(0~255 단위). 원본과 **일부러 다르게** 만든 것 넷(재질이 glTF 기본값
+"금속"으로 읽혀 이 씬에서 검게 나오던 것들 — 블렌더 미리보기는 HDRI가 있어 멀쩡해 보인다):
+- `Cabin`·`Funnel_step` 재질: metallic 누락(기본값 1) → 0
+- `Chair`(InEx_BrushedMetal, 색 없는 금속) → 비금속 밝은 회색
+- `Cup`(AO 텍스처만 있는 금속) → AO를 색에 구운 비금속 흰색
+- `Tube`의 흰 띠(재질 없음 = 흰 금속) → 비금속 흰색
+
+**이 장의 원래 계획(C안, 아래 14.1~14.5)과 다른 점:** 중성 램프 + 코드 색 표는 만들지 않았다.
+사용자가 텍스처를 직접 입혀 보냈으므로 그 픽셀을 그대로 옮기는 게 맞다. C안이 풀려던
+런타임 색 변경 문제는 따로 풀렸다 — `Rock`은 재질을 따로 두고, 캐빈은 키워드 색이 없어졌다.
+**아직 남은 사용자 지시:** "이미 색이 들어가 있는 것들 중에도 바꿀 것이 있다"(14.4 끝).
+
+아래 14.1~14.5는 교체 전 분석 기록이다.
 
 ### 14.1 왜 하려는가
 
