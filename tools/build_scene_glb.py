@@ -9,7 +9,7 @@ build_scene_glb.py — 블렌더에서 내보낸 GLB를 웹용 GLB로 굽는다.
   1. 웹에서 쓰지 않는 노드를 뺀다 (코드가 따로 만드는 병, 빈 노드, 스케치팹 잔해)
   2. 텍스처마다 UV가 실제로 덮는 영역만 잘라낸다 — 섬(island) 단위로
   3. 잘라낸 조각과 단색 재질의 색을 텍스처 한 장(아틀라스)에 모으고 UV를 다시 매핑한다
-  4. 재질을 아틀라스 두 개(조명 받음 / 안 받음)와, 코드가 따로 다루는 것들로 정리한다
+  4. 재질을 아틀라스 하나(Atlas_Lit)와, 코드가 따로 다루는 것들로 정리한다
 
 아틀라스에 넣지 않는 것 — 코드나 지도 화면이 재질을 따로 붙잡고 있어서다
   · 배 본체(Cabin, Funnel, Funnel_step, Ship_Body): 지도가 캐빈·선체에 배마다 다른
@@ -28,7 +28,12 @@ from PIL import Image
 DROP_SUBTREES = {"Bottle.001", "Sketchfab_model", "Cube", "Bed_table"}
 # 재질을 그대로 두는 노드 (자식까지). 위 머리말 참고.
 KEEP_MATERIAL_UNDER = {"Ship", "Rock"}
-# 조명을 받지 않는 재질(KHR_materials_unlit)은 따로 모은다 — 하나로 합치면 음영이 바뀐다.
+# 블렌더에서 조명을 받지 않는 재질(KHR_materials_unlit)로 나온 것을 그대로 둘지.
+# False면 전부 조명을 받게 한다 — 그대로 두면 밤이 돼도 램프·고양이만 낮처럼 환하게 떠 있었다.
+HONOR_UNLIT = False
+# 아틀라스를 같이 쓰되 재질은 따로 두는 것: 원본 재질 이름 → 새 재질 이름.
+# 코드가 이 재질만 붙잡아 바꾼다 (등대 창문은 밤에 빛난다 — index.html LIGHTHOUSE).
+OWN_MATERIAL = {"lighthouse_windows": "Lighthouse_Window"}
 GUTTER = 8            # 아틀라스 안 조각 사이 여백(px). 가장자리 픽셀을 이만큼 늘려 밉맵 번짐을 막는다.
 SOLID_MAX_PX = 3.0    # UV 섬의 가로·세로가 둘 다 이 이하면 한 점으로 보고 단색 칸으로 만든다
 SWATCH = 16           # 단색 칸의 크기(px). 멀리서 밉맵이 내려가도 이웃 칸 색이 덜 섞이게 넉넉히
@@ -249,7 +254,10 @@ def build(src, max_width=4096):
                 rec['kind'] = 'keep'
             else:
                 rec['kind'] = 'atlas'
-                rec['unlit'] = 'KHR_materials_unlit' in mat.get('extensions', {})
+                rec['unlit'] = HONOR_UNLIT and 'KHR_materials_unlit' in mat.get('extensions', {})
+                if 'KHR_materials_unlit' in mat.get('extensions', {}) and not HONOR_UNLIT:
+                    rec['note'] = '재질 unlit(조명 무시) → 조명을 받게'
+                rec['own'] = OWN_MATERIAL.get(mat.get('name'))
                 factor = pbr.get('baseColorFactor', [1, 1, 1, 1])
                 rec['factor'] = factor
                 if 'baseColorTexture' in pbr:
@@ -449,14 +457,15 @@ def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
         if ms <= r['rock_meshes']: out_mats[ni]['name'] = 'Rock'
 
     atlas_mat = {}
-    def atlas_material(unlit):
-        if unlit not in atlas_mat:
-            m = dict(name='Atlas_Unlit' if unlit else 'Atlas_Lit', doubleSided=True,
+    def atlas_material(unlit, own=None):
+        key = (unlit, own)
+        if key not in atlas_mat:
+            m = dict(name=own or ('Atlas_Unlit' if unlit else 'Atlas_Lit'), doubleSided=True,
                      pbrMetallicRoughness=dict(baseColorTexture=dict(index=0), metallicFactor=0,
                                                roughnessFactor=roughness))
             if unlit: m['extensions'] = {'KHR_materials_unlit': {}}
-            atlas_mat[unlit] = len(out_mats); out_mats.append(m)
-        return atlas_mat[unlit]
+            atlas_mat[key] = len(out_mats); out_mats.append(m)
+        return atlas_mat[key]
 
     # 메쉬 — 같은 재질로 가는 프리미티브는 하나로 합친다 (three.js에선 프리미티브 = 드로우콜)
     by_mesh = defaultdict(list)
@@ -465,7 +474,7 @@ def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
     for mi in r['kept_meshes']:
         groups = defaultdict(list)
         for rec in by_mesh[mi]:
-            mk = old_to_new.get(rec['mat']) if rec['kind'] == 'keep' else atlas_material(rec['unlit'])
+            mk = old_to_new.get(rec['mat']) if rec['kind'] == 'keep' else atlas_material(rec['unlit'], rec.get('own'))
             groups[mk].append(rec)
         prims = []
         for mk, recs in groups.items():
@@ -499,7 +508,7 @@ def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
 
     webp = encode_webp(r['atlas'], quality, lossless)
     img_view = B.view(webp)
-    used = ['EXT_texture_webp'] + (['KHR_materials_unlit'] if True in atlas_mat else [])
+    used = ['EXT_texture_webp'] + (['KHR_materials_unlit'] if any(k[0] for k in atlas_mat) else [])
     gj = dict(
         asset=dict(version='2.0', generator='survey_boat tools/build_scene_glb.py'),
         extensionsUsed=used, extensionsRequired=['EXT_texture_webp'],

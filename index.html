@@ -1054,8 +1054,19 @@ const BOTTLE_SHIFT_X = 1.70;
 // 섬이 유리 밖으로 나가므로(실측: 섬을 -1.66 옮겼을 때 여유 -1.70), 섬 이동량에서 파생시킨다.
 // 계수 0.85는 배(z≈0)와 섬이 함께 들어가는 중간 지점을 실측으로 잡은 값이다.
 const BOTTLE_SHIFT_Z = ISLAND_SIDE_SHIFT * 0.85;
-// 병 x범위의 한가운데 (프로파일이 -1.75~+1.55라 기하 중심이 원점과 다르다). 카메라가 볼 지점.
-const BOTTLE_CENTER_X = BOTTLE_SHIFT_X + ((-1.75 + 1.55) / 2) * BOTTLE_SCALE_X;
+// 병 옆면 프로파일 [축위치 u, 반지름]. LatheGeometry와 물 클리핑이 같은 값을 쓴다.
+// 반지름이 u에 따라 변하는데 클리핑을 상수 반지름으로 두면, 좁은 목 쪽에서 수면이
+// 병을 뚫고 나온다(직사각형으로 잘린 바다가 보이던 원인).
+// u가 작은 쪽(-)이 병 바닥, 큰 쪽(+)이 목·코르크다. 월드에서는 바닥이 +x(섬·등대 쪽).
+// 등대가 들어가도록 바닥 쪽을 0.30 늘렸다(예전 -1.55 / -1.50 / -0.90). 목 쪽은 그대로다.
+const BOTTLE_PROFILE = [
+  [-1.85, 0.00], [-1.80, 0.62], [-1.05, 0.70], [1.00, 0.68],
+  [1.25, 0.60], [1.50, 0.24], [1.75, 0.20],
+];
+// 병 기하 중심이 병 그룹 원점에서 x로 얼마나 떨어져 있나 (축 좌표 u는 -x 방향이다).
+const BOTTLE_MID_X = -((BOTTLE_PROFILE[0][0] + BOTTLE_PROFILE[BOTTLE_PROFILE.length - 1][0]) / 2) * BOTTLE_SCALE_X;
+// 섬이 있을 때 병 x범위의 한가운데 — 카메라가 볼 지점. (섬이 없으면 배 가운데로 옮긴다 — _updateBottleLayout)
+const BOTTLE_CENTER_X = BOTTLE_SHIFT_X + BOTTLE_MID_X;
 // 셰이더의 bottleRadiusAt과 같은 계산. 연기를 병 안에 가두는 데 쓴다(_updateSmoke).
 // u는 병 로컬 축 좌표 — 월드 x에서 u = -(x - 병중심x) / BOTTLE_SCALE_X 로 얻는다.
 function bottleRadiusAtU(u) {
@@ -1100,7 +1111,8 @@ const CAM_STEPS = {
   // 키워드: 배가 화면을 크게 차지하도록 바짝 붙는다 (실측 가로 점유율 약 72%).
   keywords: { target: [0.21, 0.62, -0.01], radius: 8.4 },
   // 결과: 유리병이 풍경을 감싸는 연출이라 뒤로 빠진다.
-  result:   { target: [BOTTLE_CENTER_X, BOTTLE_Y, 0.0], radius: 18.6, widen: CAM_MAX_WIDEN_RESULT },
+  // 병 바닥을 늘리면서(길이 3.30 → 3.60) 같은 비율로 물렸다(18.6 → 20.3).
+  result:   { target: [BOTTLE_CENTER_X, BOTTLE_Y, 0.0], radius: 20.3, widen: CAM_MAX_WIDEN_RESULT },
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
@@ -1247,13 +1259,6 @@ const SMOKE_LEAN = 0.07;       // 옆으로 기우는 정도
 // ("지저분해진다"는 게 이것). 불투명하면 서로 가려서 하나의 덩어리로 보인다.
 const SMOKE_SOLID_UNTIL = 0.68;
 
-// 병 옆면 프로파일 [축위치 u, 반지름]. LatheGeometry와 물 클리핑이 같은 값을 쓴다.
-// 반지름이 u에 따라 변하는데 클리핑을 상수 반지름으로 두면, 좁은 목 쪽에서 수면이
-// 병을 뚫고 나온다(직사각형으로 잘린 바다가 보이던 원인).
-const BOTTLE_PROFILE = [
-  [-1.55, 0.00], [-1.50, 0.62], [-0.90, 0.70], [1.00, 0.68],
-  [1.25, 0.60], [1.50, 0.24], [1.75, 0.20],
-];
 /**
  * CSS의 cubic-bezier(x1,y1,x2,y2)와 같은 곡선.
  * 시작점(0,0)과 끝점(1,1)은 고정이고, 중간 제어점 두 개로 모양을 정한다.
@@ -1330,6 +1335,33 @@ const CLOVER = {
   spin: -0.35,         // 데칼 면 안에서 돌리는 각도 (라디안, +는 반시계)
   leaf: "#4e9f4b",     // 잎
   vein: "#2f6f33",     // 잎맥·테두리
+};
+
+// 뱃전에 걸린 요소 — 카메라 반대쪽 뱃전에 있으면 선체에 가려진다. 그쪽이 안 보일 때는
+// 배 중심선에 대칭인 자리(거울상)로 옮긴다. 블렌더에 놓인 자리가 한쪽, 거울상이 반대쪽이다.
+// 교체는 선체가 카메라에 거의 뱃머리·고물 쪽으로(옆면이 가장 얇게) 보일 때 한다 — 그때가 가장
+// 덜 보인다. SIDE_SWAP_DEADZONE은 그 판정 폭(0~1, 클수록 옆면이 더 보일 때 바꾼다).
+// 드래그로 둘러봐도 같은 규칙이라, 요소는 늘 보이는 쪽 뱃전에 붙는다.
+const SIDE_SWAP = ["Surfboard", "Bell", "Tube", "Clover", "Cat"];   // Cat은 굴뚝 옆 갑판이라 반대편이면 굴뚝에 가린다
+const SIDE_SWAP_DEADZONE = 0.15;
+
+// 등대 — 블렌더 자리에서 이만큼 옮긴다(월드 단위). 유리병 안에 들어가도록 살짝 내렸다
+// ([병] 로그의 등대 여유가 −0.30 → +0.12). 블렌더에서 등대를 옮겨 다시 뽑으면 0으로 되돌릴 것.
+const LIGHTHOUSE_OFFSET = { x: 0, y: -0.35, z: 0 };
+// 등대 불빛 — 밤에 켜지고 등대처럼 돈다. 섬이 화면에 없으면(오가는 중·아직 모르겠음) 꺼진다.
+// 실제 조명(SpotLight)이라 배·섬·바다가 불빛을 받는다. 바다는 커스텀 셰이더라 따로 받는다(uBeam*).
+const LIGHTHOUSE = {
+  on: { day: 0, afternoon: 0, evening: 0, night: 1 },  // 시간대별 세기 (저녁에도 켜려면 0.5 등)
+  period: 8.0,        // 한 바퀴 도는 데 걸리는 시간(초)
+  tilt: 0.24,         // 아래로 숙인 각도(라디안). 0이면 수평 — 배에 닿지 않고 머리 위로 지나간다
+  angle: 0.20,        // 빛 원뿔의 반각(라디안)
+  intensity: 40,      // 조명 세기(칸델라). 배까지 약 5 떨어져 있어 40이면 해의 1.6배쯤
+  color: 0xffdca0,
+  beamLength: 6.0,    // 눈에 보이는 빛줄기 길이(월드)
+  beamOpacity: 0.30,  // 빛줄기 진하기
+  glowSize: 0.9,      // 등불 자체의 번짐 크기
+  window: 1.6,        // 등대 창문이 빛나는 세기(emissive)
+  water: 0.6,         // 바다에 닿는 빛의 세기
 };
 
 const ACTIVE_STEPS = ["onboard","region","state","sentence","share","keywords","consent","result"];
@@ -1528,6 +1560,8 @@ class BottleScene {
     this._timeFrom = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeTo = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeT = 1;
+    // 밤 정도(0~1) — 등대 불빛이 쓴다. 시간대 전환과 같은 곡선으로 옮겨 간다.
+    this._night = this._nightFrom = this._nightTo = LIGHTHOUSE.on[INITIAL_TIME_KEY] ?? 0;
     this._skyColors = TIME_OF_DAY[INITIAL_TIME_KEY].sky.map((h) => new THREE.Color(h));
     // 병에 들어간 뒤 배경이 될 색. 처음 화면의 단색 배경을 CSS에서 그때그때 읽어온다.
     this.bgFallback = document.getElementById("bgFallback");
@@ -1670,6 +1704,12 @@ class BottleScene {
         uClipScaleR: { value: BOTTLE_SCALE_R },
         uProfU: { value: BOTTLE_PROFILE.map((p) => p[0]) },
         uProfR: { value: BOTTLE_PROFILE.map((p) => p[1]) },
+        // 등대 불빛 — _updateLighthouse가 매 프레임 채운다. uBeamOn이 0이면 계산을 건너뛴다.
+        uBeamPos: { value: new THREE.Vector3() },
+        uBeamDir: { value: new THREE.Vector3(1, 0, 0) },
+        uBeamCos: { value: Math.cos(LIGHTHOUSE.angle) },
+        uBeamColor: { value: new THREE.Color(LIGHTHOUSE.color) },
+        uBeamOn: { value: 0.0 },
         },
       ]),
       vertexShader: `
@@ -1835,6 +1875,11 @@ ${GERSTNER_GLSL}
           return 0.0;
         }
         varying vec3 vWorldPos;
+        uniform vec3 uBeamPos;
+        uniform vec3 uBeamDir;
+        uniform float uBeamCos;
+        uniform vec3 uBeamColor;
+        uniform float uBeamOn;
 
         vec3 hdr (vec3 color, float exposure) {
           return 1.0 - exp(-color * exposure);
@@ -1883,6 +1928,16 @@ ${GERSTNER_GLSL}
           vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
 
           vec3 color = sky + water + sparkle;
+          // 등대 불빛 — 원뿔 안에 드는 수면만 밝힌다. 세기는 거리 제곱으로 준다(배 근처 ≈ 1).
+          if (uBeamOn > 0.001) {
+            vec3 toF = vWorldPos - uBeamPos;
+            float dist = length(toF);
+            vec3 l = toF / max(dist, 1e-4);
+            float cone = smoothstep(uBeamCos, mix(uBeamCos, 1.0, 0.45), dot(l, uBeamDir));
+            float fall = min(25.0 / max(dist * dist, 1.0), 1.5);
+            float lam = 0.35 + 0.65 * clamp(dot(normal, -l), 0.0, 1.0);
+            color += uBeamColor * cone * fall * lam * uBeamOn;
+          }
           if (uRippleOn > 0.5) {
             vec2 pXZ = vWorldPos.xz;
             float foam = contactFoam(pXZ, uSdfBoat, uSdfBoatXf, uSdfBoatGrid, uSdfBoatMeta, vWorldPos.y)
@@ -1964,16 +2019,23 @@ ${GERSTNER_GLSL}
       for (const name of [GLB_NODES.backMountain, GLB_NODES.lighthouse]) {
         const obj = root.getObjectByName(name);
         console.assert(obj, `[selfCheck] GLB에 "${name}" 노드가 없음 — 이름이 바뀌었는지 확인`);
-        if (obj) plantOnIsland(obj);
+        if (!obj) continue;
+        plantOnIsland(obj);
+        if (name === GLB_NODES.lighthouse) {
+          obj.position.x += LIGHTHOUSE_OFFSET.x;
+          obj.position.y += LIGHTHOUSE_OFFSET.y;
+          obj.position.z += LIGHTHOUSE_OFFSET.z;
+        }
       }
 
       // 멀어질 때 서서히 지우려면 재질을 투명하게 다룰 수 있어야 한다.
       // 안개만으로는 '안개색 덩어리'가 남아 하늘과 어긋나 보인다(바다 경계와 같은 문제).
       // 섬 재질은 섬 전용으로 복제한다 — 아틀라스 재질 하나를 배의 소품(갈매기·램프…)도 같이 쓰므로,
       // 원본을 투명하게 만들면 섬이 멀어질 때 배 위의 소품까지 같이 흐려진다.
-      // 먼 풍경(뒷산·등대)은 병보다 커서 결과 화면에서 바다와 같이 걷어낸다(_animate 병 구간).
+      // 먼 풍경(뒷산)은 병보다 훨씬 커서 결과 화면에서 바다와 같이 걷어낸다(_animate 병 구간).
       // 그래서 재질을 한 번 더 따로 복제한다 — 섬 나머지(같은 아틀라스 재질의 비치하우스)는 남아야 한다.
-      this.sceneryObjs = [GLB_NODES.backMountain, GLB_NODES.lighthouse]
+      // 등대는 LIGHTHOUSE_OFFSET으로 내려서 병 안에 남긴다.
+      this.sceneryObjs = [GLB_NODES.backMountain]
         .map((n) => this.islandGroup.getObjectByName(n)).filter(Boolean);
       const isScenery = (o) => {
         for (let q = o; q && q !== this.islandGroup; q = q.parent) if (this.sceneryObjs.includes(q)) return true;
@@ -1999,13 +2061,14 @@ ${GERSTNER_GLSL}
           this.islandMats.push(c.material);
         }
       });
+      this._buildLighthouseLight();
 
       if (ship) {
         // ── 배에 타는 것들 ──
         // 소품은 GLB상 Ship과 형제 노드지만 실제 좌표는 갑판 위·뱃전이다. attach()는 월드 변환을
         // 유지한 채 부모만 바꾸므로 블렌더에서 잡아둔 상대 위치 그대로 배의 자식이 되어
         // 항해·롤링·헤딩에 딸려 간다. (add()를 쓰면 로컬 좌표로 재해석돼서 엉뚱한 데로 날아가니 주의)
-        // 키워드 요소는 기본으로 숨겨두고 applyKeywords에서 켠다. 고양이는 늘 타고 있다.
+        // 키워드 요소는 기본으로 숨겨두고 applyKeywords에서 켠다.
         // 블렌더에서 다시 뽑으면서 노드 이름이 바뀌면 여기서 조용히 사라진다 —
         // 씬은 멀쩡히 돌아가고 소품만 없어서 한참 뒤에나 눈치챈다. 그래서 assert.
         const board = (name) => {
@@ -2024,7 +2087,6 @@ ${GERSTNER_GLSL}
             .map(board).filter(Boolean);
           this.keywordObjs[kw].forEach((o) => { o.visible = false; });
         }
-        board(GLB_NODES.cat);
 
         // [삭제됨] 예전엔 "갈매기가 4마리 겹쳐 들어있다"고 보고 가장 큰 하나만 남기고 지웠다.
         // 오판이었다 — 네 조각은 한 마리의 부위(몸통·날개끝·부리·발)였다. 지금 GLB는 아틀라스로
@@ -2065,6 +2127,9 @@ ${GERSTNER_GLSL}
         // '우연' 데칼 — 배가 제자리에 선 뒤에 붙여야 선체 표면에 정확히 투영된다.
         const clover = this._buildClover(ship);
         this.keywordObjs["우연"] = clover ? [clover] : [];
+
+        this.shipNode = ship;
+        this._prepareSideSwap(ship);
 
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
       }
@@ -2145,8 +2210,10 @@ ${GERSTNER_GLSL}
     geo.setAttribute("position", new THREE.Float32BufferAttribute(keep.position, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(keep.normal, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(keep.uv, 2));
-    // DecalGeometry는 월드 좌표로 나온다 → 선체 좌표로 옮겨 선체의 자식으로 붙인다
-    geo.applyMatrix4(new THREE.Matrix4().copy(hull.matrixWorld).invert());
+    // DecalGeometry는 월드 좌표로 나온다 → 배 좌표로 옮겨 배의 자식으로 붙인다.
+    // (선체 노드는 배율이 극단적으로 비균등해서, 그 자식으로 두면 반대쪽 뱃전으로 대칭 이동할 때
+    //  기울어짐이 생긴다 — _prepareSideSwap 참고)
+    geo.applyMatrix4(new THREE.Matrix4().copy(ship.matrixWorld).invert());
 
     const tex = new THREE.CanvasTexture(this._drawClover());
     tex.colorSpace = THREE.SRGBColorSpace;
@@ -2159,8 +2226,189 @@ ${GERSTNER_GLSL}
     decal.name = "Clover";
     decal.renderOrder = 1;
     decal.visible = false;
-    hull.add(decal);
+    ship.add(decal);
     return decal;
+  }
+
+  /**
+   * 뱃전 요소(SIDE_SWAP)의 두 자리를 미리 계산해 둔다 — 블렌더 자리와, 배 중심선에 대칭인 거울상.
+   * 거울상은 배 좌표에서 z를 뒤집은 변환(S·M)이라 요소 모양도 좌우가 뒤집힌다(행렬식 음수 —
+   * three.js가 면 방향을 알아서 뒤집는다). 중심선은 선체 바운딩박스 가운데로 잰다.
+   */
+  _prepareSideSwap(ship) {
+    let hull = null;
+    ship.traverse((o) => { if (!hull && o.isMesh && GLB_NODES.hull.test(o.name)) hull = o; });
+    const hb = new THREE.Box3();
+    if (hull) {
+      const toShip = new THREE.Matrix4().copy(ship.matrixWorld).invert().multiply(hull.matrixWorld);
+      const p = hull.geometry.attributes.position, v = new THREE.Vector3();
+      for (let i = 0; i < p.count; i++) hb.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(toShip));
+    }
+    const mid = hull ? hb.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+    this._hullMid = { x: mid.x, z: mid.z };   // 배 로컬(배율 적용 전) — _updateBottleLayout도 쓴다
+    const S = new THREE.Matrix4().set(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 2 * mid.z, 0, 0, 0, 1);
+    this.sideProps = [];
+    for (const name of SIDE_SWAP) {
+      const obj = ship.getObjectByName(name);
+      if (!obj || obj.parent !== ship) continue;
+      obj.updateMatrix();
+      const c = ship.worldToLocal(new THREE.Box3().setFromObject(obj, true).getCenter(new THREE.Vector3()));
+      const orig = { p: obj.position.clone(), q: obj.quaternion.clone(), s: obj.scale.clone() };
+      const mirror = { p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3() };
+      new THREE.Matrix4().multiplyMatrices(S, obj.matrix).decompose(mirror.p, mirror.q, mirror.s);
+      this.sideProps.push({ obj, side: c.z >= mid.z ? 1 : -1, orig, mirror });
+    }
+    this._sideFacing = 0;
+  }
+
+  /** 카메라 쪽 뱃전이 바뀌었으면 뱃전 요소를 그쪽 자리로 옮긴다. */
+  _updateSideProps() {
+    if (!this.sideProps || !this.sideProps.length) return;
+    // 배 로컬 +z가 월드에서 향하는 방향. 헤딩만 본다(롤링은 z축 회전이라 z축 방향을 안 바꾼다).
+    const a = this.boat.rotation.y + this.shipNode.rotation.y;
+    const cx = this.camera.position.x - this.boat.position.x;
+    const cz = this.camera.position.z - this.boat.position.z;
+    const d = (Math.sin(a) * cx + Math.cos(a) * cz) / (Math.hypot(cx, cz) || 1);
+    // 옆면이 거의 안 보일 때(|d| 작음)는 그대로 둔다 — 선회 중 그 지점을 지나야 바뀐다
+    if (Math.abs(d) < SIDE_SWAP_DEADZONE) return;
+    const facing = d > 0 ? 1 : -1;
+    if (facing === this._sideFacing) return;
+    this._sideFacing = facing;
+    for (const sp of this.sideProps) {
+      const t = sp.side === facing ? sp.orig : sp.mirror;
+      sp.obj.position.copy(t.p); sp.obj.quaternion.copy(t.q); sp.obj.scale.copy(t.s);
+    }
+  }
+
+  /**
+   * 병 자리. 섬이 있으면 섬까지 담는 자리(BOTTLE_SHIFT_X/Z), 섬이 없으면(오가는 중·아직 모르겠음)
+   * 선체 가운데가 병 한가운데 오게 한다. shoreBlend를 따라가서 섬이 빠지는 동안 같이 옮겨 간다.
+   * 결과: this._bottleRelX(배 x 기준 병 그룹 x), this._bottleZ(병 축 z).
+   */
+  _updateBottleLayout() {
+    const k = THREE.MathUtils.smoothstep(this.shoreBlend ?? 1, 0, 1);
+    const mid = this._hullMid || { x: 0, z: 0 };
+    // 배 로컬 → 월드: Ship은 SHIP_FORWARD_OFFSET, 배 그룹은 헤딩만큼 y축으로 돌아 있다
+    const a = (this.headingY ?? Math.PI) + SHIP_FORWARD_OFFSET;
+    const hx = (mid.x * Math.cos(a) + mid.z * Math.sin(a)) * SHIP_SCALE;
+    const hz = (-mid.x * Math.sin(a) + mid.z * Math.cos(a)) * SHIP_SCALE;
+    const centeredX = hx - BOTTLE_MID_X;
+    this._bottleRelX = centeredX + (BOTTLE_SHIFT_X - centeredX) * k;
+    this._bottleZ = hz + (BOTTLE_SHIFT_Z - hz) * k;
+  }
+
+  /**
+   * 등대 불빛. 등불 자리는 등대 창문(Lighthouse_Window 재질 — 굽기에서 창문만 따로 뒀다) 한가운데.
+   * - 빛줄기: 등불에서 뻗는 원뿔(가산 혼합). 섬 그룹 안에서 돌아서 섬과 같이 움직인다.
+   * - 조명: SpotLight. 씬 바로 아래에 두고 매 프레임 자리만 옮긴다 — 섬 그룹 안에 두면 섬이
+   *   꺼질 때 조명 개수가 바뀌어 모든 재질의 셰이더가 다시 컴파일된다(화면이 멈칫한다).
+   * - 번짐(스프라이트)과 창문 발광. 바다는 셰이더 uniform(uBeam*)으로 받는다.
+   */
+  _buildLighthouseLight() {
+    const lh = this.islandGroup.getObjectByName(GLB_NODES.lighthouse);
+    if (!lh) return;
+    this.islandGroup.updateMatrixWorld(true);
+    let win = null;
+    lh.traverse((o) => { if (!win && o.isMesh && o.material && o.material.name === "Lighthouse_Window") win = o; });
+    console.assert(win, "[selfCheck] 등대 창문 재질(Lighthouse_Window)이 없다 — 등불 자리를 등대 꼭대기로 어림한다");
+    const box = new THREE.Box3().setFromObject(win || lh, true);
+    const lamp = box.getCenter(new THREE.Vector3());
+    if (!win) lamp.y = box.max.y - (box.max.y - box.min.y) * 0.12;
+    this.islandGroup.worldToLocal(lamp);
+    this.lhWindowMat = win ? win.material : null;
+
+    const pivot = new THREE.Group();
+    pivot.position.copy(lamp);
+    pivot.rotation.order = "YXZ";      // 먼저 아래로 숙이고(z), 그다음 돈다(y)
+    this.islandGroup.add(pivot);
+    this.lhPivot = pivot;
+
+    // 빛줄기 — 꼭짓점이 등불, 축이 pivot의 +x
+    const L = LIGHTHOUSE.beamLength;
+    const geo = new THREE.ConeGeometry(L * Math.tan(LIGHTHOUSE.angle), L, 32, 1, true);
+    geo.translate(0, -L / 2, 0);
+    geo.rotateZ(Math.PI / 2);
+    this.lhBeamMat = new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: new THREE.Color(LIGHTHOUSE.color) }, uOpacity: { value: 0 } },
+      vertexShader: `
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          vUv = uv;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vN = normalize(normalMatrix * normal);
+          vV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor; uniform float uOpacity;
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        void main() {
+          // 옆에서 보면 가운데가 진하고 가장자리가 옅다(부피감). 축을 따라 보면 거의 안 보인다 —
+          // 빛줄기가 카메라를 쓸고 지나갈 때 원판이 번쩍이지 않게.
+          float face = pow(abs(dot(normalize(vN), normalize(vV))), 1.5);
+          float along = vUv.y * vUv.y;   // 등불(1) → 끝(0)
+          gl_FragColor = vec4(uColor, face * along * uOpacity);
+        }`,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const beam = new THREE.Mesh(geo, this.lhBeamMat);
+    beam.renderOrder = 5;
+    beam.frustumCulled = false;
+    pivot.add(beam);
+
+    // 등불 번짐 — 돌지 않는다
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, "rgba(255,245,220,1)");
+    grd.addColorStop(0.25, "rgba(255,225,170,0.55)");
+    grd.addColorStop(1, "rgba(255,210,140,0)");
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    this.lhGlowMat = new THREE.SpriteMaterial({
+      map: new THREE.CanvasTexture(c), color: LIGHTHOUSE.color, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    this.lhGlow = new THREE.Sprite(this.lhGlowMat);
+    this.lhGlow.scale.setScalar(LIGHTHOUSE.glowSize);
+    this.lhGlow.position.copy(lamp);
+    this.islandGroup.add(this.lhGlow);
+
+    // 조명 — 처음부터 씬에 두고 세기만 바꾼다
+    this.lhLight = new THREE.SpotLight(LIGHTHOUSE.color, 0, 0, LIGHTHOUSE.angle, 0.45, 2);
+    this.lhLight.castShadow = false;
+    this.scene.add(this.lhLight, this.lhLight.target);
+    this._lhPos = new THREE.Vector3();
+    this._lhDir = new THREE.Vector3();
+    this._lhAngle = 0;
+  }
+
+  /** 등대 불빛 켜기·돌리기. on = 밤 정도 × 섬이 화면에 있는 정도. */
+  _updateLighthouse(dt, seaOut) {
+    if (!this.lhPivot) return;
+    const island = this.islandGroup.visible ? THREE.MathUtils.smoothstep(this.shoreBlend, 0.35, 0.9) : 0;
+    const on = (this._night ?? 0) * island;
+    this._lhAngle = (this._lhAngle + dt * (2 * Math.PI / LIGHTHOUSE.period)) % (2 * Math.PI);
+    this.lhPivot.rotation.set(0, this._lhAngle, -LIGHTHOUSE.tilt);
+    this.lhPivot.visible = on > 0.001;
+    // 병 안에서는 빛줄기가 유리를 뚫고 나가므로 바다와 같이 걷는다. 조명·창문·번짐은 남는다.
+    this.lhBeamMat.uniforms.uOpacity.value = on * LIGHTHOUSE.beamOpacity * (1 - seaOut);
+    this.lhGlowMat.opacity = on;
+    this.lhGlow.visible = on > 0.001;
+    if (this.lhWindowMat) {
+      this.lhWindowMat.emissive.setHex(LIGHTHOUSE.color);
+      this.lhWindowMat.emissiveIntensity = on * LIGHTHOUSE.window;
+    }
+    this.lhPivot.updateWorldMatrix(true, false);
+    const pos = this._lhPos.setFromMatrixPosition(this.lhPivot.matrixWorld);
+    const dir = this._lhDir.set(1, 0, 0).transformDirection(this.lhPivot.matrixWorld);
+    this.lhLight.position.copy(pos);
+    this.lhLight.target.position.copy(pos).add(dir);
+    this.lhLight.intensity = on * LIGHTHOUSE.intensity * SCENE_BRIGHTNESS;
+    const wu = this.waterMesh.material.uniforms;
+    wu.uBeamPos.value.copy(pos);
+    wu.uBeamDir.value.copy(dir);
+    wu.uBeamOn.value = on * LIGHTHOUSE.water;
   }
 
   /** 네잎클로버 그림 (투명 배경 캔버스). 하트 잎 네 장 + 줄기. */
@@ -2236,9 +2484,9 @@ ${GERSTNER_GLSL}
     };
 
     // 선체는 Ship 노드 기준으로 재고 월드 배율을 곱한다 (= 예전의 0.49 * SHIP_SCALE).
-    // 배에 태운 소품(키워드 요소·고양이)은 뺀다 — 선미 끝의 이젤 의자처럼 선체 가까이 있어도
+    // 배에 태운 소품(키워드 요소)은 뺀다 — 선미 끝의 이젤 의자처럼 선체 가까이 있어도
     // 켜고 끌 때마다 섬 자리가 바뀌면 안 된다.
-    const props = [].concat(...Object.values(KEYWORD_NODES), GLB_NODES.cat);
+    const props = [].concat(...Object.values(KEYWORD_NODES));
     const hull = xRange(ship, ship, props);
     const house = xRange(beachhouse, this.islandGroup, null);
     if (!hull || !house) {
@@ -2290,7 +2538,10 @@ ${GERSTNER_GLSL}
     const rows = [];
     const ship = this.boat.getObjectByName(GLB_NODES.ship);
     if (ship) rows.push(["배", fit(ship, { group: this.boat, at: new THREE.Vector3(0, 0, 0) })]);
+    // GLB에서 온 섬 노드만 잰다 (등대 빛줄기·번짐처럼 코드가 붙인 것은 빼고)
+    const islandNodes = [GLB_NODES.rock, GLB_NODES.beachhouse, GLB_NODES.backMountain, GLB_NODES.lighthouse];
     for (const c of this.islandGroup.children) {
+      if (islandNodes.indexOf(c.name) === -1) continue;
       rows.push([c.name, fit(c, { group: this.islandGroup, at: islandAt })]);
     }
     const out = rows.filter(([, w]) => w < 0).map(([n]) => n);
@@ -2945,6 +3196,8 @@ ${GERSTNER_GLSL}
     this._timeTo = to;
     this._timeKey = key;
     this._timeT = 0;
+    this._nightFrom = this._night;
+    this._nightTo = LIGHTHOUSE.on[key] ?? 0;
   }
 
   /** 현재 화면에 실제로 적용돼 있는 값. 전환 중에 또 바꿔도 이어지도록 스냅숏을 뜬다. */
@@ -3163,6 +3416,7 @@ ${GERSTNER_GLSL}
     this._timeTo = TIME_OF_DAY[INITIAL_TIME_KEY];
     this._timeT = 1;
     this._applyTime(1);
+    this._night = this._nightFrom = this._nightTo = LIGHTHOUSE.on[INITIAL_TIME_KEY] ?? 0;
 
     if (introRunning) {
       // 인트로가 시점을 올렸다 내리는 것으로 등장을 대신하므로 줌인은 걸지 않는다.
@@ -3308,10 +3562,10 @@ ${GERSTNER_GLSL}
       // [버그] 병이 풍경을 감싼 뒤에도 굴뚝 연기는 유리를 뚫고 밖으로 흘러나갔다.
       // 물처럼 셰이더로 자르지 않고, 덩어리가 병 벽에 다가갈수록 흐려지다 벽에 닿으면 지운다.
       if (this.bottleT > 0.01) {
-        const cx = this.boat.position.x + BOTTLE_SHIFT_X;
+        const cx = this.boat.position.x + this._bottleRelX;
         const u = -(s.mesh.position.x - cx) / BOTTLE_SCALE_X;
         const rad = bottleRadiusAtU(u) * BOTTLE_SCALE_R;
-        const dist = Math.hypot(s.mesh.position.y - BOTTLE_Y, s.mesh.position.z - BOTTLE_SHIFT_Z) + s.mesh.scale.x;
+        const dist = Math.hypot(s.mesh.position.y - BOTTLE_Y, s.mesh.position.z - this._bottleZ) + s.mesh.scale.x;
         const slack = rad - dist;
         if (slack <= 0) { s.active = false; s.mesh.visible = false; continue; }
         // 벽에 닿기 직전 구간에서만 흐려진다 — 갑자기 사라지지 않게
@@ -3362,10 +3616,10 @@ ${GERSTNER_GLSL}
     // 예전엔 카메라가 1.1초에 멎은 뒤에도 bottleT(지수감쇠, 1.5초 남짓)가 계속 올라와
     // 시점이 한 번 더 밀렸다 — "멈칫하고 다시 빠지는" 것처럼 보이던 원인이다.
     const bt = easeInOutCubic(Math.min(1, Math.max(0, this._bottleCamBlend ?? this.bottleT)));
-    const bX = this.boat.position.x + BOTTLE_CENTER_X;
+    const bX = this.boat.position.x + (this._bottleRelX ?? BOTTLE_SHIFT_X) + BOTTLE_MID_X;
     const oX = tX + (bX - tX) * bt;
     const oY = tY + (BOTTLE_Y - tY) * bt;
-    const oZ = tZ + (BOTTLE_SHIFT_Z - tZ) * bt;
+    const oZ = tZ + ((this._bottleZ ?? BOTTLE_SHIFT_Z) - tZ) * bt;
     this.camera.position.set(
       oX + radius * Math.sin(yaw) * Math.cos(pitch),
       oY + radius * Math.sin(pitch),
@@ -3531,6 +3785,8 @@ ${GERSTNER_GLSL}
       this.boat.rotation.y = this.headingY + Math.sin(t * 0.5) * 0.08;
     }
 
+    this._updateBottleLayout();
+    this._updateSideProps();
     this._updateSmoke(dt);
 
     // 카메라가 배를 따라가는 지점 — 순간이동은 상한 속도로 흡수한다 (CAM_FOLLOW_MAX_SPEED 참고)
@@ -3574,6 +3830,7 @@ ${GERSTNER_GLSL}
     if (this._timeT < 1) {
       this._timeT = Math.min(1, this._timeT + dt / TIME_MOVE_SEC);
       this._applyTime(easeInOutQuint(this._timeT));
+      this._night = this._nightFrom + (this._nightTo - this._nightFrom) * easeInOutQuint(this._timeT);
     }
 
     // 단계 전환: 각도는 그대로 두고 목적지(target)와 거리(radius)만 ease-in-out으로 이동한다.
@@ -3621,17 +3878,19 @@ ${GERSTNER_GLSL}
       for (const m of this.sceneryMats) m.opacity = (this._islandFade ?? 1) * keep;
       for (const o of this.sceneryObjs) o.visible = keep > 0.003;
     }
+    this._updateLighthouse(dt, seaOut);
     // 병은 scene에 직접 붙어 있어 배를 따라가지 않았다. '오가는 중'처럼 배가 이동하는
     // 상태로 결과 화면에 오면 병만 원점에 남아 화면 밖으로 사라진다.
-    this.bottleGroup.position.x = this.boat.position.x + BOTTLE_SHIFT_X;
+    this.bottleGroup.position.x = this.boat.position.x + this._bottleRelX;
+    this.bottleGroup.position.z = this._bottleZ;
 
     // 바다를 병 안으로 가둔다. bottleT가 0→1로 가는 동안 반지름과 길이를 넓은 값에서
     // 병 크기까지 좁혀와서, 바다가 병 속으로 빨려드는 것처럼 보이게 한다.
     const wc = this.waterMesh.material.uniforms;
     if (this.bottleT > 0.01) {
-      const bx = this.boat.position.x + BOTTLE_SHIFT_X;
+      const bx = this.boat.position.x + this._bottleRelX;
       wc.uClipOn.value = 1.0;
-      wc.uClipCenter.value.set(bx, BOTTLE_Y, BOTTLE_SHIFT_Z);
+      wc.uClipCenter.value.set(bx, BOTTLE_Y, this._bottleZ);
       wc.uClipT.value = seaOut;
     } else {
       wc.uClipOn.value = 0.0;

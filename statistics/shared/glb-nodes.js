@@ -35,7 +35,7 @@ export const GLB_NODES = {
   backMountain: "Back_Mountain",   // 블렌더 이름 "Back Mountain" (공백 → _)
   lighthouse:   "Lighthouse",
 
-  // 배에 늘 타고 있는 것 — 설문 화면만 쓴다. 키워드와 무관하게 항상 보인다.
+  // 키워드 요소 중 코드가 이름으로 따로 찾는 것
   cat: "Cat",
 };
 
@@ -54,7 +54,7 @@ export const KEYWORD_NODES = {
   "일":     ["Toolbox"],
   "관계":   ["Lamp"],
   "가족":   [GLB_NODES.tube],
-  "주거":   ["Plant"],
+  "주거":   [GLB_NODES.cat],     // 예전엔 Plant. Plant는 GLB에 남아 있지만 화면에 안 쓴다
   "소속감": ["Surfboard"],
   "우연":   ["Clover"],
   "자유":   [GLB_NODES.gull],
