@@ -1337,6 +1337,11 @@ const CLOVER = {
   vein: "#2f6f33",     // 잎맥·테두리
 };
 
+// 두 손가락 줌(PC는 휠). 1 = 단계별 기본 거리. 작을수록 가까이. 가까이 갈수록 바라보는 지점이
+// 배 가운데로 옮겨 가서 배 쪽으로 파고든다. 단계가 바뀌면 1로 천천히 돌아온다.
+const ZOOM_MIN = 0.4, ZOOM_MAX = 1.4;
+const BOAT_FOCUS_Y = 0.55;   // 줌인할 때 바라볼 배 높이 (갑판 위 가운데쯤)
+
 // 뱃전에 걸린 요소 — 카메라 반대쪽 뱃전에 있으면 선체에 가려진다. 그쪽이 안 보일 때는
 // 배 중심선에 대칭인 자리(거울상)로 옮긴다. 블렌더에 놓인 자리가 한쪽, 거울상이 반대쪽이다.
 // 교체는 선체가 카메라에 거의 뱃머리·고물 쪽으로(옆면이 가장 얇게) 보일 때 한다 — 그때가 가장
@@ -1366,67 +1371,36 @@ const LIGHTHOUSE = {
 };
 
 // ── 그림 톤(룩) ────────────────────────────────────────────────────────────
-// basic: 지금까지의 화면 — 톤 매핑 없음, 평평한 채움광(AmbientLight), 그림자는 저녁에 수면만.
-// film : 스케치팹 뷰어 같은 방식 — 필름 톤 매핑 + 시간대 하늘색으로 만든 환경광(IBL) +
-//        배·소품·섬이 서로 드리우는 부드러운 그림자 + 은은한 반사.
-// 주소 끝에 ?look=film / ?look=basic 을 붙이면 그 룩으로 뜬다(폰에서 비교용). 기본은 LOOK_DEFAULT.
-// 바다는 자체 셰이더라 어느 룩이든 그대로다.
+// basic: 지금까지의 화면 — 톤 매핑 없음, 평평한 채움광(AmbientLight).
+// film : 스케치팹 뷰어처럼 입체감을 살린 룩 — AgX 톤 매핑 + 반구광(위는 하늘빛, 아래는 바다빛) +
+//        채움광을 줄이고 해를 올려 밝은 면·그림자 면의 대비를 만든다.
+// 바다는 자체 셰이더라 어느 룩이든 그대로다. 실행 중에 setLook()으로 바꿀 수 있다.
+//
+// 뺀 것(09-25, 폰에서 버벅여서): 환경광(IBL, PMREM) — 헤드리스 측정에서 프레임 시간을 가장 많이
+// 늘렸다(100 → 190ms). 반구광이 "위는 밝고 아래는 어둡게"를 거의 공짜로 대신한다.
+// 실시간 부드러운 그림자(PCFSoft) — 그다음으로 무거웠다(+30ms). 그림자는 basic과 같다(저녁에 수면만).
 const LOOK_DEFAULT = "basic";
 const LOOKS = {
-  basic: {},
+  basic: { tone: "none", exposure: 1, ambScale: 1, sunScale: 1, hemiScale: 0 },
   film: {
-    // 값은 헤드리스로 여러 조합을 나란히 렌더해 골랐다(ACES·AgX는 밝은 텍스처가 허옇게 바랬다).
-    tone: "neutral",     // 톤 매핑: "neutral"(색 그대로, 밝은 곳만 부드럽게) | "agx"(담백하게) | "aces"(영화처럼)
-    exposure: 1.0,       // 톤 매핑 노출
-    env: true,           // 하늘 팔레트로 만든 환경광(IBL). 위는 하늘색, 아래는 바다색으로 비춘다
-    envScale: 0.45,      // 환경광 밝기 (팔레트 채움광 세기 기준 배수)
-    envSat: 0.4,         // 환경광 채도 (0 = 회색빛 중립광, 1 = 하늘색 그대로) — 텍스처 색이 푸르게 뜨지 않게
-    sunScale: 1.6,       // 해(주광) 세기 배수 — 채움광을 줄인 만큼 올려 밝은 면·그림자 면의 대비를 만든다
-    ambScale: 0.12,      // 평평한 채움광은 환경광이 대신하므로 조금만 남긴다
-    softShadows: true,   // 그림자: PCF soft, 배·소품·섬이 드리우고 받는다 (낮에도)
-    roughness: 0.68,     // 이보다 거친 재질은 여기까지 매끈하게 — 환경광 반사가 은은하게 돈다
+    tone: "agx",         // 톤 매핑 — 밝은 곳을 부드럽게 누르고 색을 담백하게
+    exposure: 1.25,      // AgX는 중간톤을 눌러서 노출을 올려 준다
+    ambScale: 0.25,      // 평평한 채움광은 반구광이 대신하므로 조금만 남긴다
+    hemiScale: 0.9,      // 반구광 세기 (팔레트 채움광 세기 기준 배수)
+    sunScale: 1.5,       // 해 세기 배수 — 채움광을 줄인 만큼 올린다
+    roughness: 0.68,     // 이보다 거친 재질은 여기까지 매끈하게 — 해 하이라이트가 은은하게 돈다
   },
 };
-// 숫자 값은 주소로 덮어쓸 수 있다 — 폰에서 바로 맞춰 보기용. 예) ?look=film&exposure=1.1&envScale=0.7
-const LOOK = (() => {
-  let name = LOOK_DEFAULT, over = {};
-  try {
-    const qs = new URLSearchParams(location.search);
-    const q = qs.get("look");
-    if (q && LOOKS[q]) name = q;
-    for (const k of Object.keys(LOOKS[name])) {
-      const v = qs.get(k);
-      if (v === null) continue;
-      over[k] = typeof LOOKS[name][k] === "number" ? parseFloat(v) : (v === "false" ? false : v === "true" ? true : v);
-    }
-  } catch (e) { /* 주소를 못 읽으면 기본 룩 */ }
-  return { name, ...LOOKS[name], ...over };
-})();
-// "neutral" = Khronos PBR Neutral 톤 매핑. 기본색(≈0.76까지)은 색상·채도를 그대로 두고 그 위만
-// 부드럽게 눌러 준다 — 제품 렌더링용이라 텍스처 색이 바래지 않는다. three r160에는 없어서
-// (r162에 들어갔다) CustomToneMapping 자리에 같은 식을 넣는다. 재질이 컴파일되기 전에 바꿔야 한다.
-if (LOOK.tone === "neutral") {
-  THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(
-    "vec3 CustomToneMapping( vec3 color ) { return color; }",
-    `vec3 CustomToneMapping( vec3 color ) {
-      const float StartCompression = 0.8 - 0.04;
-      const float Desaturation = 0.15;
-      color *= toneMappingExposure;
-      float x = min( color.r, min( color.g, color.b ) );
-      float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
-      color -= offset;
-      float peak = max( color.r, max( color.g, color.b ) );
-      if ( peak < StartCompression ) return color;
-      float d = 1.0 - StartCompression;
-      float newPeak = 1.0 - d * d / ( peak + d - StartCompression );
-      color *= newPeak / peak;
-      float g = 1.0 - 1.0 / ( Desaturation * ( peak - newPeak ) + 1.0 );
-      return mix( color, vec3( newPeak ), g );
-    }`);
-}
+// setLook()이 내용을 갈아 끼운다 (객체는 그대로 두고 속성만).
+const LOOK = { name: LOOK_DEFAULT, ...LOOKS[LOOK_DEFAULT] };
 // 0이면 시간대 전환 스냅숏(_snapshotTime)이 이 값으로 나누다가 NaN이 되어 물체가 새까매진다 — 하한을 둔다.
-const AMB_SCALE = Math.max(LOOK.ambScale ?? 1, 1e-3);
-const SUN_SCALE = Math.max(LOOK.sunScale ?? 1, 1e-3);
+let AMB_SCALE = 1, SUN_SCALE = 1, HEMI_SCALE = 0;
+function refreshLookScales() {
+  AMB_SCALE = Math.max(LOOK.ambScale ?? 1, 1e-3);
+  SUN_SCALE = Math.max(LOOK.sunScale ?? 1, 1e-3);
+  HEMI_SCALE = LOOK.hemiScale ?? 0;
+}
+refreshLookScales();
 
 const ACTIVE_STEPS = ["onboard","region","state","sentence","share","keywords","consent","result"];
 
@@ -1442,58 +1416,6 @@ function easeOutBounce(x){
 // 하늘 그라디언트 텍스처 (레퍼런스 사진처럼 위는 파랑, 아래는 뿌연 수평선)
 // 하늘 그라디언트. 시간대가 바뀌면 같은 캔버스에 다시 칠하고 needsUpdate만 올린다
 // (8x256짜리라 매 프레임 다시 그려도 비용이 없다시피 하다).
-/**
- * 룩 film의 환경광(IBL). 시간대 팔레트로 하늘 구를 그려 PMREM으로 굽는다.
- * 위는 하늘 그라데이션, 수평선 아래는 바다색 — 물체 윗면은 하늘빛, 아랫면은 어두운 바다빛을
- * 받아 입체감이 생긴다. 해 쪽에 부드러운 밝은 점을 두어 매끈한 면에 은은한 하이라이트가 돈다.
- */
-function makeSkyEnv(renderer, pal) {
-  // 밝기는 하늘색 자체가 아니라 팔레트의 채움광 세기(amb × ambI)를 따른다 — 밤하늘은 거의 검은색이라
-  // 그대로 쓰면 밤에 물체가 새까매진다. 색의 분포(위는 하늘, 아래는 바다)만 하늘에서 가져온다.
-  const lum = (c) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
-  const skyLum = (lum(new THREE.Color(pal.sky[0])) + lum(new THREE.Color(pal.sky[1])) + lum(new THREE.Color(pal.sky[3]))) / 3;
-  const norm = (lum(new THREE.Color(pal.amb)) * pal.ambI) / Math.max(skyLum, 1e-3);
-  const k = (LOOK.envScale ?? 1) * norm, sat = LOOK.envSat ?? 1;
-  const col = (h) => {
-    const c = new THREE.Color(h);
-    const g = lum(c);   // 밝기만 남긴 회색으로 채도를 덜어낸다
-    return c.lerp(new THREE.Color(g, g, g), 1 - sat).multiplyScalar(k);
-  };
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false,
-    uniforms: {
-      uTop: { value: col(pal.sky[0]) },
-      uMid: { value: col(pal.sky[1]) },
-      uHor: { value: col(pal.sky[3]) },
-      uGround: { value: col(pal.ocean).multiplyScalar(0.6) },
-      uSunDir: { value: new THREE.Vector3().fromArray(pal.sunPos).normalize() },
-      uSun: { value: new THREE.Color(pal.sun).multiplyScalar(pal.sunI * 3.0 * (LOOK.envScale ?? 1)) },
-    },
-    vertexShader: `
-      varying vec3 vDir;
-      void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `
-      uniform vec3 uTop, uMid, uHor, uGround, uSunDir, uSun;
-      varying vec3 vDir;
-      void main() {
-        vec3 d = normalize(vDir);
-        float h = d.y;
-        vec3 c = h > 0.0
-          ? mix(mix(uHor, uMid, smoothstep(0.0, 0.3, h)), uTop, smoothstep(0.3, 1.0, h))
-          : mix(uHor, uGround, smoothstep(0.0, 0.25, -h));
-        c += uSun * pow(max(dot(d, uSunDir), 0.0), 48.0);
-        gl_FragColor = vec4(c, 1.0);
-      }`,
-  });
-  const scene = new THREE.Scene();
-  const geo = new THREE.SphereGeometry(10, 48, 24);
-  scene.add(new THREE.Mesh(geo, mat));
-  const pm = new THREE.PMREMGenerator(renderer);
-  const tex = pm.fromScene(scene, 0.02).texture;
-  pm.dispose(); mat.dispose(); geo.dispose();
-  return tex;
-}
-
 function makeSkyTexture(){
   const c = document.createElement("canvas");
   c.width = 8; c.height = 256;
@@ -1537,11 +1459,9 @@ class BottleScene {
     // 병 안 물 덩어리를 수평면으로 자르는 데 쓴다 (_buildBottleWater).
     this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = LOOK.softShadows ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
-    // 룩(LOOK): 톤 매핑. 바다(커스텀 셰이더)와 하늘(sRGB 배경)은 톤 매핑을 안 탄다 — 그대로다.
-    if (LOOK.tone === "aces") this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    else if (LOOK.tone === "agx") this.renderer.toneMapping = THREE.AgXToneMapping;
-    else if (LOOK.tone === "neutral") this.renderer.toneMapping = THREE.CustomToneMapping;
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    // 룩(LOOK)의 톤 매핑. 바다(커스텀 셰이더)와 하늘(sRGB 배경)은 톤 매핑을 안 탄다 — 그대로다.
+    this.renderer.toneMapping = LOOK.tone === "agx" ? THREE.AgXToneMapping : THREE.NoToneMapping;
     this.renderer.toneMappingExposure = LOOK.exposure ?? 1;
     // 프레임 성능 워치독: 초반 ~2초간 평균 프레임타임이 계속 느리면(약 33fps 미만)
     // 자동으로 스펙큘러 반짝임을 끄고 픽셀비를 1로 더 낮춰 저사양 기기에서 렉을 줄임.
@@ -1561,9 +1481,6 @@ class BottleScene {
 
     this.scene = new THREE.Scene();
     this.scene.background = makeSkyTexture();
-    // 룩 film: 시간대별 환경광. 처음 것만 지금 굽고 나머지는 모델 로드 뒤에 한 장씩 미리 굽는다.
-    this._envCache = {};
-    if (LOOK.env) { this.scene.environment = this._envFor(INITIAL_TIME_KEY); this._envKey = INITIAL_TIME_KEY; }
     // 무한한 바다처럼 보이게 재중심시키는 타일의 가장자리를 안개로 확실히 가리기 위해
     // far를 타일 반경보다 충분히 짧게 잡음 (아래 _buildWater의 타일 크기 참고)
     // 안개 = 바다 타일의 끝을 가리는 유일한 장치 (매 프레임 카메라 거리에 맞춰 갱신됨).
@@ -1590,14 +1507,15 @@ class BottleScene {
     sc0.left = -5; sc0.right = 5; sc0.top = 5; sc0.bottom = -5;
     sc0.near = 0.5; sc0.far = 18;
     this.sunLight.shadow.bias = -0.0015;
-    // 부드러운 그림자 룩에서는 물체가 자기 그림자를 받으므로, 면 방향으로도 살짝 띄워
-    // 표면에 자글자글한 줄무늬(섀도 아크네)가 생기지 않게 한다.
-    if (LOOK.softShadows) this.sunLight.shadow.normalBias = 0.025;
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
     this.rimLight = new THREE.DirectionalLight(0xbfe7ef, 0.3);
     this.rimLight.position.set(-3, 1, -2);
     this.scene.add(this.rimLight);
+    // 룩 film의 반구광 — 위에서는 하늘빛, 아래에서는 바다빛. basic에서는 세기 0으로 둔다
+    // (룩을 바꿀 때 조명 개수가 바뀌면 모든 재질이 다시 컴파일되므로 늘 씬에 둔다).
+    this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x223344, 0);
+    this.scene.add(this.hemiLight);
 
     this.world = new THREE.Group();
     this.scene.add(this.world);
@@ -1731,16 +1649,31 @@ class BottleScene {
 
   _bindDrag() {
     let dragging = false, lastX = 0, lastY = 0;
+    // 두 손가락 줌: 화면에 닿아 있는 손가락들. 둘이면 돌리기 대신 거리 변화로 줌한다.
+    const pts = new Map();
+    let pinchDist = 0;
+    const spread = () => { const [p, q] = [...pts.values()]; return Math.hypot(p.x - q.x, p.y - q.y); };
     const c = this.canvas;
     c.style.touchAction = "none";
     c.style.cursor = "grab";
     c.addEventListener("pointerdown", (e) => {
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      try { c.setPointerCapture(e.pointerId); } catch (_e) {}
+      if (pts.size === 2) { dragging = false; pinchDist = spread(); return; }
       dragging = true; lastX = e.clientX; lastY = e.clientY;
       c.style.cursor = "grabbing";
       this._orbitT = 1;   // 손으로 잡으면 자동 복귀는 멈춘다
-      try { c.setPointerCapture(e.pointerId); } catch (_e) {}
     });
     c.addEventListener("pointermove", (e) => {
+      if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const d = spread();
+        if (pinchDist > 0 && d > 0) {
+          this._zoomTarget = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (this._zoomTarget ?? 1) * (pinchDist / d)));
+        }
+        pinchDist = d;
+        return;
+      }
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
@@ -1758,10 +1691,24 @@ class BottleScene {
         this.orbitPitch = Math.max(-0.2, Math.min(0.55, this.orbitPitch + dy * 0.0024));
       }
     });
-    const end = () => { dragging = false; c.style.cursor = "grab"; };
+    const end = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size === 1) {
+        // 두 손가락 중 하나를 떼면 남은 손가락으로 이어서 돌린다 — 그 자리에서 다시 잡아야 튀지 않는다
+        const [p] = [...pts.values()];
+        dragging = true; lastX = p.x; lastY = p.y;
+        return;
+      }
+      dragging = false; c.style.cursor = "grab";
+    };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
-    c.addEventListener("pointerleave", end);
+    c.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") end(e); });
+    // PC: 휠로 줌
+    c.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      this._zoomTarget = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (this._zoomTarget ?? 1) * Math.exp(e.deltaY * 0.0012)));
+    }, { passive: false });
   }
 
   /**
@@ -2192,7 +2139,7 @@ ${GERSTNER_GLSL}
         }
       });
       this._buildLighthouseLight();
-      this._applyLookToMeshes(this.islandGroup);
+      this._applyLookRoughness(this.islandGroup);
 
       if (ship) {
         // ── 배에 타는 것들 ──
@@ -2252,7 +2199,7 @@ ${GERSTNER_GLSL}
         // 물체가 자기 그림자를 받으면 표면에 자글자글한 줄무늬(섀도 아크네)가 생긴다.
         // 필요한 건 마스트·굴뚝·선체가 수면에 지는 그림자뿐이라 이걸로 충분하다.
         ship.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = false; } });
-        this._applyLookToMeshes(ship);
+        this._applyLookRoughness(ship);
         this.boat.add(ship);
         this.boat.updateMatrixWorld(true);
 
@@ -2267,13 +2214,6 @@ ${GERSTNER_GLSL}
       }
 
       this._measureIslandRest(ship, beachhouse);
-      // 룩 film: 나머지 시간대 환경광을 한 프레임에 한 장씩 미리 구워 둔다 — 시간대를 바꾸는
-      // 순간에 굽느라 화면이 멈칫하지 않게.
-      if (LOOK.env) {
-        const keys = Object.keys(TIME_OF_DAY).filter((k) => !this._envCache[k]);
-        const next = () => { const k = keys.shift(); if (!k) return; this._envFor(k); requestAnimationFrame(next); };
-        requestAnimationFrame(next);
-      }
     } catch (err) {
       console.error("모델(GLB) 로드 실패:", err);
     }
@@ -2703,27 +2643,43 @@ ${GERSTNER_GLSL}
    * 끌어와야 한다. ShadowMaterial 평면 하나를 대신 깔면 물 셰이더를 건드리지 않고도
    * 배와 섬의 그림자가 수면에 떨어진다. 비용도 거의 없다.
    */
-  /** 룩 film의 시간대별 환경광 (한 번 구우면 캐시). */
-  _envFor(key) {
-    if (!this._envCache[key]) this._envCache[key] = makeSkyEnv(this.renderer, TIME_OF_DAY[key]);
-    return this._envCache[key];
+  /**
+   * 룩의 거칠기 상한을 재질에 건다. 원래 값은 userData에 남겨 두어 basic으로 돌아가면 되돌린다.
+   */
+  _applyLookRoughness(root) {
+    const done = new Set();
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material || !o.material.isMeshStandardMaterial || done.has(o.material)) return;
+      const m = o.material;
+      done.add(m);
+      if (m.userData.baseRoughness === undefined) m.userData.baseRoughness = m.roughness;
+      m.roughness = LOOK.roughness !== undefined ? Math.min(m.userData.baseRoughness, LOOK.roughness) : m.userData.baseRoughness;
+    });
   }
 
   /**
-   * 룩에 따라 모델 재질·그림자를 손본다. basic이면 아무것도 안 한다.
-   * - 부드러운 그림자: 드리우고 받기 (배 자신의 그림자도 받는다 — normalBias로 줄무늬 방지)
-   * - 거칠기: LOOK.roughness보다 거친 재질은 그만큼 매끈하게 — 환경광 반사가 은은하게 돈다
+   * 룩을 바꾼다 (LOOKS의 이름). 톤 매핑이 바뀌면 재질을 다시 컴파일해야 해서 한 번 멈칫할 수 있다.
+   * 테스트 메뉴(dev/look-lab.js)가 부른다.
    */
-  _applyLookToMeshes(root) {
-    if (LOOK.name === "basic") return;
-    const done = new Set();
-    root.traverse((o) => {
-      if (!o.isMesh || !o.material || !o.material.isMeshStandardMaterial) return;
-      if (LOOK.softShadows) { o.castShadow = true; o.receiveShadow = true; }
-      if (done.has(o.material)) return;
-      done.add(o.material);
-      if (LOOK.roughness !== undefined && o.material.roughness > LOOK.roughness) o.material.roughness = LOOK.roughness;
-    });
+  setLook(name) {
+    if (!LOOKS[name]) return;
+    for (const k of Object.keys(LOOK)) delete LOOK[k];
+    Object.assign(LOOK, { name }, LOOKS[name]);
+    refreshLookScales();
+    const tone = LOOK.tone === "agx" ? THREE.AgXToneMapping : THREE.NoToneMapping;
+    const recompile = this.renderer.toneMapping !== tone;
+    this.renderer.toneMapping = tone;
+    this.renderer.toneMappingExposure = LOOK.exposure ?? 1;
+    if (recompile) {
+      this.scene.traverse((o) => {
+        if (!o.material) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; });
+      });
+    }
+    this._applyLookRoughness(this.boat);
+    this._applyLookRoughness(this.islandGroup);
+    // 조명 세기는 시간대 적용 식에 배수로 들어가 있으므로 지금 시간대로 다시 적용한다
+    this._applyTime(this._timeT >= 1 ? 1 : easeInOutQuint(this._timeT));
   }
 
   /**
@@ -3540,7 +3496,7 @@ ${GERSTNER_GLSL}
       const op = a.shadow + (b.shadow - a.shadow) * k;
       this.shadowMat.opacity = op;
       // 그림자가 없는 시간대에는 그림자 맵 렌더 자체를 건너뛴다.
-      this.sunLight.castShadow = LOOK.softShadows || op > 0.001;
+      this.sunLight.castShadow = op > 0.001;
       this.shadowCatcher.visible = op > 0.001;
     }
     wu.uExposure.value = (a.exposure + (b.exposure - a.exposure) * k) * SCENE_BRIGHTNESS;
@@ -3548,6 +3504,16 @@ ${GERSTNER_GLSL}
     this.sunLight.intensity = (a.sunI + (b.sunI - a.sunI) * k) * SCENE_BRIGHTNESS * SUN_SCALE;
     this.rimLight.intensity = (a.rimI + (b.rimI - a.rimI) * k) * SCENE_BRIGHTNESS;
     this.ambLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS * AMB_SCALE;
+    // 반구광: 하늘색(둘째 띠, 채도 절반)과 바다색(절반 밝기). 세기는 채움광 팔레트 값을 따른다.
+    const hemiSky = (p) => {
+      const c = new THREE.Color(p.sky[1] instanceof THREE.Color ? p.sky[1].getHex() : p.sky[1]);
+      const g = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
+      return c.lerp(new THREE.Color(g, g, g), 0.5);
+    };
+    const hemiGround = (p) => new THREE.Color(typeof p.ocean === "number" ? p.ocean : p.ocean).multiplyScalar(0.5);
+    this.hemiLight.color.copy(hemiSky(a)).lerp(hemiSky(b), k);
+    this.hemiLight.groundColor.copy(hemiGround(a)).lerp(hemiGround(b), k);
+    this.hemiLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS * HEMI_SCALE;
   }
 
   /**
@@ -3568,6 +3534,8 @@ ${GERSTNER_GLSL}
 
   show(step, appState) {
     const wasVisible = this.visible;
+    // 단계가 바뀌면 줌은 기본 거리로 돌아온다(부드럽게) — 당겨 둔 채로 다음 구도가 잘리지 않게
+    if (step !== this._zoomStep) { this._zoomStep = step; this._zoomTarget = 1; }
     this.visible = ACTIVE_STEPS.includes(step);
     this.stage.classList.toggle("visible", this.visible);
     if (!this.visible) return;
@@ -3645,7 +3613,6 @@ ${GERSTNER_GLSL}
     this._timeT = 1;
     this._applyTime(1);
     this._night = this._nightFrom = this._nightTo = LIGHTHOUSE.on[INITIAL_TIME_KEY] ?? 0;
-    if (LOOK.env) { this.scene.environment = this._envFor(INITIAL_TIME_KEY); this._envKey = INITIAL_TIME_KEY; }
 
     if (introRunning) {
       // 인트로가 시점을 올렸다 내리는 것으로 등장을 대신하므로 줌인은 걸지 않는다.
@@ -3820,9 +3787,21 @@ ${GERSTNER_GLSL}
   /** 카메라를 지금 상태(단계 프리셋·둘러보기 각도·병·인트로 높이)에 맞춰 놓는다. */
   _placeCamera() {
     const cam = this._camCur;
-    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen);
+    // 두 손가락 줌: 거리에 배수를 곱하고, 가까워질수록(zIn → 1) 바라보는 지점을 선체 가운데로 옮긴다.
+    const zoom = this._zoom ?? 1;
+    const zIn = Math.max(0, Math.min(1, (1 - zoom) / (1 - ZOOM_MIN)));
+    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen) * zoom;
     // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
-    const tX = (this._camFollowX ?? this.boat.position.x) + cam.tx, tY = cam.ty, tZ = cam.tz;
+    let tX = (this._camFollowX ?? this.boat.position.x) + cam.tx, tY = cam.ty, tZ = cam.tz;
+    if (zIn > 0) {
+      // 선체 가운데 (배 로컬 → 월드: 헤딩만큼 돌린다). _hullMid는 모델 로드 뒤에 생긴다.
+      const mid = this._hullMid || { x: 0, z: 0 };
+      const a = (this.headingY ?? Math.PI) + SHIP_FORWARD_OFFSET;
+      const fx = this.boat.position.x + (mid.x * Math.cos(a) + mid.z * Math.sin(a)) * SHIP_SCALE;
+      const fz = (-mid.x * Math.sin(a) + mid.z * Math.cos(a)) * SHIP_SCALE;
+      const k = zIn * zIn * (3 - 2 * zIn);   // smoothstep — 조금 당겼을 때는 구도가 거의 그대로
+      tX += (fx - tX) * k; tY += (BOAT_FOCUS_Y - tY) * k; tZ += (fz - tZ) * k;
+    }
     // 카메라가 뒤로 빠진 만큼 안개도 같이 밀어줘야 배가 안개에 묻히지 않는다.
     const fogRange = fogRangeFor(radius);
     this.scene.fog.near = fogRange.near;
@@ -4055,16 +4034,16 @@ ${GERSTNER_GLSL}
     // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
     // 눈에 보일 만큼 바뀐 프레임에만 칠한다.
     if (Math.abs(this.bottleT - this._skyBlend) > 0.004) this._refreshSky();
+    // 두 손가락 줌 — 손가락이 정한 목표로 부드럽게 따라간다
+    if (this._zoomTarget === undefined) this._zoomTarget = 1;
+    if (this._zoom === undefined) this._zoom = 1;
+    this._zoom += (this._zoomTarget - this._zoom) * Math.min(1, dt * 8);
+
     // 시간대 전환
     if (this._timeT < 1) {
       this._timeT = Math.min(1, this._timeT + dt / TIME_MOVE_SEC);
       this._applyTime(easeInOutQuint(this._timeT));
       this._night = this._nightFrom + (this._nightTo - this._nightFrom) * easeInOutQuint(this._timeT);
-      // 환경광은 섞을 수 없어서 전환 곡선이 가장 가파른 한가운데서 갈아 끼운다 — 거기선 티가 안 난다.
-      if (LOOK.env && this._timeT >= 0.5 && this._envKey !== this._timeKey) {
-        this.scene.environment = this._envFor(this._timeKey);
-        this._envKey = this._timeKey;
-      }
     }
 
     // 단계 전환: 각도는 그대로 두고 목적지(target)와 거리(radius)만 ease-in-out으로 이동한다.
@@ -4132,13 +4111,19 @@ ${GERSTNER_GLSL}
         `yaw: ${yaw.toFixed(3)}\npitch: ${pitch.toFixed(3)}\nradius: ${radius.toFixed(2)}\n(드래그로 각도 잡고 이 값을 baseYaw/basePitch/radius에 붙여넣기)`;
     }
 
-    if (this.visible) this.renderer.render(this.scene, this.camera);
+    if (this.visible) {
+      this.renderer.render(this.scene, this.camera);
+      // 화면을 그린 뒤 덧그리는 자리 — 테스트 메뉴의 블룸(dev/look-lab.js)이 쓴다
+      if (this.postRender) this.postRender();
+    }
   }
 }
 
 try {
   window.BottleScene = new BottleScene();
   selfCheck(window.BottleScene);
+  // 그림 톤 테스트 메뉴(임시, 오른쪽 위 "룩") — 지울 때는 이 줄과 dev/look-lab.js 만 지우면 된다
+  import("./dev/look-lab.js").then((m) => m.installLookLab(window.BottleScene)).catch((e) => console.warn("[look-lab]", e));
 } catch (err) {
   console.error("BottleScene 초기화 실패:", err);
 }
