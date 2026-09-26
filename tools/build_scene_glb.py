@@ -44,6 +44,21 @@ REDUCE_MAX_ERR = 6    # 한 픽셀이라도 이보다 크게 틀리면 안 줄�
 REDUCE_MEAN_ERR = 1.0 # 평균 오차 한도
 REDUCE_FACTORS = (1, 2, 3, 4, 6, 8, 12, 16)
 
+# AO(구석 그늘) 굽기 — 꼭짓점마다 법선 쪽 반구로 광선을 쏴서 AO_RADIUS 안에서 막히는 정도를 잰다.
+# 결과는 _AO(0~1, 1 = 안 막힘) 정점 속성으로 넣는다. 밑줄로 시작하는 이름은 glTF의 사용자 속성이라
+# 뷰어가 자동으로 쓰지 않는다 — 화면(index.html)이 셰이더에서 골라 쓴다. 지도는 안 쓴다.
+# 광선 길이는 물체 크기에 비례한다 — 컵(0.07)과 배(2.9)에 같은 길이를 쓰면 작은 소품은 갑판·이웃에
+# 온통 막혀 새까매지고(실측 평균 0.5), 층이 촘촘한 비치하우스도 통째로 어두워졌다.
+AO_RADIUS_FACTOR = 0.3   # 물체 바운딩박스 대각선 × 이 값
+AO_RADIUS_MIN = 0.04     # GLB 월드 단위. 배 길이가 약 2.9
+AO_RADIUS_MAX = 0.20
+AO_RAYS = 40
+AO_STRENGTH = 1.0
+# 누가 누구를 가리나 — 키워드로 켜고 끄는 소품이 배를 가리게 하면, 소품을 꺼도 갑판에 그늘이 남는다.
+# 그래서 배는 배끼리만, 소품은 배+자기 자신, 섬은 섬끼리만 가린다. (GLB 블렌더 노드 이름)
+AO_SHIP_ROOT = "Ship"
+AO_ISLAND_ROOTS = {"Island", "Back Mountain", "Lighthouse"}
+
 CT = {5120: np.int8, 5121: np.uint8, 5122: np.int16, 5123: np.uint16, 5125: np.uint32, 5126: np.float32}
 NC = {'SCALAR': 1, 'VEC2': 2, 'VEC3': 3, 'VEC4': 4, 'MAT4': 16}
 
@@ -389,6 +404,123 @@ def build(src, max_width=4096):
                 tex_cache=tex_cache, kept_meshes=kept_meshes, island_plan=island_plan, placed=placed, src=src)
 
 
+# ── AO ─────────────────────────────────────────────────────────────────────
+def trs_matrix(n):
+    if 'matrix' in n: return np.array(n['matrix'], np.float64).reshape(4, 4).T
+    t = n.get('translation', [0, 0, 0]); q = n.get('rotation', [0, 0, 0, 1]); sc = n.get('scale', [1, 1, 1])
+    x, y, z, w = q
+    R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                  [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                  [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+    M = np.eye(4); M[:3, :3] = R * np.array(sc)[None, :]; M[:3, 3] = t
+    return M
+
+def hemisphere_dirs(n):
+    """코사인 가중 반구 방향(접선 공간, z가 법선). 고정 패턴이라 굽기 결과가 매번 같다."""
+    i = np.arange(n) + 0.5
+    r = np.sqrt(i / n); phi = i * math.pi * (3 - math.sqrt(5))
+    return np.stack([r * np.cos(phi), r * np.sin(phi), np.sqrt(1 - r * r)], 1)
+
+def build_grid(tris, cell):
+    """삼각형을 cell 크기 격자에 넣는다 → {(ix,iy,iz): 삼각형 번호 배열}"""
+    lo = np.floor(tris.min(1) / cell).astype(np.int64); hi = np.floor(tris.max(1) / cell).astype(np.int64)
+    grid = defaultdict(list)
+    for t in range(len(tris)):
+        for ix in range(lo[t, 0], hi[t, 0] + 1):
+            for iy in range(lo[t, 1], hi[t, 1] + 1):
+                for iz in range(lo[t, 2], hi[t, 2] + 1):
+                    grid[(ix, iy, iz)].append(t)
+    return {k: np.array(v, np.int64) for k, v in grid.items()}
+
+def bake_ao(recv_P, recv_N, tris, grid, cell, radius, n_rays=AO_RAYS):
+    """recv_P/N: (V,3) 받는 꼭짓점과 법선(월드). tris: (T,3,3) 가리는 삼각형(월드), grid: build_grid(tris, cell).
+    radius ≤ cell 이어야 한다(이웃 27칸만 본다). → (V,) 0~1, 1 = 안 막힘."""
+    V = len(recv_P)
+    ao = np.ones(V, np.float32)
+    if len(tris) == 0 or V == 0: return ao
+    dirs_t = hemisphere_dirs(n_rays)
+    v0 = tris[:, 0]; e1 = tris[:, 1] - v0; e2 = tris[:, 2] - v0
+    cache = {}
+    for i in range(V):
+        n = recv_N[i]; ln = np.linalg.norm(n)
+        if ln < 1e-8: continue
+        n = n / ln
+        a = np.array([1.0, 0, 0]) if abs(n[0]) < 0.9 else np.array([0, 1.0, 0])
+        tng = np.cross(a, n); tng /= np.linalg.norm(tng); btg = np.cross(n, tng)
+        D = dirs_t[:, :1] * tng + dirs_t[:, 1:2] * btg + dirs_t[:, 2:3] * n          # (R,3)
+        o = recv_P[i] + n * 1e-3
+        c = tuple(np.floor(o / cell).astype(np.int64))
+        cand = cache.get(c)
+        if cand is None:
+            parts = [grid[k] for k in ((c[0] + dx, c[1] + dy, c[2] + dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)) if k in grid]
+            cand = np.unique(np.concatenate(parts)) if parts else np.zeros(0, np.int64)
+            cache[c] = cand
+        if len(cand) == 0: continue
+        E1 = e1[cand]; E2 = e2[cand]; T0 = o - v0[cand]                              # (K,3)
+        pvec = np.cross(D[:, None, :], E2[None, :, :])                                 # (R,K,3)
+        det = np.einsum('rkc,kc->rk', pvec, E1)
+        ok = np.abs(det) > 1e-12
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        u = np.einsum('rkc,kc->rk', pvec, T0) * inv
+        qvec = np.cross(T0, E1)                                                        # (K,3)
+        v = np.einsum('rc,kc->rk', D, qvec) * inv
+        t = np.einsum('kc,kc->k', E2, qvec)[None, :] * inv
+        hit = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-4) & (t < radius)
+        tmin = np.where(hit, t, np.inf).min(1)
+        w = np.where(np.isfinite(tmin), 1.0 - tmin / radius, 0.0)
+        ao[i] = max(0.0, 1.0 - AO_STRENGTH * float(w.mean()))
+    return ao
+
+def ao_for_scene(nodes, roots, mesh_data):
+    """mesh_data: {mesh index: [(P, N, I), ...]} (메쉬 로컬). → {mesh index: [ao per prim]}"""
+    parent = {}
+    for i, n in enumerate(nodes):
+        for c in n.get('children', []): parent[c] = i
+    W = {}
+    def world(i):
+        if i not in W: W[i] = (world(parent[i]) if i in parent else np.eye(4)) @ trs_matrix(nodes[i])
+        return W[i]
+    def group_of(i):
+        chain = []
+        q = i
+        while q is not None: chain.append(nodes[q].get('name')); q = parent.get(q)
+        if AO_SHIP_ROOT in chain: return 'ship', None
+        if any(nm in AO_ISLAND_ROOTS for nm in chain): return 'island', None
+        return 'prop', chain[-1]
+    items = []   # (node, mesh, group, prop-name, [(Pw, Nw, I)])
+    for i, n in enumerate(nodes):
+        if 'mesh' not in n: continue
+        M = world(i); Nm = np.linalg.inv(M[:3, :3]).T
+        prims = [((P @ M[:3, :3].T) + M[:3, 3], N @ Nm.T if N is not None else None, I) for P, N, I in mesh_data[n['mesh']]]
+        g, pn = group_of(i)
+        items.append((i, n['mesh'], g, pn, prims))
+    def tris_of(sel):
+        ts = [Pw[I.reshape(-1, 3)] for it in items if sel(it) for Pw, _, I in it[4]]
+        return np.concatenate(ts) if ts else np.zeros((0, 3, 3))
+    cell = AO_RADIUS_MAX
+    ship_tris = tris_of(lambda it: it[2] == 'ship')
+    island_tris = tris_of(lambda it: it[2] == 'island')
+    ship_grid, island_grid = build_grid(ship_tris, cell), build_grid(island_tris, cell)
+    # 소품은 같은 이름끼리(여러 노드로 된 소품도 있을 수 있다) 한 물체로 본다
+    extent = defaultdict(lambda: [np.full(3, np.inf), np.full(3, -np.inf)])
+    for it in items:
+        key = it[3] if it[2] == 'prop' else it[1]
+        for Pw, _, _ in it[4]:
+            e = extent[key]; e[0] = np.minimum(e[0], Pw.min(0)); e[1] = np.maximum(e[1], Pw.max(0))
+    out = {}
+    for it in items:
+        if it[2] == 'ship': occ, grid = ship_tris, ship_grid
+        elif it[2] == 'island': occ, grid = island_tris, island_grid
+        else:
+            occ = np.concatenate([ship_tris, tris_of(lambda x, pn=it[3]: x[2] == 'prop' and x[3] == pn)])
+            grid = build_grid(occ, cell)
+        e = extent[it[3] if it[2] == 'prop' else it[1]]
+        radius = float(np.clip(AO_RADIUS_FACTOR * np.linalg.norm(e[1] - e[0]), AO_RADIUS_MIN, AO_RADIUS_MAX))
+        out[it[1]] = [bake_ao(Pw, Nw if Nw is not None else np.tile([0, 1.0, 0], (len(Pw), 1)), occ, grid, cell, radius)
+                      for Pw, Nw, I in it[4]]
+    return out
+
+
 # ── 쓰기 ────────────────────────────────────────────────────────────────────
 class Bin:
     """BIN 청크를 쌓으면서 bufferView·accessor를 만든다."""
@@ -423,7 +555,7 @@ def encode_webp(img, quality, lossless):
     return out.getvalue()
 
 
-def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
+def write_glb(r, dst, quality=92, lossless=False, roughness=0.85, bake=True):
     g, b = r['g'], r['b']
     B = Bin()
 
@@ -470,7 +602,7 @@ def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
     # 메쉬 — 같은 재질로 가는 프리미티브는 하나로 합친다 (three.js에선 프리미티브 = 드로우콜)
     by_mesh = defaultdict(list)
     for rec in r['prims']: by_mesh[rec['mesh']].append(rec)
-    out_meshes = []; mesh_remap = {}
+    built = []   # (mi, [(mk, P, N, U, I)])
     for mi in r['kept_meshes']:
         groups = defaultdict(list)
         for rec in by_mesh[mi]:
@@ -490,21 +622,39 @@ def write_glb(r, dst, quality=92, lossless=False, roughness=0.85):
                 pos.append(P); nor.append(N); uvs.append(U); idx.append(I + base); base += len(P)
                 has_uv = has_uv and U is not None
             P = np.concatenate(pos); I = np.concatenate(idx)
-            attrs = dict(POSITION=B.accessor(P, 34962, minmax=True))
-            if all(n is not None for n in nor): attrs['NORMAL'] = B.accessor(np.concatenate(nor), 34962)
-            if has_uv: attrs['TEXCOORD_0'] = B.accessor(np.concatenate(uvs), 34962)
-            it = np.uint16 if len(P) < 65536 else np.uint32
-            prim = dict(attributes=attrs, indices=B.accessor(I.astype(it), 34963))
-            if mk is not None: prim['material'] = mk
-            prims.append(prim)
-        mesh_remap[mi] = len(out_meshes)
-        out_meshes.append(dict(name=g['meshes'][mi].get('name', f'mesh{mi}'), primitives=prims))
+            N = np.concatenate(nor) if all(n is not None for n in nor) else None
+            U = np.concatenate(uvs) if has_uv else None
+            prims.append((mk, P, N, U, I))
+        built.append((mi, prims))
 
     nodes = []
+    mesh_remap = {mi: k for k, (mi, _) in enumerate(built)}
     for n in r['nodes']:
         n = dict(n)
         if 'mesh' in n: n['mesh'] = mesh_remap[n['mesh']]
         nodes.append(n)
+
+    ao = {}
+    if bake:
+        import time
+        t0 = time.time()
+        ao = ao_for_scene(nodes, r['roots'], {k: [(P.astype(np.float64), None if N is None else N.astype(np.float64), I) for _, P, N, _, I in prims]
+                                              for k, (_, prims) in enumerate(built)})
+        notes.append(('(전체)', f"AO 굽기 {sum(len(p[1]) for _, ps in built for p in ps)}개 꼭짓점, {time.time() - t0:.1f}초"))
+
+    out_meshes = []
+    for k, (mi, prims) in enumerate(built):
+        out_prims = []
+        for j, (mk, P, N, U, I) in enumerate(prims):
+            attrs = dict(POSITION=B.accessor(P, 34962, minmax=True))
+            if N is not None: attrs['NORMAL'] = B.accessor(N, 34962)
+            if U is not None: attrs['TEXCOORD_0'] = B.accessor(U, 34962)
+            if k in ao: attrs['_AO'] = B.accessor(ao[k][j].astype(np.float32), 34962)
+            it = np.uint16 if len(P) < 65536 else np.uint32
+            prim = dict(attributes=attrs, indices=B.accessor(I.astype(it), 34963))
+            if mk is not None: prim['material'] = mk
+            out_prims.append(prim)
+        out_meshes.append(dict(name=g['meshes'][mi].get('name', f'mesh{mi}'), primitives=out_prims))
 
     webp = encode_webp(r['atlas'], quality, lossless)
     img_view = B.view(webp)
@@ -581,9 +731,10 @@ def main():
     ap.add_argument('--quality', type=int, default=92, help='WebP 손실 압축 품질 (기본 92)')
     ap.add_argument('--lossless', action='store_true', help='WebP 무손실로 넣기')
     ap.add_argument('--max-width', type=int, default=4096)
+    ap.add_argument('--no-ao', action='store_true', help='AO 굽기를 건너뛴다 (빠르게 확인할 때)')
     a = ap.parse_args()
     r = build(a.src, max_width=a.max_width)
-    st = write_glb(r, a.dst, quality=a.quality, lossless=a.lossless)
+    st = write_glb(r, a.dst, quality=a.quality, lossless=a.lossless, bake=not a.no_ao)
     if a.report: print(report(r, st, a.report))
     else: print(f"{a.dst}: {st['bytes'] / 1024:.0f} KB, 아틀라스 {r['AW']}x{r['AH']}")
 

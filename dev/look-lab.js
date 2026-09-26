@@ -12,6 +12,12 @@
  *             만들어 위에 더한다(기존 렌더는 그대로). 켜면 장면을 두 번 그리므로 가장 무겁다.
  *   색보정    캔버스에 CSS 필터(대비·채도·따뜻함). GPU 합성 단계라 거의 공짜.
  *   그레인    필름 입자. 노이즈 타일을 화면 위에 overlay로 얹고 흔든다. 거의 공짜.
+ *   AO        구운 구석 그늘(GLB의 _AO). 셰이더 곱하기 한 번.
+ *   나무 선체 선체 외판·갑판 판자·흘수선 띠 + 절차적 요철(노말맵 대신).
+ *   물빛      수면 근처 선체·바위·기둥에 일렁이는 코스틱.
+ *   광택      하늘이 비치는 광택 + 테두리 빛(프레넬). 환경맵 없이 계산만.
+ *   틸트시프트 화면 위아래를 흐리게 — 병 속 미니어처처럼. CSS backdrop-filter.
+ *   비네트    가장자리를 살짝 어둡게. CSS.
  *   FPS       지금 초당 프레임 — 무엇을 켰을 때 버벅이는지 보기용.
  * 고른 값은 이 기기 브라우저에만 기억한다(localStorage).
  * ========================================================================== */
@@ -21,6 +27,8 @@ import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 const STORE_KEY = "lookLab.v1";
 const GRADE_FILTER = "contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03)";
 const BLOOM = { scale: 0.25, threshold: 0.78, knee: 0.12, strength: 0.9 };
+// 셰이더 효과 세기 (BottleScene.fx 유니폼에 넣는 값)
+const FX_AMT = { ao: 0.85, wood: 1, caustic: 1, sheen: 1 };
 
 // ── 블룸 ────────────────────────────────────────────────────────────────────
 const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -155,6 +163,17 @@ const CSS = `
     mix-blend-mode:overlay; opacity:.07; background-size:160px 160px;
     animation:lookLabGrain .6s steps(6) infinite; }
   #lookLabGrain.show{ display:block; }
+  .lookLabTilt{ position:fixed; left:0; right:0; height:34%; z-index:1; pointer-events:none; display:none;
+    -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
+  .lookLabTilt.top{ top:0; -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
+  .lookLabTilt.bottom{ bottom:0; -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
+  .lookLabTilt.show{ display:block; }
+  #lookLabVignette{ position:fixed; inset:0; z-index:1; pointer-events:none; display:none;
+    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
+  #lookLabVignette.show{ display:block; }
+  #lookLabPanel{ max-height:calc(100vh - 90px); overflow:auto; }
   @keyframes lookLabGrain{
     0%{transform:translate(0,0)} 17%{transform:translate(-7%,4%)} 33%{transform:translate(5%,-6%)}
     50%{transform:translate(-3%,7%)} 67%{transform:translate(8%,2%)} 83%{transform:translate(-6%,-4%)} 100%{transform:translate(0,0)} }
@@ -166,18 +185,37 @@ export function installLookLab(bottleScene) {
   style.textContent = CSS;
   document.head.appendChild(style);
 
-  let state = { film: false, bloom: false, grade: false, grain: false };
+  let state = { film: false, bloom: false, grade: false, grain: false,
+    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false };
   try { state = { ...state, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch (e) { /* 기억 못 해도 된다 */ }
   const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ } };
 
   const grain = makeGrainLayer();
   document.body.appendChild(grain);
+  const tilts = ["top", "bottom"].map((side) => {
+    const el = document.createElement("div");
+    el.className = `lookLabTilt ${side}`;
+    document.body.appendChild(el);
+    return el;
+  });
+  const vignette = document.createElement("div");
+  vignette.id = "lookLabVignette";
+  document.body.appendChild(vignette);
   let bloom = null;
 
   const apply = () => {
     bottleScene.setLook(state.film ? "film" : "basic");
     bottleScene.canvas.style.filter = state.grade ? GRADE_FILTER : "";
     grain.classList.toggle("show", state.grain);
+    tilts.forEach((el) => el.classList.toggle("show", state.tilt));
+    vignette.classList.toggle("show", state.vignette);
+    const fx = bottleScene.fx;
+    if (fx) {
+      fx.uAOAmt.value = state.ao ? FX_AMT.ao : 0;
+      fx.uWoodAmt.value = state.wood ? FX_AMT.wood : 0;
+      fx.uCausticAmt.value = state.caustic ? FX_AMT.caustic : 0;
+      fx.uSheenAmt.value = state.sheen ? FX_AMT.sheen : 0;
+    }
     if (state.bloom) {
       bloom = bloom || new OverlayBloom(bottleScene.renderer);
       bottleScene.postRender = () => bloom.render(bottleScene.scene, bottleScene.camera);
@@ -194,9 +232,15 @@ export function installLookLab(bottleScene) {
   panel.id = "lookLabPanel";
   const items = [
     ["film", "필름 룩", "AgX 톤 · 반구광 · 명암"],
+    ["ao", "AO", "구운 구석 그늘"],
+    ["wood", "나무 선체", "외판·갑판 판자 · 흘수선 띠 · 요철"],
+    ["caustic", "물빛", "수면 근처 일렁이는 빛"],
+    ["sheen", "광택·테두리 빛", "하늘 반사 · 프레넬"],
     ["bloom", "블룸", "가장 무거움 — 장면을 두 번 그림"],
     ["grade", "색보정", "대비·채도·따뜻함"],
     ["grain", "그레인", "필름 입자"],
+    ["tilt", "틸트시프트", "위아래 흐림 · 미니어처"],
+    ["vignette", "비네트", "가장자리 어둡게"],
   ];
   for (const [key, label, hint] of items) {
     const row = document.createElement("label");

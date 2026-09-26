@@ -1416,6 +1416,20 @@ function easeOutBounce(x){
 // 하늘 그라디언트 텍스처 (레퍼런스 사진처럼 위는 파랑, 아래는 뿌연 수평선)
 // 하늘 그라디언트. 시간대가 바뀌면 같은 캔버스에 다시 칠하고 needsUpdate만 올린다
 // (8x256짜리라 매 프레임 다시 그려도 비용이 없다시피 하다).
+// 재질 셰이더 패치를 여러 개 겹쳐 건다. onBeforeCompile은 하나뿐이라 그냥 대입하면 앞의 패치가
+// 지워진다(병에 눌러 담기 + 표면 효과처럼 한 재질에 둘이 걸린다). 패치는 셰이더 조각 앞뒤에
+// 코드를 덧붙이는 식으로 써야 서로 겹쳐도 된다(replace(X, 코드 + X) 또는 replace(X, X + 코드)).
+const MATERIAL_PATCHES = new WeakMap();
+function patchMaterial(mat, key, fn) {
+  let list = MATERIAL_PATCHES.get(mat);
+  if (!list) { list = new Map(); MATERIAL_PATCHES.set(mat, list); }
+  if (list.has(key)) return;
+  list.set(key, fn);
+  mat.onBeforeCompile = (shader, renderer) => { for (const f of list.values()) f(shader, renderer); };
+  mat.customProgramCacheKey = () => [...list.keys()].join("|");
+  mat.needsUpdate = true;
+}
+
 function makeSkyTexture(){
   const c = document.createElement("canvas");
   c.width = 8; c.height = 256;
@@ -1516,6 +1530,19 @@ class BottleScene {
     // (룩을 바꿀 때 조명 개수가 바뀌면 모든 재질이 다시 컴파일되므로 늘 씬에 둔다).
     this.hemiLight = new THREE.HemisphereLight(0xffffff, 0x223344, 0);
     this.scene.add(this.hemiLight);
+    // 표면 효과(_installSurfaceFx) 유니폼. 세기(…Amt)가 0이면 꺼진 것과 같다 — 켜고 끌 때 재질을
+    // 다시 컴파일하지 않도록 셰이더는 늘 붙여 두고 값만 바꾼다. 테스트 메뉴(dev/look-lab.js)가 바꾼다.
+    this.fx = {
+      uFxTime: { value: 0 },
+      uAOAmt: { value: 0 },        // 구운 AO(구석 그늘)
+      uWoodAmt: { value: 0 },      // 선체 나무 외판·갑판·흘수선 띠 + 절차적 요철
+      uCausticAmt: { value: 0 },   // 수면 근처에 일렁이는 물빛
+      uSheenAmt: { value: 0 },     // 하늘이 비치는 광택 + 테두리 빛
+      uSkyTop: { value: new THREE.Color() },
+      uSkyHor: { value: new THREE.Color() },
+      uRimColor: { value: new THREE.Color() },
+      uSunCol: { value: new THREE.Color() },
+    };
 
     this.world = new THREE.Group();
     this.scene.add(this.world);
@@ -2213,6 +2240,8 @@ ${GERSTNER_GLSL}
         if (this._pendingKeywords) this.applyKeywords(this._pendingKeywords);
       }
 
+      if (ship) this._installSurfaceFx(ship);
+      this._installSurfaceFx(this.islandGroup);
       this._measureIslandRest(ship, beachhouse);
     } catch (err) {
       console.error("모델(GLB) 로드 실패:", err);
@@ -2683,6 +2712,174 @@ ${GERSTNER_GLSL}
   }
 
   /**
+   * 표면 효과를 모델 재질에 붙인다 (배·소품·섬). 모두 this.fx 유니폼 세기로 켜고 끈다.
+   * - AO: GLB에 구운 _AO(tools/build_scene_glb.py)를 채움광에 곱하고 해에도 조금 곱한다 —
+   *   갑판 모서리·집 층 사이·소품이 닿는 자리가 가라앉는다.
+   * - 물빛: 수면(월드 y≈0) 가까운 면에 일렁이는 코스틱 무늬를 해 색으로 더한다.
+   * - 광택·테두리 빛: 반사 방향으로 하늘 그라데이션을 읽어 매끈한 면에 비치게 하고(프레넬),
+   *   가장자리를 하늘빛으로 살짝 밝힌다. 텍스처 없이 계산만 — 환경맵(IBL)보다 훨씬 가볍다.
+   * 선체는 나무 외판(_installWood)도 붙는다.
+   */
+  _installSurfaceFx(root) {
+    const done = new Set();
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material || !o.material.isMeshStandardMaterial || o.name === "Clover") return;
+      const g = o.geometry;
+      // AO가 없는 지오메트리는 1(안 막힘)로 채운다 — 없으면 WebGL 기본값 0이 들어가 새까매진다
+      if (!g.attributes._ao) g.setAttribute("_ao", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(1), 1));
+      if (GLB_NODES.hull.test(o.name) && o.parent === this.shipNode) this._installWood(o);
+      if (done.has(o.material)) return;
+      done.add(o.material);
+      patchMaterial(o.material, "surface-fx", (shader) => this._surfaceFxShader(shader));
+    });
+  }
+
+  _surfaceFxShader(shader) {
+    for (const k of Object.keys(this.fx)) shader.uniforms[k] = this.fx[k];
+    shader.vertexShader = shader.vertexShader
+      .replace("void main() {", `
+        attribute float _ao;
+        varying float vFxAO;
+        varying vec3 vFxWorld;
+        void main() {`)
+      .replace("#include <project_vertex>", `
+        vFxAO = _ao;
+        vFxWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        #include <project_vertex>`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", `
+        uniform float uFxTime, uAOAmt, uCausticAmt, uSheenAmt;
+        uniform vec3 uSkyTop, uSkyHor, uRimColor, uSunCol;
+        varying float vFxAO;
+        varying vec3 vFxWorld;
+        // 물결 코스틱 — 좌표를 몇 번 비틀어 밝은 실선이 얽히게 한다 (joltz0r의 water turbulence).
+        // 원본처럼 좌표를 -250 근처로 옮겨야 값이 0~1에 머문다(원점 근처에선 폭주해 화면이 하얘졌다).
+        float fxCaustic(vec2 uv, float t) {
+          vec2 p = uv * 6.2831853 - 250.0;
+          vec2 i = p; float c = 1.0; const float inten = 0.005;
+          for (int n = 0; n < 4; n++) {
+            float tt = t * (1.0 - (3.5 / float(n + 1)));
+            i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+            c += 1.0 / length(vec2(p.x / (sin(i.x + tt) / inten), p.y / (cos(i.y + tt) / inten)));
+          }
+          c /= 4.0;
+          c = 1.17 - pow(c, 1.4);
+          return clamp(pow(abs(c), 8.0), 0.0, 1.0);
+        }
+        void main() {`)
+      .replace("#include <aomap_fragment>", `
+        float fxAO = mix(1.0, clamp(vFxAO, 0.0, 1.0), uAOAmt);
+        reflectedLight.indirectDiffuse *= fxAO;
+        reflectedLight.directDiffuse *= mix(1.0, fxAO, 0.45);
+        reflectedLight.directSpecular *= fxAO;
+        #include <aomap_fragment>`)
+      .replace("#include <opaque_fragment>", `
+        {
+          vec3 fxN = inverseTransformDirection(normal, viewMatrix);
+          vec3 fxV = inverseTransformDirection(normalize(vViewPosition), viewMatrix);
+          float fxNdV = clamp(dot(fxN, fxV), 0.0, 1.0);
+          if (uSheenAmt > 0.0) {
+            vec3 fxR = reflect(-fxV, fxN);
+            vec3 fxSky = mix(uSkyHor, uSkyTop, smoothstep(-0.05, 0.75, fxR.y));
+            float fxFres = 0.04 + 0.96 * pow(1.0 - fxNdV, 5.0);
+            outgoingLight += fxSky * fxFres * (1.0 - material.roughness) * 0.9 * uSheenAmt * fxAO;
+            outgoingLight += uRimColor * pow(1.0 - fxNdV, 3.0) * 0.28 * uSheenAmt * fxAO;
+          }
+          if (uCausticAmt > 0.0) {
+            // 수면(y≈0)에서 위로 0.4쯤까지만. 물 아래는 바다가 덮는다.
+            float fxNear = exp(-max(vFxWorld.y, 0.0) / 0.16) * smoothstep(-0.25, 0.0, vFxWorld.y);
+            if (fxNear > 0.01) {
+              // 옆면(선체·기둥)은 높이를 섞어 그물이 서게, 윗면(바위 위)은 수평 좌표 그대로
+              float fxUp = abs(fxN.y);
+              vec2 fxUV = mix(vec2(vFxWorld.x + vFxWorld.z * 0.7, vFxWorld.y * 2.2 + (vFxWorld.x - vFxWorld.z) * 0.35),
+                              vFxWorld.xz, smoothstep(0.6, 0.9, fxUp));
+              // 밝은 실선만 남긴다 — 무늬 전체를 더하면 대리석처럼 보였다
+              float fxC = smoothstep(0.3, 0.95, fxCaustic(fxUV * 1.2, uFxTime * 0.55));
+              float fxSide = 0.35 + 0.65 * clamp(1.0 - fxUp, 0.0, 1.0);
+              outgoingLight += uSunCol * fxC * fxNear * fxSide * 0.30 * uCausticAmt;
+            }
+          }
+        }
+        #include <opaque_fragment>`);
+  }
+
+  /**
+   * 선체 나무 — 배 좌표로 계산하는 절차적 무늬라 UV도 텍스처도 필요 없다.
+   * 옆면: 가로 판자(외판)와 엇갈린 이음매, 판자마다 조금씩 다른 색, 가는 나뭇결.
+   * 윗면(갑판): 배 길이 방향 판자, 밝은 원목색. 흘수선 바로 위에는 크림색 띠, 아래는 짙은 바닥 칠.
+   * 이음매·결은 화면 미분으로 법선을 비틀어(절차적 범프) 홈처럼 보이게 한다 — 노말맵 대신.
+   */
+  _installWood(hull) {
+    hull.updateMatrix();
+    const toShip = hull.matrix.clone();                         // 선체 로컬 → 배 로컬 (선체는 Ship의 자식)
+    const toShipN = new THREE.Matrix3().getNormalMatrix(toShip);
+    patchMaterial(hull.material, "wood", (shader) => {
+      shader.uniforms.uHullToShip = { value: toShip };
+      shader.uniforms.uHullToShipN = { value: toShipN };
+      shader.uniforms.uWoodAmt = this.fx.uWoodAmt;
+      shader.vertexShader = shader.vertexShader
+        .replace("void main() {", `
+          uniform mat4 uHullToShip; uniform mat3 uHullToShipN;
+          varying vec3 vWoodP; varying vec3 vWoodN;
+          void main() {`)
+        .replace("#include <project_vertex>", `
+          vWoodP = (uHullToShip * vec4(transformed, 1.0)).xyz;
+          vWoodN = normalize(uHullToShipN * objectNormal);
+          #include <project_vertex>`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace("void main() {", `
+          uniform float uWoodAmt;
+          varying vec3 vWoodP; varying vec3 vWoodN;
+          float woodHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+          // 판자 이음매: 판자 안쪽은 1, 이음매 선에서 0 (멀어서 선이 픽셀보다 가늘면 흐리게 — 반짝임 방지)
+          float woodSeam(float v, float w) {
+            float f = fract(v), aa = max(w, fwidth(v) * 1.5);
+            return smoothstep(0.0, aa, f) * smoothstep(1.0, 1.0 - aa, f);
+          }
+          vec3 woodPerturb(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDir) {
+            vec3 sx = dFdx(surfPos), sy = dFdy(surfPos);
+            vec3 r1 = cross(sy, surfNorm), r2 = cross(surfNorm, sx);
+            float det = dot(sx, r1) * faceDir;
+            vec3 grad = sign(det) * (dHdxy.x * r1 + dHdxy.y * r2);
+            return normalize(abs(det) * surfNorm - grad);
+          }
+          void main() {`)
+        .replace("#include <normal_fragment_maps>", `
+          #include <normal_fragment_maps>
+          if (uWoodAmt > 0.0) {
+            // 배 로컬 단위 (배 길이 약 0.85, 흘수선 y = -${SHIP_DRAFT.toFixed(3)})
+            vec3 p = vWoodP;
+            float deck = smoothstep(0.55, 0.8, vWoodN.y);
+            // 옆면 외판: 높이 0.03마다 한 장, 길이 0.32마다 엇갈린 이음매 (더 촘촘하면 멀리서 바구니처럼 보였다)
+            float sv = p.y / 0.03, si = floor(sv);
+            float sideSeam = woodSeam(sv, 0.05) * woodSeam((p.x + woodHash(si) * 0.32) / 0.32, 0.006);
+            float sideTone = 0.9 + woodHash(si + 3.1) * 0.2;
+            // 갑판: 폭 0.016마다 한 장, 길이 방향으로 이어진다
+            float dv = p.z / 0.016, di = floor(dv);
+            float deckSeam = woodSeam(dv, 0.06) * woodSeam((p.x + woodHash(di + 7.0) * 0.3) / 0.3, 0.006);
+            float deckTone = 0.88 + woodHash(di + 11.3) * 0.24;
+            float idx = mix(si, di, step(0.5, deck));
+            float grain = sin(p.x * 160.0 + sin(p.x * 21.0 + idx * 5.7) * 2.4 + woodHash(idx) * 6.28);
+            float seam = mix(sideSeam, deckSeam, deck);
+            vec3 base = diffuseColor.rgb;
+            vec3 sideCol = base * sideTone * (1.0 + grain * 0.045);
+            // 흘수선 띠(크림)와 바닥 칠(짙게) — 옆면에만
+            float wl = -${SHIP_DRAFT.toFixed(3)};
+            float stripe = smoothstep(wl + 0.010, wl + 0.013, p.y) * (1.0 - smoothstep(wl + 0.024, wl + 0.027, p.y));
+            float below = 1.0 - smoothstep(wl + 0.010, wl + 0.013, p.y);
+            sideCol = mix(sideCol, base * vec3(0.62, 0.42, 0.40), below);
+            sideCol = mix(sideCol, vec3(0.78, 0.70, 0.56), stripe);
+            vec3 deckCol = mix(base, vec3(0.36, 0.22, 0.12), 0.6) * deckTone * (1.0 + grain * 0.06);
+            vec3 wood = mix(sideCol, deckCol, deck) * mix(0.74, 1.0, seam);
+            diffuseColor.rgb = mix(diffuseColor.rgb, wood, uWoodAmt);
+            // 이음매는 홈, 결은 아주 얕은 굴곡 (월드 단위 높이)
+            float h = (seam - 1.0) * 0.004 + grain * 0.0007 * (1.0 - below);
+            normal = normalize(mix(normal, woodPerturb(-vViewPosition, normal, vec2(dFdx(h), dFdy(h)), faceDirection), uWoodAmt));
+          }`);
+    });
+  }
+
+  /**
    * 병 밖으로 나가는 부분을 병 안쪽 유리면에 맞춰 눌러 담는다 (정점 셰이더).
    *
    * 병이 나타나면(uClipT: 0→1) 병 반지름을 넘는 정점은 축 쪽으로, 병 바닥을 넘는 정점은 바닥
@@ -2694,7 +2891,7 @@ ${GERSTNER_GLSL}
    */
   _fitToBottle(mat) {
     const MARGIN = 0.06;   // 유리 안쪽으로 이만큼 띄운다
-    mat.onBeforeCompile = (shader) => {
+    patchMaterial(mat, "bottle-fit", (shader) => {
       const wu = this.waterMesh.material.uniforms;
       for (const k of ["uClipOn", "uClipCenter", "uClipT", "uClipScaleX", "uClipScaleR", "uProfU", "uProfR"]) {
         shader.uniforms[k] = wu[k];
@@ -2742,9 +2939,7 @@ ${GERSTNER_GLSL}
             vec3 fn = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
             normal = normalize(mix(normal, fn, uClipT * clamp(vFitMoved * 4.0, 0.0, 1.0)));
           }`);
-    };
-    mat.customProgramCacheKey = () => "bottle-fit";
-    mat.needsUpdate = true;
+    });
   }
 
   _buildShadowCatcher() {
@@ -3514,6 +3709,10 @@ ${GERSTNER_GLSL}
     this.hemiLight.color.copy(hemiSky(a)).lerp(hemiSky(b), k);
     this.hemiLight.groundColor.copy(hemiGround(a)).lerp(hemiGround(b), k);
     this.hemiLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS * HEMI_SCALE;
+    // 표면 효과의 하늘 반사·테두리 빛은 지금 하늘색을 쓴다 (위 = 첫 띠, 수평선 = 마지막 띠)
+    this.fx.uSkyTop.value.copy(this._skyColors[0]);
+    this.fx.uSkyHor.value.copy(this._skyColors[3]);
+    this.fx.uRimColor.value.copy(this._skyColors[2]);
   }
 
   /**
@@ -4034,6 +4233,10 @@ ${GERSTNER_GLSL}
     // 병이 오르내리는 동안 배경 하늘도 같이 건너간다. 매 프레임 다시 칠하면 낭비라
     // 눈에 보일 만큼 바뀐 프레임에만 칠한다.
     if (Math.abs(this.bottleT - this._skyBlend) > 0.004) this._refreshSky();
+    // 표면 효과: 시간, 물빛 색(해 색 × 세기, 밤에는 거의 끈다)
+    this.fx.uFxTime.value = t;
+    this.fx.uSunCol.value.copy(this.sunLight.color).multiplyScalar(this.sunLight.intensity * (1 - 0.85 * (this._night ?? 0)));
+
     // 두 손가락 줌 — 손가락이 정한 목표로 부드럽게 따라간다
     if (this._zoomTarget === undefined) this._zoomTarget = 1;
     if (this._zoom === undefined) this._zoom = 1;
