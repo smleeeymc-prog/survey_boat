@@ -17,6 +17,9 @@
  *   물빛      수면 근처 선체·바위·기둥에 일렁이는 코스틱.
  *   광택·테두리 빛  하늘이 비치는 광택(프레넬) + 실루엣 가장자리 하늘빛. 세기는 SHEEN_ON.
  *   톤        필름 룩의 톤 매핑만 바꾼다 (명암·반구광은 그대로).
+ *   부드러운 그림자  PCFSoft, 배·소품·섬이 서로 드리우고 받는다. 매 프레임 그림자 맵을 그려 무겁다.
+ *   면 색 변주  면마다 밝기·따뜻함을 조금씩 다르게 (로우폴리 바위 레퍼런스).
+ *   얕은 물빛  섬 둘레 바다를 청록으로 (얕은 바다 레퍼런스).
  *   틸트시프트 화면 위아래를 흐리게 — 병 속 미니어처처럼. CSS backdrop-filter.
  *   비네트    가장자리를 살짝 어둡게. CSS.
  *   FPS       지금 초당 프레임 — 무엇을 켰을 때 버벅이는지 보기용.
@@ -196,7 +199,8 @@ export function installLookLab(bottleScene) {
   document.head.appendChild(style);
 
   let state = { film: false, bloom: false, grade: false, grain: false,
-    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false, tone: "agx" };
+    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false, tone: "agx",
+    shadows: false, facet: false, shallow: false };
   try { state = { ...state, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch (e) { /* 기억 못 해도 된다 */ }
   const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ } };
 
@@ -226,7 +230,11 @@ export function installLookLab(bottleScene) {
       fx.uWoodAmt.value = state.wood ? FX_AMT.wood : 0;
       fx.uCausticAmt.value = state.caustic ? FX_AMT.caustic : 0;
       for (const k of Object.keys(SHEEN_ON)) fx[k].value = state.sheen ? SHEEN_ON[k] : 0;
+      fx.uFacetAmt.value = state.facet ? 1 : 0;
     }
+    const wu = bottleScene.waterMesh && bottleScene.waterMesh.material.uniforms;
+    if (wu && wu.uShallowAmt) wu.uShallowAmt.value = state.shallow ? 1 : 0;
+    if (!!bottleScene._softShadows !== state.shadows && bottleScene.setSoftShadows) bottleScene.setSoftShadows(state.shadows);
     if (state.bloom) {
       bloom = bloom || new OverlayBloom(bottleScene.renderer);
       bottleScene.postRender = () => bloom.render(bottleScene.scene, bottleScene.camera);
@@ -261,6 +269,9 @@ export function installLookLab(bottleScene) {
     ["wood", "나무 선체", "카툰 판자 · 꿀색 갑판"],
     ["caustic", "물빛", "수면 근처 일렁이는 빛"],
     ["sheen", "광택·테두리 빛", "하늘 반사 · 가장자리 빛"],
+    ["shadows", "부드러운 그림자", "무거움 — 매 프레임 그림자 맵"],
+    ["facet", "면 색 변주", "면마다 색이 조금씩 다르게"],
+    ["shallow", "얕은 물빛", "섬 둘레 바다를 청록으로"],
     ["bloom", "블룸", "가장 무거움 — 장면을 두 번 그림"],
     ["grade", "색보정", "대비·채도·따뜻함"],
     ["grain", "그레인", "필름 입자"],

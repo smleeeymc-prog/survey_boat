@@ -1565,6 +1565,7 @@ class BottleScene {
       uCausticAmt: { value: 0 },   // 수면 근처에 일렁이는 물빛
       uSheenAmt: { value: 0 },     // 하늘이 비치는 광택 (매끈한 면에만)
       uRimAmt: { value: 0 },       // 테두리 빛 (실루엣 가장자리에만)
+      uFacetAmt: { value: 0 },     // 면마다 색 변주 (로우폴리 바위처럼 면마다 조금씩 다른 색)
       uSkyTop: { value: new THREE.Color() },
       uSkyHor: { value: new THREE.Color() },
       uRimColor: { value: new THREE.Color() },
@@ -1838,6 +1839,8 @@ class BottleScene {
         uBeamCos: { value: Math.cos(LIGHTHOUSE.angle) },
         uBeamColor: { value: new THREE.Color(LIGHTHOUSE.color) },
         uBeamOn: { value: 0.0 },
+        // 얕은 물빛(섬 가까운 바다를 청록으로) — 테스트 메뉴가 켠다. 섬 거리장(uSdfIsland)을 같이 쓴다.
+        uShallowAmt: { value: 0.0 },
         },
       ]),
       vertexShader: `
@@ -2008,6 +2011,7 @@ ${GERSTNER_GLSL}
         uniform float uBeamCos;
         uniform vec3 uBeamColor;
         uniform float uBeamOn;
+        uniform float uShallowAmt;
 
         vec3 hdr (vec3 color, float exposure) {
           return 1.0 - exp(-color * exposure);
@@ -2048,7 +2052,18 @@ ${GERSTNER_GLSL}
           float fresnel = 0.03 + 0.65 * pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
           vec3 sky = fresnel * uSkyColor;
           float diffuse = clamp(dot(normal, sunDir), 0.0, 1.0);
-          vec3 water = (1.0 - fresnel) * uOceanColor * diffuse;
+          // 얕은 물빛: 섬 둘레(거리장 0~0.9)는 바닥이 비치는 청록으로. 밝기는 지금 바다색에 맞춘다(밤엔 어둡게).
+          vec3 oceanCol = uOceanColor;
+          if (uShallowAmt > 0.0 && uSdfIslandMeta.z > 0.001) {
+            vec2 srel = vWorldPos.xz - uSdfIslandXf.xy;
+            vec2 sloc = vec2(srel.x * uSdfIslandXf.z - srel.y * uSdfIslandXf.w, srel.x * uSdfIslandXf.w + srel.y * uSdfIslandXf.z);
+            float sd = contactDist(uSdfIsland, sloc, uSdfIslandGrid, uSdfIslandMeta);
+            float shallow = 1.0 - smoothstep(0.0, 0.95, max(sd, 0.0));
+            float oceanLum = dot(uOceanColor, vec3(0.2126, 0.7152, 0.0722));
+            vec3 turq = vec3(0.22, 0.76, 0.86) * (oceanLum / 0.5);
+            oceanCol = mix(uOceanColor, turq, shallow * uShallowAmt * uSdfIslandMeta.z * 0.85);
+          }
+          vec3 water = (1.0 - fresnel) * oceanCol * diffuse;
 
           // 반짝임만 별도의 태양 방향을 쓴다 (아래 _updateSpecAnchor 참고).
           vec3 reflectDir = reflect(-normalize(uSpecSunDir), normal);
@@ -2269,6 +2284,7 @@ ${GERSTNER_GLSL}
 
       if (ship) this._installSurfaceFx(ship);
       this._installSurfaceFx(this.islandGroup);
+      if (this._softShadows) this.setSoftShadows(true);   // 메뉴가 모델보다 먼저 켰으면 지금 붙인다
       this._measureIslandRest(ship, beachhouse);
     } catch (err) {
       console.error("모델(GLB) 로드 실패:", err);
@@ -2714,6 +2730,29 @@ ${GERSTNER_GLSL}
   }
 
   /**
+   * 부드러운 그림자(PCFSoft) 켜기/끄기 — 테스트 메뉴용. 켜면 배·소품·섬이 서로 드리우고 받고, 해가 늘
+   * 그림자 맵을 그린다(매 프레임, 굽지 않음 — 헤드리스에서 약 +30ms였다). 끄면 원래대로(저녁에 수면만).
+   * 그림자 방식이 바뀌면 재질을 다시 컴파일해야 해서 한 번 멈칫한다.
+   */
+  setSoftShadows(on) {
+    this._softShadows = !!on;
+    this.renderer.shadowMap.type = on ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
+    this.sunLight.shadow.normalBias = on ? 0.025 : 0;
+    const ship = this.shipNode;
+    const set = (root, cast, recv) => root && root.traverse((o) => {
+      if (!o.isMesh || !o.material || !o.material.isMeshStandardMaterial) return;
+      o.castShadow = cast; o.receiveShadow = recv;
+    });
+    set(ship, true, !!on);
+    set(this.islandGroup, !!on, !!on);
+    this.scene.traverse((o) => {
+      if (!o.material) return;
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.needsUpdate = true; });
+    });
+    this._applyTime(this._timeT >= 1 ? 1 : easeInOutQuint(this._timeT));
+  }
+
+  /**
    * 룩을 바꾼다 (LOOKS의 이름, 필름 룩이면 톤도 — TONES의 키). 톤 매핑이 바뀌면 재질을 다시 컴파일해야 해서 한 번 멈칫할 수 있다.
    * 테스트 메뉴(dev/look-lab.js)가 부른다.
    */
@@ -2776,7 +2815,7 @@ ${GERSTNER_GLSL}
         #include <project_vertex>`);
     shader.fragmentShader = shader.fragmentShader
       .replace("void main() {", `
-        uniform float uFxTime, uAOAmt, uCausticAmt, uSheenAmt, uRimAmt;
+        uniform float uFxTime, uAOAmt, uCausticAmt, uSheenAmt, uRimAmt, uFacetAmt;
         uniform vec3 uSkyTop, uSkyHor, uRimColor, uSunCol;
         varying float vFxAO;
         varying vec3 vFxWorld;
@@ -2795,6 +2834,17 @@ ${GERSTNER_GLSL}
           return clamp(pow(abs(c), 8.0), 0.0, 1.0);
         }
         void main() {`)
+      .replace("#include <normal_fragment_maps>", `
+        #include <normal_fragment_maps>
+        // 면마다 색 변주 — 면의 법선(화면 미분)으로 해시를 내서 밝기 ±14%, 따뜻함/차가움을 돌린다.
+        // 레퍼런스(로우폴리 해변 바위)처럼 한 덩어리 안에서도 면마다 색이 조금씩 다르게.
+        if (uFacetAmt > 0.0) {
+          vec3 fxFN = normalize(cross(dFdx(vFxWorld), dFdy(vFxWorld)));
+          float fxH = fract(sin(dot(floor(fxFN * 9.0 + 0.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          float fxH2 = fract(fxH * 7.31 + 0.13);
+          vec3 fxTint = mix(vec3(0.90, 0.97, 1.10), vec3(1.10, 0.98, 0.86), fxH2);
+          diffuseColor.rgb *= mix(vec3(1.0), fxTint * (0.86 + fxH * 0.28), uFacetAmt);
+        }`)
       .replace("#include <aomap_fragment>", `
         float fxAO = mix(1.0, clamp(vFxAO, 0.0, 1.0), uAOAmt);
         reflectedLight.indirectDiffuse *= fxAO;
@@ -3722,7 +3772,7 @@ ${GERSTNER_GLSL}
       const op = a.shadow + (b.shadow - a.shadow) * k;
       this.shadowMat.opacity = op;
       // 그림자가 없는 시간대에는 그림자 맵 렌더 자체를 건너뛴다.
-      this.sunLight.castShadow = op > 0.001;
+      this.sunLight.castShadow = this._softShadows || op > 0.001;
       this.shadowCatcher.visible = op > 0.001;
     }
     wu.uExposure.value = (a.exposure + (b.exposure - a.exposure) * k) * SCENE_BRIGHTNESS;
