@@ -15,7 +15,8 @@
  *   AO        구운 구석 그늘(GLB의 _AO). 셰이더 곱하기 한 번.
  *   나무 선체 선체 외판·갑판 판자·흘수선 띠 + 절차적 요철(노말맵 대신).
  *   물빛      수면 근처 선체·바위·기둥에 일렁이는 코스틱.
- *   광택      하늘이 비치는 광택 + 테두리 빛(프레넬). 환경맵 없이 계산만.
+ *   광택      하늘이 비치는 광택(프레넬, 매끈한 면만). 슬라이더 0~2, 0 = 끔.
+ *   테두리 빛 실루엣 가장자리를 하늘빛으로. 슬라이더 0~2, 0 = 끔.
  *   틸트시프트 화면 위아래를 흐리게 — 병 속 미니어처처럼. CSS backdrop-filter.
  *   비네트    가장자리를 살짝 어둡게. CSS.
  *   FPS       지금 초당 프레임 — 무엇을 켰을 때 버벅이는지 보기용.
@@ -28,7 +29,12 @@ const STORE_KEY = "lookLab.v1";
 const GRADE_FILTER = "contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03)";
 const BLOOM = { scale: 0.25, threshold: 0.78, knee: 0.12, strength: 0.9 };
 // 셰이더 효과 세기 (BottleScene.fx 유니폼에 넣는 값)
-const FX_AMT = { ao: 0.85, wood: 1, caustic: 1, sheen: 1 };
+const FX_AMT = { ao: 0.85, wood: 1, caustic: 1 };
+// 슬라이더로 조절하는 것: [상태 키, 이름, 설명, 유니폼, 최대, 기본]
+const SLIDERS = [
+  ["sheenAmt", "광택", "하늘 반사 · 매끈한 면만", "uSheenAmt", 2, 1],
+  ["rimAmt", "테두리 빛", "실루엣 가장자리", "uRimAmt", 2, 1],
+];
 
 // ── 블룸 ────────────────────────────────────────────────────────────────────
 const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -174,6 +180,10 @@ const CSS = `
     background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
   #lookLabVignette.show{ display:block; }
   #lookLabPanel{ max-height:calc(100vh - 90px); overflow:auto; }
+  #lookLabPanel .slider{ padding:5px 0; }
+  #lookLabPanel .slider .top{ display:flex; justify-content:space-between; }
+  #lookLabPanel .slider b{ font-weight:600; font-variant-numeric:tabular-nums; color:#d6b25e; }
+  #lookLabPanel input[type=range]{ width:100%; height:18px; accent-color:#d6b25e; margin:4px 0 0; }
   @keyframes lookLabGrain{
     0%{transform:translate(0,0)} 17%{transform:translate(-7%,4%)} 33%{transform:translate(5%,-6%)}
     50%{transform:translate(-3%,7%)} 67%{transform:translate(8%,2%)} 83%{transform:translate(-6%,-4%)} 100%{transform:translate(0,0)} }
@@ -186,7 +196,7 @@ export function installLookLab(bottleScene) {
   document.head.appendChild(style);
 
   let state = { film: false, bloom: false, grade: false, grain: false,
-    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false };
+    ao: false, wood: false, caustic: false, sheenAmt: 0, rimAmt: 0, tilt: false, vignette: false };
   try { state = { ...state, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch (e) { /* 기억 못 해도 된다 */ }
   const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ } };
 
@@ -214,7 +224,7 @@ export function installLookLab(bottleScene) {
       fx.uAOAmt.value = state.ao ? FX_AMT.ao : 0;
       fx.uWoodAmt.value = state.wood ? FX_AMT.wood : 0;
       fx.uCausticAmt.value = state.caustic ? FX_AMT.caustic : 0;
-      fx.uSheenAmt.value = state.sheen ? FX_AMT.sheen : 0;
+      for (const [key, , , uni] of SLIDERS) fx[uni].value = state[key] || 0;
     }
     if (state.bloom) {
       bloom = bloom || new OverlayBloom(bottleScene.renderer);
@@ -235,7 +245,6 @@ export function installLookLab(bottleScene) {
     ["ao", "AO", "구운 구석 그늘"],
     ["wood", "나무 선체", "외판·갑판 판자 · 흘수선 띠 · 요철"],
     ["caustic", "물빛", "수면 근처 일렁이는 빛"],
-    ["sheen", "광택·테두리 빛", "하늘 반사 · 프레넬"],
     ["bloom", "블룸", "가장 무거움 — 장면을 두 번 그림"],
     ["grade", "색보정", "대비·채도·따뜻함"],
     ["grain", "그레인", "필름 입자"],
@@ -250,6 +259,21 @@ export function installLookLab(bottleScene) {
     box.checked = !!state[key];
     box.addEventListener("change", () => { state[key] = box.checked; save(); apply(); });
     row.appendChild(box);
+    panel.appendChild(row);
+  }
+  for (const [key, label, hint, , max] of SLIDERS) {
+    const row = document.createElement("div");
+    row.className = "slider";
+    const val = document.createElement("b");
+    const fmt = (v) => (v > 0 ? v.toFixed(2) : "끔");
+    row.innerHTML = `<div class="top"><span>${label}<div class="hint">${hint}</div></span></div>`;
+    row.querySelector(".top").appendChild(val);
+    const range = document.createElement("input");
+    range.type = "range"; range.min = "0"; range.max = String(max); range.step = "0.05";
+    range.value = String(state[key] || 0);
+    val.textContent = fmt(+range.value);
+    range.addEventListener("input", () => { state[key] = +range.value; val.textContent = fmt(state[key]); save(); apply(); });
+    row.appendChild(range);
     panel.appendChild(row);
   }
   const fps = document.createElement("div");
