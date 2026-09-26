@@ -15,8 +15,8 @@
  *   AO        구운 구석 그늘(GLB의 _AO). 셰이더 곱하기 한 번.
  *   나무 선체 선체 외판·갑판 판자·흘수선 띠 + 절차적 요철(노말맵 대신).
  *   물빛      수면 근처 선체·바위·기둥에 일렁이는 코스틱.
- *   광택      하늘이 비치는 광택(프레넬, 매끈한 면만). 슬라이더 0~2, 0 = 끔.
- *   테두리 빛 실루엣 가장자리를 하늘빛으로. 슬라이더 0~2, 0 = 끔.
+ *   광택·테두리 빛  하늘이 비치는 광택(프레넬) + 실루엣 가장자리 하늘빛. 세기는 SHEEN_ON.
+ *   톤        필름 룩의 톤 매핑만 바꾼다 (명암·반구광은 그대로).
  *   틸트시프트 화면 위아래를 흐리게 — 병 속 미니어처처럼. CSS backdrop-filter.
  *   비네트    가장자리를 살짝 어둡게. CSS.
  *   FPS       지금 초당 프레임 — 무엇을 켰을 때 버벅이는지 보기용.
@@ -30,11 +30,10 @@ const GRADE_FILTER = "contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg)
 const BLOOM = { scale: 0.25, threshold: 0.78, knee: 0.12, strength: 0.9 };
 // 셰이더 효과 세기 (BottleScene.fx 유니폼에 넣는 값)
 const FX_AMT = { ao: 0.85, wood: 1, caustic: 1 };
-// 슬라이더로 조절하는 것: [상태 키, 이름, 설명, 유니폼, 최대, 기본]
-const SLIDERS = [
-  ["sheenAmt", "광택", "하늘 반사 · 매끈한 면만", "uSheenAmt", 2, 1],
-  ["rimAmt", "테두리 빛", "실루엣 가장자리", "uRimAmt", 2, 1],
-];
+// 광택·테두리 빛 한 칸으로 켤 때의 세기 (테두리 0.2는 사용자가 슬라이더로 고른 값, 09-26)
+const SHEEN_ON = { uSheenAmt: 1.2, uRimAmt: 0.2 };   // 광택 1.2: 1은 은은, 2는 뿌얘진다(헤드리스 비교)
+// 필름 룩 톤 선택지 (index.html TONES의 키)
+const TONE_CHOICES = [["agx", "AgX"], ["aces", "ACES"], ["neutral", "Neutral"], ["none", "없음"]];
 
 // ── 블룸 ────────────────────────────────────────────────────────────────────
 const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -180,10 +179,11 @@ const CSS = `
     background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
   #lookLabVignette.show{ display:block; }
   #lookLabPanel{ max-height:calc(100vh - 90px); overflow:auto; }
-  #lookLabPanel .slider{ padding:5px 0; }
-  #lookLabPanel .slider .top{ display:flex; justify-content:space-between; }
-  #lookLabPanel .slider b{ font-weight:600; font-variant-numeric:tabular-nums; color:#d6b25e; }
-  #lookLabPanel input[type=range]{ width:100%; height:18px; accent-color:#d6b25e; margin:4px 0 0; }
+  #lookLabPanel .tone{ display:flex; align-items:center; gap:4px; padding:0 0 6px; flex-wrap:wrap; }
+  #lookLabPanel .tone .hint{ margin:0 4px 0 0; }
+  #lookLabPanel .tone button{ border:1px solid rgba(255,255,255,.25); background:transparent; color:inherit;
+    font:inherit; font-size:11px; padding:3px 7px; border-radius:10px; cursor:pointer; }
+  #lookLabPanel .tone button.on{ background:#d6b25e; color:#1a1a22; border-color:#d6b25e; }
   @keyframes lookLabGrain{
     0%{transform:translate(0,0)} 17%{transform:translate(-7%,4%)} 33%{transform:translate(5%,-6%)}
     50%{transform:translate(-3%,7%)} 67%{transform:translate(8%,2%)} 83%{transform:translate(-6%,-4%)} 100%{transform:translate(0,0)} }
@@ -196,7 +196,7 @@ export function installLookLab(bottleScene) {
   document.head.appendChild(style);
 
   let state = { film: false, bloom: false, grade: false, grain: false,
-    ao: false, wood: false, caustic: false, sheenAmt: 0, rimAmt: 0, tilt: false, vignette: false };
+    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false, tone: "agx" };
   try { state = { ...state, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch (e) { /* 기억 못 해도 된다 */ }
   const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ } };
 
@@ -214,7 +214,8 @@ export function installLookLab(bottleScene) {
   let bloom = null;
 
   const apply = () => {
-    bottleScene.setLook(state.film ? "film" : "basic");
+    bottleScene.setLook(state.film ? "film" : "basic", state.tone);
+    toneRow.style.opacity = state.film ? "1" : ".4";
     bottleScene.canvas.style.filter = state.grade ? GRADE_FILTER : "";
     grain.classList.toggle("show", state.grain);
     tilts.forEach((el) => el.classList.toggle("show", state.tilt));
@@ -224,7 +225,7 @@ export function installLookLab(bottleScene) {
       fx.uAOAmt.value = state.ao ? FX_AMT.ao : 0;
       fx.uWoodAmt.value = state.wood ? FX_AMT.wood : 0;
       fx.uCausticAmt.value = state.caustic ? FX_AMT.caustic : 0;
-      for (const [key, , , uni] of SLIDERS) fx[uni].value = state[key] || 0;
+      for (const k of Object.keys(SHEEN_ON)) fx[k].value = state.sheen ? SHEEN_ON[k] : 0;
     }
     if (state.bloom) {
       bloom = bloom || new OverlayBloom(bottleScene.renderer);
@@ -240,11 +241,26 @@ export function installLookLab(bottleScene) {
   btn.textContent = "룩 ▾";
   const panel = document.createElement("div");
   panel.id = "lookLabPanel";
+  // 필름 룩의 톤 선택 (필름 룩이 꺼져 있으면 흐리게)
+  const toneRow = document.createElement("div");
+  toneRow.className = "tone";
+  toneRow.innerHTML = `<span class="hint">톤</span>`;
+  for (const [val, label] of TONE_CHOICES) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = label; b.dataset.tone = val;
+    b.addEventListener("click", () => {
+      state.tone = val; save(); apply();
+      toneRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.tone === state.tone));
+    });
+    b.classList.toggle("on", val === state.tone);
+    toneRow.appendChild(b);
+  }
   const items = [
-    ["film", "필름 룩", "AgX 톤 · 반구광 · 명암"],
+    ["film", "필름 룩", "명암 · 반구광 (톤은 아래에서)"],
     ["ao", "AO", "구운 구석 그늘"],
-    ["wood", "나무 선체", "외판·갑판 판자 · 흘수선 띠 · 요철"],
+    ["wood", "나무 선체", "카툰 판자 · 꿀색 갑판"],
     ["caustic", "물빛", "수면 근처 일렁이는 빛"],
+    ["sheen", "광택·테두리 빛", "하늘 반사 · 가장자리 빛"],
     ["bloom", "블룸", "가장 무거움 — 장면을 두 번 그림"],
     ["grade", "색보정", "대비·채도·따뜻함"],
     ["grain", "그레인", "필름 입자"],
@@ -260,21 +276,7 @@ export function installLookLab(bottleScene) {
     box.addEventListener("change", () => { state[key] = box.checked; save(); apply(); });
     row.appendChild(box);
     panel.appendChild(row);
-  }
-  for (const [key, label, hint, , max] of SLIDERS) {
-    const row = document.createElement("div");
-    row.className = "slider";
-    const val = document.createElement("b");
-    const fmt = (v) => (v > 0 ? v.toFixed(2) : "끔");
-    row.innerHTML = `<div class="top"><span>${label}<div class="hint">${hint}</div></span></div>`;
-    row.querySelector(".top").appendChild(val);
-    const range = document.createElement("input");
-    range.type = "range"; range.min = "0"; range.max = String(max); range.step = "0.05";
-    range.value = String(state[key] || 0);
-    val.textContent = fmt(+range.value);
-    range.addEventListener("input", () => { state[key] = +range.value; val.textContent = fmt(state[key]); save(); apply(); });
-    row.appendChild(range);
-    panel.appendChild(row);
+    if (key === "film") panel.appendChild(toneRow);
   }
   const fps = document.createElement("div");
   fps.className = "fps";
