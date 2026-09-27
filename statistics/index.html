@@ -52,20 +52,50 @@
 </svg>
 
 <section class="panel" id="panel">
-  <p class="p-title">그래도, 여기 살고 있습니다</p>
-  <p class="p-count"><span id="countNum">0</span></p>
-  <p class="p-sub">개의 문장이 이곳에 머물러 있습니다</p>
+  <header class="p-head">
+    <p class="p-title">그래도, 여기 살고 있습니다</p>
+    <p class="p-count"><span id="countNum">0</span><span class="p-plus" id="countPlus" aria-hidden="true">+1</span></p>
+    <p class="p-sub">개의 문장이 이곳에 머물러 있습니다</p>
+  </header>
 
-  <div class="p-rule"></div>
-
-  <p class="p-label" id="statLabel">가장 많이 선택된 이유</p>
-  <p class="p-rows" id="statRows"></p>
+  <!--
+    통계 보고서 한 장. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드 구성을 옮겼다.
+    채우는 건 js/panel.js, 무엇을 넣을지는 js/stats/index.js 가 정한다.
+  -->
+  <article class="report" id="report" aria-live="polite">
+    <div class="r-top">
+      <p class="r-tag" id="rTag"></p>
+      <p class="r-idx" id="rIdx"></p>
+    </div>
+    <div class="r-rule" aria-hidden="true"><i class="r-progress"></i></div>
+    <p class="r-lead"><span class="r-label" id="rLabel"></span><span class="r-dots" aria-hidden="true"></span><span class="r-value" id="rValue"></span></p>
+    <p class="r-headline" id="rHeadline"></p>
+    <div class="r-chart" id="statRows"></div>
+    <div class="r-foot">
+      <p class="r-extra" id="rExtra"></p>
+      <p class="r-period"><span id="rPeriod"></span><span class="r-legend" id="rLegend"></span></p>
+    </div>
+  </article>
 </section>
 
+<!--
+  방금 도착한 문장 — 항해일지 카드. 레퍼런스의 "Drug Facts" 라벨(항목 ······ 값, 한/영 병기,
+  초 단위 기록 시각)을 배가 싣고 온 문장의 기록으로 옮겼다.
+-->
 <aside class="arrival" id="arrival">
-  <p class="arrival-tag">방금 도착한 문장</p>
+  <div class="log-top">
+    <p class="log-tag"><i>Ship&#8217;s Log</i> 방금 도착한 문장</p>
+    <p class="log-no" id="logNo"></p>
+  </div>
+  <div class="log-rule" aria-hidden="true"></div>
   <p class="arrival-text" id="arrivalText"></p>
-  <p class="arrival-meta" id="arrivalMeta"></p>
+  <p class="arrival-sign" id="arrivalSign"></p>
+  <dl class="log-rows">
+    <div class="log-row"><dt><i>From</i> 출발한 곳</dt><dd id="logFrom"></dd></div>
+    <div class="log-row"><dt><i>Status</i> 지금의 자리</dt><dd id="logStatus"></dd></div>
+    <div class="log-row"><dt><i>Cargo</i> 싣고 온 것</dt><dd id="logCargo"></dd></div>
+    <div class="log-row"><dt><i>Logged</i> 기록 시각</dt><dd id="logLogged"></dd></div>
+  </dl>
 </aside>
 
 <div id="hud"></div>

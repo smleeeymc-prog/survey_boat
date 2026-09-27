@@ -5,25 +5,39 @@
  * 나갈 수 있고(다른 레이아웃·다른 페이지), 그때 가져갈 것은 views.js 의 함수 하나와
  * 여기 같은 이름 블록 하나뿐이면 된다.
  *
- * 색은 전부 토큰을 쓴다 — 원값은 shared/tokens.css(설문 페이지와 공유) 한 곳에 있고,
- * 패널 전용 별칭(--c-accent 등)은 panel.css :root 에 있다. 설문 톤과 같이 움직인다.
- *
- * 크기는 --stat-base 에 곱해서 쓴다. 화면이 세로냐 가로냐에 따라 그 값이 vw/vh 로
- * 바뀌므로(panel.css 하단), 여기서 vw 를 직접 쓰면 가로 화면에서 혼자 어긋난다.
+ * 크기: 모든 표시 방식은 자리(.r-chart)의 높이를 100% 채운다. 자리의 높이는 패널이
+ * 정하고(결론 문장이 한 줄이냐 두 줄이냐에 따라 달라진다), 글자 크기는 em 이라 자리의
+ * font-size 하나를 따른다. 그래서 여기에는 vw·vh·px 높이가 하나도 없다.
  *
  * ── 색을 쓰는 규칙 ────────────────────────────────────────────────────────
- * 크기 비교(히트맵)는 한 색상의 밝기 계단 하나(시퀀셜). 0을 기준으로 양쪽으로 갈리는
+ * 강조형이 기본이다: 결론 문장이 가리키는 표식만 --sv-lead(금색), 나머지는 한 회색.
+ * 크기 비교(히트맵)는 한 색상의 밝기 계단(시퀀셜). 0을 기준으로 양쪽으로 갈리는
  * 값(정착 온도)만 따뜻함/차가움 두 색에 무채색 중앙(다이버징). 카테고리 색을 돌려
- * 쓰는 뷰는 하나도 없다 — 이 화면에서 색이 "정체성"을 나타내는 지표가 없기 때문이다.
- * 양극은 CVD 분리 ΔE 13.9, 크림 바탕 대비 3:1 이상으로 검산했다.
+ * 쓰는 뷰는 없다 — 이 화면에서 색이 "정체성"을 나타내는 지표가 없다.
+ * 글자는 데이터 색을 입지 않는다 — 값·라벨은 먹색 계열이고, 색은 그 옆의 표식이 입는다.
+ *
+ * 검산(dataviz validate_palette, 크림 바탕 #f1ede6): 금색 #94743f ↔ 회색 #aca69c
+ * 정상 시각 ΔE 16.2 · 색각 이상 ΔE 15.8 · 금색 대비 3:1 이상. 회색은 대비 2.1:1로 일부러
+ * 물러나 있고, 그 대신 모든 값이 표식 옆에 글자로 적혀 있다(툴팁 대신).
+ * 다이버징 양극은 CVD 분리 ΔE 13.9, 크림 바탕 대비 3:1 이상.
  *
  * ── 이 화면에는 hover 가 없다 ─────────────────────────────────────────────
- * 전시장 기기에 입력장치가 없어서 툴팁을 띄울 방법이 없다. 그래서 모든 값이 화면에
- * 직접 적혀 있다 — 색은 보조일 뿐이고 색만으로 읽어야 하는 값은 없다.
+ * 전시장 기기에 입력장치가 없어서 툴팁을 띄울 방법이 없다. 값은 화면에 직접 적되,
+ * 결론이 가리키는 값만 진하게, 나머지는 옅게 둔다.
+ *
+ * ── 모션 ───────────────────────────────────────────────────────────────────
+ * 모든 표식에 --i(등장 순번)가 붙어 있다. 보고서 한 장이 들어올 때(.report.in) 결론 문장이
+ * 먼저 서고, 0.5초쯤 뒤부터 표식이 순번대로 선다 — 막대는 기준선에서 자라고, 원은 부풀고,
+ * 호는 바닥에서 솟고, 칸은 대각선으로 번진다. transform·opacity 만 쓴다(합성 단계).
  * ========================================================================== */
 
 :root {
-  /* 시퀀셜 — 히트맵. 금색 계열 한 색상. 밝기만 변한다(크림 바탕 위 알파). */
+  --sv-lead: #94743f;               /* 강조 표식 — 결론이 가리키는 것 */
+  --sv-rest: #aca69c;               /* 강조가 아닌 표식들의 한 회색 */
+  --sv-track: rgba(26, 26, 26, .07);
+  --sv-base: rgba(26, 26, 26, .42); /* 막대의 기준선 */
+
+  /* 시퀀셜 — 히트맵. 금색 계열 한 색상의 알파만 움직인다(= --sv-lead 의 RGB). */
   --sv-seq: 148, 116, 63;
 
   /* 다이버징 — 정착 온도. 따뜻함(머무름) ↔ 차가움(떠남), 중앙은 무채색.
@@ -32,294 +46,375 @@
   --sv-cool: #4f7d99;
   --sv-mid:  #c3bdb3;
 
-  /* 강조가 아닌 것들의 한 회색. 값마다 색을 달리하지 않는다. */
-  --sv-rest: #6d6a64;
-  --sv-track: rgba(26, 26, 26, .10);
+  --sv-d0: .5s;                     /* 결론 문장이 선 뒤 표식이 서기 시작하는 때 */
 }
 
-/* 통계 칸은 높이가 서로 다르다. 그대로 두면 칸이 넘어갈 때마다 패널 전체가
-   늘었다 줄었다 하고, 그 아래 바다의 보이는 높이까지 같이 흔들린다. 가장 높은
-   칸에 맞춰 자리를 잡아 두고 내용을 위에서부터 채운다. */
-.p-rows { min-height: 30vw; }
+/* 표식 등장 — 이름은 움직임, 순번은 --i */
+@keyframes sv-grow-x { from { transform: scaleX(0); } }
+@keyframes sv-grow-y { from { transform: scaleY(0); } }
+@keyframes sv-pop    { from { opacity: 0; transform: scale(0); } }
+@keyframes sv-rise   { from { opacity: 0; transform: translateY(.7em); } }
+@keyframes sv-in     { from { opacity: 0; } }
+@keyframes sv-cell   { from { opacity: 0; transform: scale(.35); } }
+/* 결론이 가리키는 표식에 한 번 번지는 테 — 표식이 다 선 다음에 */
+@keyframes sv-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(148, 116, 63, .6); }
+  100% { box-shadow: 0 0 0 .8em rgba(148, 116, 63, 0); }
+}
+@keyframes sv-breathe { 50% { opacity: .55; } }
 
 /* ── ranking — 낱말이 빈도순으로 작아지는 한 문단 (시안 스크린샷) ──────────── */
 .sv-ranking {
-  /* gap 이 em 이라 컨테이너 글자 크기가 기준값이어야 한다 (항목마다 크기가 다르므로) */
   display: flex;
   flex-wrap: wrap;
+  align-content: center;
   align-items: baseline;
-  gap: .12em .32em;
+  gap: .08em .34em;
+  height: 100%;
+  overflow: hidden;
+  font-size: var(--stat-base);
 }
-.sv-rank-item { line-height: 1.14; white-space: nowrap; }
-.sv-rank-item.t1 { color: var(--c-accent); font-weight: 700; }
-.sv-rank-item.t2 { color: var(--ink); font-weight: 600; }
-.sv-rank-item.t3 { color: var(--ink2); font-weight: 500; }
-.sv-rank-item.t4 { color: var(--sv-rest); font-weight: 500; }
-.sv-rank-item.t5 { color: #97938c; font-weight: 500; }
+.sv-rank-item { line-height: 1.12; white-space: nowrap; }
+/* 여기서는 낱말이 곧 표식이다 — 1위 낱말이 금색인 건 시안 그대로다 */
+.sv-rank-item.t1 { color: var(--c-accent); font-weight: 800; }
+.sv-rank-item.t2 { color: var(--ink); font-weight: 700; }
+.sv-rank-item.t3 { color: var(--ink2); font-weight: 600; }
+.sv-rank-item.t4 { color: #6d6a64; font-weight: 500; }
+.sv-rank-item.t5 { color: #9a968f; font-weight: 500; }
+.report.in .sv-rank-item {
+  display: inline-block;
+  animation: sv-rise .7s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .07s) both;
+}
 
 /* ── bars — 전체 대비 비율 막대 ────────────────────────────────────────────── */
 .sv-bars {
-  /* 행마다 grid 를 따로 두면 열 폭이 행마다 달라져서 막대 시작점이 어긋나고, 길이를
-     눈으로 비교할 수가 없다. 그래서 바깥을 하나의 grid 로 두고 행은 display:contents 로
-     펴서, 세 열이 전체에서 한 번만 결정되게 한다.
-     라벨 열이 max-content 인 이유: 고정 폭으로 잡으면 "떠날 준비 중" 같은 긴 항목이
-     잘리고, 지표마다 라벨 길이가 달라 상수로는 맞출 수가 없다. */
+  /* 바깥을 하나의 grid 로 두고 행은 display:contents 로 편다 — 행마다 grid 를 따로 두면
+     열 폭이 행마다 달라져 막대 시작점이 어긋나고, 길이를 눈으로 비교할 수가 없다. */
   display: grid;
-  grid-template-columns: minmax(0, max-content) 1fr 2.6em;
+  grid-template-columns: minmax(0, max-content) 1fr 3em;
+  grid-auto-rows: minmax(0, 1fr);
   align-items: center;
-  gap: .62em .8em;
-  font-size: calc(var(--stat-base) * .34);
-  margin-top: .5em;
+  column-gap: .8em;
+  height: 100%;
 }
 .sv-bar-row { display: contents; }
 .sv-bar-label {
-  color: var(--c-sub);
+  color: var(--ink2);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sv-bar-track { height: .46em; border-radius: 99px; background: var(--sv-track); overflow: hidden; }
+/* 기준선에서 자라는 막대: 기준선 쪽은 각지고 값 쪽 끝만 둥글다 */
+.sv-bar-track {
+  height: .62em;
+  background: var(--sv-track);
+  border-left: max(1px, calc(.2 * var(--u))) solid var(--sv-base);
+}
 .sv-bar-fill {
   display: block;
   height: 100%;
-  border-radius: 99px;
+  border-radius: 0 max(3px, calc(.6 * var(--u))) max(3px, calc(.6 * var(--u))) 0;
   background: var(--sv-rest);
-  /* 값이 갈릴 때 길이가 미끄러진다. 크로스페이드(.5s)보다 살짝 길게 둬서
-     막대가 다 자란 뒤에 눈이 따라오게 한다. */
-  transition: width .62s cubic-bezier(.22, .61, .36, 1);
+  transform-origin: left center;
 }
-.sv-bar-row.lead .sv-bar-label { color: var(--c-count); font-weight: 700; }
-.sv-bar-row.lead .sv-bar-fill { background: var(--c-accent); }
+.sv-bar-row.lead .sv-bar-label { color: var(--ink); font-weight: 800; }
+.sv-bar-row.lead .sv-bar-fill { background: var(--sv-lead); }
 .sv-bar-pct {
   color: var(--c-label);
   font-weight: 600;
   text-align: right;
-  /* 세로로 줄맞춤되는 숫자라 등폭이 맞다 (큰 표제 숫자에는 쓰지 않는다) */
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: tabular-nums;   /* 세로로 줄맞춤되는 숫자 */
 }
+.sv-bar-row.lead .sv-bar-pct { color: var(--ink); font-weight: 800; }
 .sv-bar-pct i { font-style: normal; font-size: .74em; opacity: .7; }
+.report.in .sv-bar-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
+.report.in .sv-bar-label,
+.report.in .sv-bar-track,
+.report.in .sv-bar-pct { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
 
-/* ── bubble — 1위를 가운데 먹색으로, 나머지는 회색으로 둘러 ─────────────────── */
-.sv-bubble { display: block; }
-.sv-bubble svg {
-  display: block;
-  width: 100%;
-  /* viewBox 가 내용에 딱 맞춰져 있어서(views.js packBubbles) 폭을 다 쓴다.
-     높이는 그 비율에서 따라오지만, 항목 수에 따라 비율이 변하므로 상한을 둔다. */
-  height: 19vw;
-  overflow: visible;
-}
-.sv-bub circle { fill: #d6d1c8; }
+/* ── bubble — 강조한 것을 먹색으로, 나머지는 옅은 회색으로 한 줄에 ─────────── */
+.sv-bubble { display: block; height: 100%; }
+.sv-bubble svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.sv-bub circle { fill: #d9d4cb; }
 .sv-bub.lead circle { fill: var(--ink); }
 .sv-bub text { fill: var(--ink2); font-weight: 600; text-anchor: middle; }
-.sv-bub text.in { fill: var(--c-ground); }
-.sv-bub.lead text.in { fill: var(--c-ground); font-weight: 700; }
-.sv-bub:not(.lead) text.in { fill: var(--ink2); }
+.sv-bub text.in { fill: var(--ink2); }
+.sv-bub.lead text.in { fill: var(--c-ground); font-weight: 800; }
 .sv-bub text.out { fill: var(--c-label); font-weight: 600; }
-.sv-bub-head {
-  display: block;
-  margin-top: .7em;
-  font-size: calc(var(--stat-base) * .40);
-  font-weight: 700;
-  line-height: 1.4;
-  color: var(--c-count);
+/* LIVE: 이 문장이 고른 낱말 위의 +1 (표식은 금색, 글자는 먹색) */
+.sv-bub .sv-bub-plus circle { fill: var(--gold2); stroke: var(--c-ground); stroke-width: .03; }
+.sv-bub .sv-bub-plus text { fill: var(--ink); font-size: .2px; font-weight: 800; }
+.report.in .sv-bub {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sv-pop .8s var(--ease-back) calc(var(--sv-d0) + var(--i, 0) * .09s) both;
+}
+.report.in .sv-bub-plus {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: sv-pop .6s var(--ease-back) 1.5s both;
 }
 
-/* ── headline — 1위 하나만 크게 ───────────────────────────────────────────── */
-.sv-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3em; }
-.sv-head-word {
-  font-size: calc(var(--stat-base) * 1.25);
-  font-weight: 700;
-  color: var(--c-accent);
-  line-height: 1.05;
-}
-.sv-head-share {
-  font-size: calc(var(--stat-base) * .52);
-  font-weight: 600;
-  color: var(--c-count);
-}
+/* ── headline — 1위 하나만 크게 (보정 화면 안내) ──────────────────────────── */
+.sv-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3em; font-size: var(--stat-base); }
+.sv-head-word { font-size: 1.25em; font-weight: 700; color: var(--c-accent); line-height: 1.05; }
+.sv-head-share { font-size: .52em; font-weight: 600; color: var(--c-count); }
 .sv-head-share i { font-style: normal; font-size: .66em; opacity: .7; }
-.sv-head-rest {
-  flex-basis: 100%;
-  font-size: calc(var(--stat-base) * .34);
-  color: var(--c-label);
-  margin-top: .35em;
+.sv-head-rest { flex-basis: 100%; font-size: .34em; color: var(--c-label); margin-top: .35em; }
+
+/* ── motives — 같은 낱말, 다른 이유 ────────────────────────────────────────── */
+.sv-motives {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(3em, 1fr) 3em minmax(0, max-content);
+  grid-auto-rows: minmax(0, 1fr);
+  align-items: center;
+  column-gap: .75em;
+  height: 100%;
 }
+.sv-mo-row { display: contents; }
+.sv-mo-label { color: var(--c-label); font-weight: 600; white-space: nowrap; }
+.sv-mo-top { color: var(--ink2); font-weight: 700; white-space: nowrap; }
+.sv-mo-pct { color: var(--c-label); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.sv-mo-pct i { font-style: normal; font-size: .74em; opacity: .75; }
+.sv-mo-rest { color: var(--c-label); font-size: .86em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-mo-row.lead .sv-mo-label { color: var(--ink2); }
+.sv-mo-row.lead .sv-mo-top { color: var(--ink); font-weight: 800; }
+.sv-mo-row.lead .sv-mo-pct { color: var(--ink); font-weight: 800; }
+.sv-mo-row.lead .sv-bar-fill { background: var(--sv-lead); }
+/* 문장이 적은 동기는 비교에서 빠진다는 걸 드러낸다 — 막대 대신 "적음" */
+.sv-mo-row.thin .sv-bar-track { background: none; border-left-color: var(--sv-track); }
+.sv-mo-row.thin .sv-mo-label { opacity: .6; }
+.report.in .sv-mo-row .sv-bar-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .1s) both; }
+.report.in .sv-mo-label { animation: sv-in .5s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .1s) both; }
+.report.in .sv-mo-top,
+.report.in .sv-mo-pct,
+.report.in .sv-mo-rest { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + .15s + var(--i, 0) * .1s) both; }
 
 /* ── heatmap — 지역 × 상태 ────────────────────────────────────────────────── */
-.sv-heatmap { display: block; font-size: calc(var(--stat-base) * .27); margin-top: .6em; }
+.sv-heatmap { display: block; height: 100%; font-size: .9em; }
 .sv-hm-grid {
   display: grid;
   grid-template-columns: minmax(0, max-content) repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: auto;
+  grid-auto-rows: minmax(0, 1fr);
   /* 칸을 맞붙이지 않고 바탕색 틈을 둔다. 테두리를 그리는 것보다 조용하다. */
   gap: 2px;
-  align-items: stretch;
+  height: 100%;
 }
-.sv-hm-corner { }
 .sv-hm-col, .sv-hm-rowlabel {
   color: var(--c-label);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.sv-hm-col { text-align: center; padding-bottom: .25em; }
-.sv-hm-rowlabel { align-self: center; padding-right: .5em; }
+.sv-hm-col { text-align: center; padding-bottom: .3em; }
+/* 열 머리의 인원 — 지역 분포가 여기서 함께 읽힌다 */
+.sv-hm-col b { font-weight: 600; color: var(--ink3); margin-left: .3em; font-size: .88em; font-variant-numeric: tabular-nums; }
+.sv-hm-col.on, .sv-hm-rowlabel.on { color: var(--ink); font-weight: 800; }
+.sv-hm-rowlabel { align-self: center; padding-right: .6em; }
 .sv-hm-row { display: contents; }
 .sv-hm-cell {
-  /* --t 는 최대값 대비 비율(0~1). 한 색상의 알파만 움직이므로 색상은 하나뿐이고
-     밝기만 단조 변한다 — 무지개 램프가 아니라 시퀀셜이다. */
-  background: rgba(var(--sv-seq), calc(var(--t) * .92));
+  /* --t 는 최대값 대비 비율(0~1). 한 색상의 알파만 움직이므로 밝기만 단조 변한다. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--sv-seq), calc(.05 + var(--t) * .87));
   color: var(--ink2);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-  padding: .42em 0;
-  border-radius: 3px;
+  border-radius: 2px;
   min-width: 0;
+  min-height: 0;
 }
 .sv-hm-cell.deep { color: var(--c-ground); }
 .sv-hm-cell.zero { color: transparent; }
-.sv-hm-legend {
-  display: flex;
-  align-items: center;
-  gap: .5em;
-  margin-top: .7em;
-  color: var(--c-label);
-  font-weight: 600;
+.sv-hm-cell.on {
+  outline: max(2px, calc(.45 * var(--u))) solid var(--ink);
+  outline-offset: -1px;
+  font-weight: 800;
+  position: relative;
+  z-index: 1;
 }
-.sv-hm-swatches { display: flex; gap: 2px; }
+.report.in .sv-hm-col,
+.report.in .sv-hm-rowlabel { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) - .1s) both; }
+.report.in .sv-hm-cell { animation: sv-cell .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .06s) both; }
+.report.in .sv-hm-cell.on {
+  animation: sv-cell .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .06s) both,
+             sv-ring 1.1s ease-out 1.7s 2;
+}
+
+/* 범례 — 각주 줄 오른쪽 (panel.css .r-legend 자리) */
+.sv-legend { display: inline-flex; align-items: center; gap: .45em; font-variant-numeric: tabular-nums; }
+.sv-hm-swatches { display: inline-flex; gap: 2px; }
 .sv-hm-swatches i {
   display: block;
-  width: 1.5em; height: .55em;
-  border-radius: 2px;
-  background: rgba(var(--sv-seq), calc(var(--t) * .92));
+  width: 1.4em; height: .62em;
+  border-radius: 1px;
+  background: rgba(var(--sv-seq), calc(.05 + var(--t) * .87));
 }
-.sv-hm-legend-txt { font-variant-numeric: tabular-nums; }
 
-/* ── network — 함께 고른 이유들 ────────────────────────────────────────────── */
-.sv-network { display: block; }
-.sv-network svg { display: block; width: 100%; height: 21vw; overflow: visible; }
-.sv-net-links path { fill: none; stroke: var(--c-accent); stroke-linecap: round; }
-.sv-net-node circle { fill: var(--ink); }
-.sv-net-node text {
-  fill: var(--ink2);
-  font-weight: 600;
-  font-size: .30px;           /* viewBox 단위 — 가로 10 기준 */
-  text-anchor: middle;
-  dominant-baseline: middle;
+/* ── network — 함께 고른 이유들 (아크 다이어그램) ──────────────────────────── */
+.sv-network { position: relative; display: block; height: 100%; }
+/* 호는 늘어나는 SVG — 바닥선이 낱말 점의 높이와 맞아야 한다 (아래 .sv-net-nodes 의 점) */
+.sv-net-arcs {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  bottom: 2.05em;
+  width: 100%;
+  height: calc(100% - 2.05em);
+  overflow: visible;
 }
-.sv-net-note {
+.sv-net-arcs path {
+  fill: none;
+  stroke: var(--sv-rest);
+  stroke-opacity: .7;
+  stroke-width: calc(var(--w, .3) * var(--u));
+  stroke-linecap: round;
+}
+.sv-net-arcs path.on { stroke: var(--sv-lead); stroke-opacity: 1; }
+.sv-net-nodes { position: absolute; left: 0; right: 0; bottom: 0; height: 2.05em; }
+/* 폭 0 짜리 기둥을 left:% 에 세우고 그 가운데에 점과 낱말을 둔다 — transform 을
+   모션에 쓰려고 translate(-50%) 가운데 맞춤을 피했다 */
+.sv-net-node {
+  position: absolute;
+  top: 0;
+  width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.sv-net-node i {
   display: block;
-  margin-top: .5em;
-  font-size: calc(var(--stat-base) * .30);
-  color: var(--c-label);
-  font-weight: 600;
+  flex: none;
+  width: calc(var(--s) * .62em);
+  height: calc(var(--s) * .62em);
+  margin-top: calc(var(--s) * -.31em);
+  border-radius: 50%;
+  background: var(--ink2);
+  box-shadow: 0 0 0 2px var(--c-ground);
 }
-.sv-net-note b { color: var(--c-count); font-weight: 700; }
+.sv-net-node b { margin-top: .3em; white-space: nowrap; font-weight: 600; color: var(--ink2); }
+.sv-net-node.on i { background: var(--ink); }
+.sv-net-node.on b { color: var(--ink); font-weight: 800; }
+.report.in .sv-net-arcs path {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: sv-grow-y 1s var(--ease-out) calc(var(--sv-d0) + .3s + var(--i, 0) * .05s) both;
+}
+.report.in .sv-net-node { animation: sv-rise .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .05s) both; }
 
 /* ── thermo — 정착 온도 (다이버징) ─────────────────────────────────────────── */
 .sv-thermo {
   display: grid;
-  grid-template-columns: minmax(0, max-content) 1fr 2.6em;
+  grid-template-columns: minmax(0, max-content) 1fr 3em;
+  grid-auto-rows: minmax(0, 1fr);
   align-items: center;
-  gap: .5em .7em;
-  font-size: calc(var(--stat-base) * .32);
-  margin-top: .5em;
+  column-gap: .8em;
+  height: 100%;
 }
 .sv-th-row { display: contents; }
-.sv-th-label { color: var(--c-sub); font-weight: 600; white-space: nowrap; }
-.sv-th-track { position: relative; height: .72em; background: var(--sv-track); border-radius: 3px; }
+.sv-th-label { color: var(--ink2); font-weight: 600; white-space: nowrap; }
+.sv-th-track { position: relative; height: .62em; background: var(--sv-track); }
 .sv-th-zero {
   /* 0 자리를 눈에 보이게 세워 둔다. 이게 없으면 막대가 어디서 갈리는지 알 수 없다. */
-  position: absolute; left: 50%; top: -.14em; bottom: -.14em;
-  width: 1px; background: var(--sv-mid); transform: translateX(-.5px);
+  position: absolute; left: 50%; top: -.24em; bottom: -.24em;
+  width: max(1px, calc(.2 * var(--u))); background: var(--sv-base); transform: translateX(-50%);
 }
-.sv-th-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
-.sv-th-row.warm .sv-th-fill { background: var(--sv-warm); }
-.sv-th-row.cool .sv-th-fill { background: var(--sv-cool); }
-.sv-th-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-.sv-th-row.warm .sv-th-val { color: var(--sv-warm); }
-.sv-th-row.cool .sv-th-val { color: var(--sv-cool); }
+.sv-th-fill { position: absolute; top: 0; bottom: 0; }
+/* 기준선(0) 쪽은 각지고 값 쪽 끝만 둥글다 */
+.sv-th-row.warm .sv-th-fill { background: var(--sv-warm); border-radius: 0 3px 3px 0; transform-origin: left center; }
+.sv-th-row.cool .sv-th-fill { background: var(--sv-cool); border-radius: 3px 0 0 3px; transform-origin: right center; }
+/* 점수 글자는 먹색 — 색은 막대가 입는다 */
+.sv-th-val { text-align: right; color: var(--ink2); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sv-th-row.lead .sv-th-label, .sv-th-row.lead .sv-th-val { color: var(--ink); font-weight: 800; }
+.sv-th-row.thin .sv-th-fill { opacity: .38; }
+.sv-th-row.thin .sv-th-label, .sv-th-row.thin .sv-th-val { color: var(--c-label); }
 .sv-th-axis {
   grid-column: 2 / 3;
   display: flex;
   justify-content: space-between;
-  margin-top: .15em;
-  font-size: .8em;
+  align-self: start;
+  font-size: .82em;
   color: var(--c-label);
   font-weight: 600;
 }
+.report.in .sv-th-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
+.report.in .sv-th-label,
+.report.in .sv-th-track,
+.report.in .sv-th-val { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
+.report.in .sv-th-axis { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + .4s) both; }
 
-/* ── pulse — 유입 속도 (스탯 타일 + 스파크라인) ────────────────────────────── */
-.sv-pulse { display: block; margin-top: .4em; }
-.sv-pulse-head { display: flex; align-items: baseline; gap: .35em; }
-.sv-pulse-num {
-  font-size: calc(var(--stat-base) * 1.15);
-  font-weight: 700;
-  color: var(--c-count);
-  line-height: 1;
-  /* 큰 표제 숫자에는 등폭을 쓰지 않는다 — 자릿수가 벌어져 보인다. */
-}
-.sv-pulse-unit { font-size: calc(var(--stat-base) * .32); font-weight: 600; color: var(--c-sub); }
+/* ── pulse — 유입 속도 (스파크라인) ────────────────────────────────────────── */
+.sv-pulse { display: flex; flex-direction: column; height: 100%; }
 .sv-pulse-spark {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  height: 7vw;
-  margin-top: .6em;
+  gap: 3px;
+  padding-top: 1.3em;                 /* 막대 위 숫자 자리 */
+  border-bottom: max(1px, calc(.2 * var(--u))) solid var(--sv-base);
 }
 .sv-pulse-spark i {
+  position: relative;
   flex: 1;
   background: var(--sv-rest);
-  border-radius: 3px 3px 0 0;   /* 바닥은 축에 붙어 있으므로 위쪽만 둥글린다 */
-  opacity: .55;
+  border-radius: 3px 3px 0 0;          /* 바닥은 축에 붙어 있으므로 위쪽만 둥글린다 */
+  transform-origin: bottom center;
 }
-.sv-pulse-spark i.now { background: var(--c-accent); opacity: 1; }
-.sv-pulse-foot {
-  display: block;
-  margin-top: .5em;
-  font-size: calc(var(--stat-base) * .29);
+.sv-pulse-spark i.peak { background: var(--sv-lead); }
+.sv-pulse-spark b {
+  position: absolute;
+  bottom: 100%; left: 0; right: 0;
+  padding-bottom: .2em;
+  text-align: center;
+  font-size: .95em;
+  font-style: normal;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.sv-pulse-axis {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  margin-top: .35em;
+  font-size: .82em;
   color: var(--c-label);
   font-weight: 600;
+}
+.report.in .sv-pulse-axis { animation: sv-in .6s var(--ease-out) var(--sv-d0) both; }
+.report.in .sv-pulse-spark i { animation: sv-grow-y .7s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .045s) both; }
+.report.in .sv-pulse-spark i.now {
+  animation: sv-grow-y .7s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .045s) both,
+             sv-breathe 2.4s ease-in-out 1.6s infinite;
 }
 
 /* ── textwall — 문장을 그대로 흘려보낸다 ──────────────────────────────────── */
 .sv-textwall {
   display: block;
-  height: 26vw;
+  height: 100%;
   overflow: hidden;
   position: relative;
-  margin-top: .4em;
   /* 위아래 끝에서 문장이 잘려 나가는 대신 흐려지며 사라진다 */
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 14%, #000 86%, transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 16%, #000 84%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 16%, #000 84%, transparent);
 }
 .sv-tw-belt {
   display: flex;
   flex-direction: column;
-  gap: 1.1em;
-  font-size: calc(var(--stat-base) * .32);
+  gap: 1em;
+  font-size: 1.12em;
   /* 목록을 두 번 이어 붙여 두고 정확히 절반만큼 올린다 — 이음매가 안 보인다. */
   animation: sv-tw-scroll var(--tw-sec, 24s) linear infinite;
 }
 @keyframes sv-tw-scroll { to { transform: translateY(-50%); } }
 .sv-tw-item { display: block; }
-.sv-tw-text { display: block; color: var(--ink2); font-weight: 600; line-height: 1.45; }
-.sv-tw-meta { display: block; margin-top: .15em; font-size: .76em; color: var(--c-label); font-weight: 600; }
+.sv-tw-text { display: block; color: var(--ink); font-weight: 600; line-height: 1.45; word-break: keep-all; }
+.sv-tw-meta { display: block; margin-top: .15em; font-size: .78em; color: var(--c-label); font-weight: 600; }
+.report.in .sv-textwall { animation: sv-in 1s var(--ease-out) var(--sv-d0) both; }
 
 @media (prefers-reduced-motion: reduce) {
   .sv-tw-belt { animation: none; }
-  .sv-bar-fill { transition: none; }
-}
-
-/* 가로 화면에서는 --stat-base 가 vh 로 바뀐다(panel.css). 높이를 잡아 둔 것들도
-   같이 vh 로 가야 세로에서만 맞는 레이아웃이 되지 않는다. */
-@media (orientation: landscape) {
-  .p-rows { min-height: 25vh; }
-  .sv-bubble svg { height: 16vh; }
-  .sv-network svg { height: 17vh; }
-  .sv-pulse-spark { height: 6vh; }
-  .sv-textwall { height: 21vh; }
 }

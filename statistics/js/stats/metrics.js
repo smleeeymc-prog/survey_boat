@@ -1,28 +1,58 @@
 /* =============================================================================
  * stats/metrics.js — 무엇을 세는가.
  *
- * "무엇을 세는가"와 "어떻게 그리는가"를 따로 둔다. 같은 값을 다른 모양으로 여러 번
- * 보여줄 수도 있고, 새 지표가 생겨도 그리는 쪽은 손댈 일이 없다.
- *   metrics.js  무엇을      ← 여기
- *   views.js    어떻게
- *   index.js    무엇을 어떻게, 어떤 순서로
+ * 통계는 네 층으로 나뉜다. 한 층을 바꿔도 다른 층은 손댈 일이 없다.
+ *   metrics.js   무엇을 세는가        ← 여기
+ *   insights.js  어떻게 읽는가 (값 · 한 줄 결론)
+ *   views.js     어떻게 그리는가
+ *   index.js     무엇을 어떻게, 어떤 순서로
  *
  * ── 모양(shape) ────────────────────────────────────────────────────────────
- * 지표마다 나오는 데이터의 구조가 다르다(1차원 집계 / 교차표 / 짝 / 문장 / 시계열).
- * 그래서 지표는 자기 shape 을 선언하고, 뷰는 받을 수 있는 shape 을 선언한다.
- * index.js가 짝을 지을 때 맞는지 검사하므로, 안 맞는 조합은 전시 중이 아니라
- * 켜는 순간 콘솔에서 걸린다.
+ * 지표는 자기 shape 을 선언하고, 그리는 쪽은 받을 수 있는 shape 을 선언한다.
+ * index.js가 짝을 지을 때 맞는지 검사하므로, 안 맞는 조합은 켜는 순간 콘솔에서 걸린다.
  *
- *   rows    {items:[{label,count,share}], total}          랭킹 · 막대 · 버블
- *   matrix  {rows, cols, cells, max, total}               히트맵
- *   pairs   {nodes:[{label,count}], links:[{a,b,count}]}  동시출현 네트워크
- *   scores  {items:[{label,score,n}], min, max}           정착 온도 (다이버징)
- *   pulse   {total, buckets, recent, windowMin}           누적 + 유입 속도
- *   stream  {items:[{text, meta}]}                        자유응답 벽
+ *   rows    {items:[{label,count,share}], total, n}          랭킹 · 막대 · 버블
+ *   groups  {groups:[{key,label,n,items:[…rows]}]}           동기별 이유
+ *   matrix  {rows, cols, cells, colTotals, max, total}       히트맵
+ *   pairs   {nodes:[{label,count}], links:[{a,b,count}]}     동시출현
+ *   scores  {items:[{label,score,n}], min, max}              정착 온도 (다이버징)
+ *   pulse   {total, buckets, recent, windowMin}              유입 속도
+ *   stream  {items:[{text, meta}]}                           문장 벽
+ *
+ * ── 키워드는 상태마다 다른 질문의 답이다 ─────────────────────────────────────
+ * 설문은 키워드를 "그 문장을 설명하는 키워드"로 받는다. 그 문장이 답하는 질문(Q3)은
+ * 상태마다 다르다 — 머무르게 하는 것 / 떠나게 하는 것 / 오가게 하는 것 / 망설이게 하는 것.
+ * 그래서 같은 '가족'이라도 누구의 답이냐에 따라 뜻이 반대다. "사람들이 여기 머무는 건
+ * 가족 때문"이라고 말하려면 머무는 사람의 답만 세야 한다. 모두 합쳐 세면 떠나는 이유까지
+ * 머무는 이유로 둔갑한다(예전 화면이 그랬다).
  * ========================================================================== */
 
-import { STATE_LABEL, STATES, REGIONS } from "../config.js";
+import { STATE_LABEL, STATES, REGIONS, SENTENCE_Q } from "../config.js";
 import { tally } from "../store.js";
+
+/**
+ * 동기 묶음 — Q3 질문 문구가 같은 상태끼리 한 묶음이다. 문구에서 자동으로 만든다:
+ * 설문이 문구를 바꾸거나 상태를 늘려도 여기를 고칠 필요가 없다.
+ *   머무르는 중 · 돌아온 사람 → "머무르게 하는 것" (같은 문장을 묻는다)
+ *   떠날 준비 중 → "떠나게 하는 것" …
+ * 문구가 없으면(분류값 파일이 옛날 것이면) 상태마다 한 묶음으로 물러선다.
+ */
+export const MOTIVES = (() => {
+  const byQ = new Map();
+  for (const s of STATES) {
+    const qtext = SENTENCE_Q[s.id] || s.id;
+    if (!byQ.has(qtext)) {
+      const m = String(qtext).match(/(\S+게 하는 것)/);
+      byQ.set(qtext, { key: s.id, label: m ? m[1] : s.label, states: [] });
+    }
+    byQ.get(qtext).states.push(s.id);
+  }
+  return [...byQ.values()];
+})();
+/** 상태 id → 그 상태가 속한 동기 묶음 */
+export const MOTIVE_OF = Object.fromEntries(MOTIVES.flatMap((m) => m.states.map((s) => [s, m])));
+/** "머무르게 하는 것" 묶음 — 머무는 이유를 셀 때 쓴다 */
+const STAY_MOTIVE = MOTIVE_OF.stay;
 
 /**
  * 정착 온도 점수 — 머무름 +2 · 돌아온 사람 +1 · 오가는 중/아직 모르겠음 0 · 떠날 준비 −2.
@@ -35,20 +65,39 @@ export const SETTLE_RANGE = 2;   // 점수의 절댓값 상한 = 다이버징 �
 
 export const METRICS = [
   {
-    id: "reason", label: "가장 많이 선택된 이유", shape: "rows",
-    // 버블 뷰가 1위를 한 문장으로 만든다. 문구가 지표마다 다르므로 뷰가 아니라
-    // 지표가 들고 있어야 한다 — 뷰는 어떤 지표였는지 몰라야 갈아끼울 수 있다.
-    headline: (top) => `사람들이 여기 머무는 건, "${top.label}" 때문입니다`,
+    // 머무는 사람(머무르는 중 + 돌아온 사람)이 고른 키워드만 센다 — 위 머리말 참고.
+    id: "stayReason", label: "머무르게 하는 이유", shape: "rows", votes: true,
+    scope: STAY_MOTIVE ? STAY_MOTIVE.states : ["stay"],
+    build: (rs, m) => rowsOf(rs.filter((r) => m.scope.includes(r.state)), (r) => r.keywords),
+  },
+  {
+    // 같은 키워드 풀이 동기에 따라 어떻게 갈리는가. 이 프로젝트에서만 나오는 축이다.
+    id: "motives", label: "같은 낱말, 다른 이유", shape: "groups", votes: true,
+    build: (rs) => ({
+      groups: MOTIVES.map((mo) => {
+        const sub = rs.filter((r) => mo.states.includes(r.state));
+        return { key: mo.key, label: mo.label, n: sub.length, ...rowsOf(sub, (r) => r.keywords) };
+      }),
+    }),
+  },
+  {
+    // 동기를 가리지 않은 전체 분포. 방향(머묾/떠남)이 아니라 "무엇이 사람들의 자리를
+    // 정하는가"를 본다 — 그래서 제목도 '머무는 이유'가 아니라 '이유'다.
+    id: "reason", label: "사람들이 고른 이유", shape: "rows", votes: true,
     build: (rs) => rowsOf(rs, (r) => r.keywords),
   },
   {
+    // 개인은 몰라도 집단에서 발견되는 패턴. "일+가족"이 묶이는지 "불안+주거"가 묶이는지.
+    // 한 문장 안의 키워드끼리 짝을 짓는다 — 같은 질문에 대한 답이라 동기를 섞지 않는다.
+    id: "keywordPairs", label: "함께 고른 이유들", shape: "pairs",
+    build: (rs) => coOccurrence(rs, (r) => r.keywords, 8, 14),
+  },
+  {
     id: "state", label: "지금 사람들이 서 있는 자리", shape: "rows",
-    headline: (top) => `가장 많은 답은 "${top.label}"입니다`,
     build: (rs) => rowsOf(rs, (r) => STATE_LABEL[r.state] || r.state),
   },
   {
     id: "region", label: "문장이 도착한 곳", shape: "rows",
-    headline: (top) => `문장이 가장 많이 온 곳은 ${top.label}입니다`,
     build: (rs) => rowsOf(rs, (r) => r.region),
   },
   {
@@ -57,11 +106,6 @@ export const METRICS = [
     id: "regionState", label: "지역마다 다른 자리", shape: "matrix",
     build: (rs) => crossTab(rs, (r) => STATE_LABEL[r.state] || r.state, (r) => r.region,
       STATES.map((s) => s.label), REGIONS),
-  },
-  {
-    // 개인은 몰라도 집단에서 발견되는 패턴. "일+가족"이 묶이는지 "불안+주거"가 묶이는지.
-    id: "keywordPairs", label: "함께 고른 이유들", shape: "pairs",
-    build: (rs) => coOccurrence(rs, (r) => r.keywords, 8, 14),
   },
   {
     id: "settleTemp", label: "정착 온도", shape: "scores",
@@ -83,11 +127,17 @@ export const METRIC = Object.fromEntries(METRICS.map((m) => [m.id, m]));
 
 /* ── shape 별 집계 ────────────────────────────────────────────────────────── */
 
-/** rows — 1차원 빈도. share 의 분모는 응답자 수가 아니라 표 수다(키워드는 복수 선택). */
-function rowsOf(records, pick, limit = 10) {
+/**
+ * rows — 1차원 빈도.
+ * share 의 분모는 "표 수"다. 키워드는 한 문장이 여러 개를 고를 수 있어서 표 수가 문장 수보다
+ * 많다 — 그래서 막대 합이 100%가 되는 표 수를 기준으로 삼고, 결론 문장에서 "몇 %의 사람이"
+ * 라고 말할 때는 따로 사람 수(n) 기준으로 다시 계산한다(insights.js).
+ */
+export function rowsOf(records, pick, limit = 10) {
   const t = tally(records, pick);
-  const total = t.reduce((a, r) => a + r.count, 0) || 1;
-  return { items: t.slice(0, limit).map((r) => ({ ...r, share: r.count / total })), total };
+  const total = t.reduce((a, r) => a + r.count, 0);
+  const d = total || 1;
+  return { items: t.slice(0, limit).map((r) => ({ ...r, share: r.count / d })), total, n: records.length };
 }
 
 /**
@@ -107,7 +157,9 @@ function crossTab(records, pickRow, pickCol, rowLabels, colLabels) {
   }
   let max = 0;
   for (const row of cells) for (const v of row) if (v > max) max = v;
-  return { rows: rowLabels, cols: colLabels, cells, max, total };
+  const rowTotals = cells.map((row) => row.reduce((a, v) => a + v, 0));
+  const colTotals = colLabels.map((_, j) => cells.reduce((a, row) => a + row[j], 0));
+  return { rows: rowLabels, cols: colLabels, cells, rowTotals, colTotals, max, total };
 }
 
 /** pairs — 같은 기록 안에서 함께 고른 값들의 짝. */
@@ -125,14 +177,15 @@ function coOccurrence(records, pick, maxNodes = 8, maxLinks = 14) {
       }
     }
   }
-  const nodes = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxNodes)
-    .map(([label, count]) => ({ label, count }));
+  const nodes = [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"))
+    .slice(0, maxNodes).map(([label, count]) => ({ label, count }));
   const keep = new Set(nodes.map((n) => n.label));
   const links = [...pairs.entries()]
     .map(([key, count]) => { const [a, b] = JSON.parse(key); return { a, b, count }; })
     .filter((l) => keep.has(l.a) && keep.has(l.b))
-    .sort((x, y) => y.count - x.count).slice(0, maxLinks);
-  return { nodes, links, maxLink: links.length ? links[0].count : 1 };
+    .sort((x, y) => y.count - x.count || (x.a + x.b).localeCompare(y.a + y.b, "ko"))
+    .slice(0, maxLinks);
+  return { nodes, links, maxLink: links.length ? links[0].count : 1, freq: Object.fromEntries(freq) };
 }
 
 /** scores — 그룹별 평균 점수. 표본이 없는 그룹은 뺀다 (0점과 "없음"은 다르다). */
@@ -146,19 +199,19 @@ function scoresBy(records, pickGroup, pickScore) {
   }
   const items = [...n.keys()]
     .map((label) => ({ label, score: sum.get(label) / n.get(label), n: n.get(label) }))
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || b.n - a.n);
   return { items, min: -SETTLE_RANGE, max: SETTLE_RANGE };
 }
 
 /** pulse — 최근 windowMin 분을 bucketCount 칸으로. 누적 수와 최근 유입 속도. */
-function pulseOf(records, windowMin = 60, bucketCount = 12) {
-  const now = Date.now();
+function pulseOf(records, windowMin = 60, bucketCount = 12, now = Date.now()) {
   const span = windowMin * 60000;
   const buckets = new Array(bucketCount).fill(0);
-  let recent = 0;
+  let recent = 0, newest = -Infinity;
   for (const r of records) {
     const t = Date.parse(r.created_at);
     if (!Number.isFinite(t)) continue;
+    if (t > newest) newest = t;
     const age = now - t;
     if (age < 0 || age >= span) continue;
     recent++;
@@ -166,7 +219,9 @@ function pulseOf(records, windowMin = 60, bucketCount = 12) {
     const i = Math.min(bucketCount - 1, Math.floor(((span - age) / span) * bucketCount));
     buckets[i]++;
   }
-  return { total: records.length, buckets, recent, windowMin, perHour: recent * (60 / windowMin) };
+  // 가장 최근 문장이 몇 분 전인가 — 칸끼리 동률이라 "가장 붐빈 때"를 말할 수 없을 때 쓴다
+  const lastAgoMin = Number.isFinite(newest) ? Math.max(0, (now - newest) / 60000) : null;
+  return { total: records.length, buckets, recent, windowMin, lastAgoMin };
 }
 
 /** stream — 최신 문장부터. 가려진 기록과 빈 문장은 뺀다. */

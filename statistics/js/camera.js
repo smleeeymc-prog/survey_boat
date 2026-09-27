@@ -66,6 +66,22 @@ export class TourCamera {
     return slant * Math.tan((CAM_FOV * Math.PI) / 360) * this.aspect;
   }
 
+  /**
+   * 카메라가 제자리(원점, 숨쉬기·흔들림 없음)에 있을 때, 화면 세로 yFrac(0=위, 1=아래)
+   * 줄이 닿는 수면의 깊이. 수평선보다 위의 줄이면 Infinity.
+   *
+   * 새 배가 등장할 자리를 고를 때 쓴다 — 연출이 끝나면 카메라는 제자리로 돌아오고,
+   * 그때 배가 패널 뒤에 숨어 있으면 안 된다. 패널 높이는 화면 비율에 따라 달라지므로
+   * 깊이 상한을 상수로만 두지 않고 패널의 실제 아래 끝에서 이 함수로 다시 잰다.
+   * 세로 방향 계산이라 화면 가로 비율과는 무관하다(FOV 가 세로 기준).
+   */
+  homeDepthAtScreenY(yFrac) {
+    const pitch = Math.atan2(CAM_HEIGHT, CAM_LOOK_AHEAD);          // 시선이 수평에서 내려간 각
+    const up = Math.atan((1 - 2 * yFrac) * Math.tan((CAM_FOV * Math.PI) / 360));
+    const below = pitch - up;                                      // 그 줄이 수평에서 내려간 각
+    return below > 1e-4 ? CAM_HEIGHT / Math.tan(below) : Infinity;
+  }
+
   /** 카메라를 이 수면 좌표 위로 옮긴다. 높이와 숨쉬기는 그대로 얹힌다. */
   setEye(x, z) { this.eyeX = x; this.eyeZ = z; }
 

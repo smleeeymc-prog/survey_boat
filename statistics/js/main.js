@@ -169,6 +169,8 @@ class MapScene {
       },
       onInsert: (record) => {
         this.records.push(record);
+        // 숫자와 통계는 배가 관람객 눈앞에 나타날 때 +1 된다 (panel.js 머리말)
+        this.panel.expect(record);
         this.panel.setRecords(this.records);
         this._addRecord(record, true);
       },
@@ -193,6 +195,14 @@ class MapScene {
    */
   _pickArrivalSpot(record) {
     const rng = makeRng(hashSeed(String(record.record_id)) ^ 0x5f3a);
+    // 패널이 덮지 않은 바다 안에서 고른다. 깊이 상한은 설정값(33)과 "패널 아래 끝 + 여유"가
+    // 닿는 깊이 중 가까운 쪽 — 화면 비율이 달라 패널이 더 내려오면 상한도 따라 당겨진다.
+    // 가로는 보이는 바다의 한가운데(f=fC)에서 왼쪽 끝(f=fL) 사이. f 는 그 깊이에서의 화면
+    // 반폭 대비 비율이고 +가 왼쪽이다(카메라가 +Z를 보므로 화면 왼쪽이 월드 +X).
+    const sea = this._visibleSea();
+    const depthMax = Math.max(C.ARRIVAL_DEPTH_MIN + 1, Math.min(C.ARRIVAL_DEPTH_MAX,
+      this.cam.homeDepthAtScreenY(sea.y0 + C.ARRIVAL_PANEL_CLEAR)));
+    const fL = 1 - 2 * sea.x0, fC = -sea.x0;
     // 제시하는 동안 이 배만 멈춰 서 있고 나머지는 계속 흐른다. 그 시간만큼 흐름
     // 방향으로 격자가 밀리므로, 얼어 있는 자리가 곧 "연출이 끝났을 때의 격자 자리"다.
     // 배가 얼어 있는 시간은 카메라 이동 시간 + 머무는 시간이다. 이동 시간은 거리에서
@@ -201,9 +211,9 @@ class MapScene {
     const lead = C.FLOW_DIR * this.flowSpeed * freeze;
     let best = null, bestClear = -Infinity;
     for (let n = 0; n < 64; n++) {
-      const depth = C.ARRIVAL_DEPTH_MIN + rng() * (C.ARRIVAL_DEPTH_MAX - C.ARRIVAL_DEPTH_MIN);
+      const depth = C.ARRIVAL_DEPTH_MIN + rng() * (depthMax - C.ARRIVAL_DEPTH_MIN);
       const hw = this.cam.frameHalfWidthAt(depth);
-      const spawnX = hw * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN));
+      const spawnX = hw * (fC + (fL - fC) * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN)));
       // 얼어 있는 동안 이웃들이 옆을 흘러 지나간다. 한 점이 아니라 그 구간 전체에서
       // 간격이 유지돼야 한다 — 지금 비어 있어도 3초 뒤에 옆구리를 스칠 수 있다.
       // 한쪽으로만 쓸면 된다: 이 배는 서 있고 남들만 흐른다. 제시는 한 번에 하나뿐이고
@@ -222,6 +232,20 @@ class MapScene {
     return best;
   }
 
+  /**
+   * 패널이 덮지 않은 바다가 화면의 어디서 시작하는가 (화면 비율 0~1).
+   * 세로 화면에서는 패널 아래(y0), 가로 화면에서는 왼쪽 띠가 된 패널의 오른쪽(x0)이다.
+   * 패널 크기는 CSS가 화면 비율마다 정하므로(css/panel.css) 여기서 숫자로 가정하지 않고 잰다.
+   */
+  _visibleSea() {
+    const el = document.getElementById("panel");
+    const W = window.innerWidth, H = window.innerHeight;
+    if (!el || !W || !H) return { x0: 0, y0: 0 };
+    const r = el.getBoundingClientRect();
+    const sidebar = r.width < W * 0.9;
+    return { x0: sidebar ? r.right / W : 0, y0: sidebar ? 0 : r.bottom / H };
+  }
+
   _addRecord(record, announce) {
     // 앞 연출이 아직 안 끝났으면 배를 만들지 않고 기록만 줄 세운다.
     // 예전에는 배를 먼저 바다에 놓고 줄을 세웠는데, 그러면 차례를 기다리는 동안 배가
@@ -235,6 +259,9 @@ class MapScene {
       while (this.pending.length > ARRIVAL_QUEUE_MAX) this._addRecord(this.pending.shift(), false);
       return;
     }
+
+    // 연출 없이 바다에 놓이는 기록은 지금 바로 센다(줄이 밀려 연출을 건너뛴 경우 포함)
+    if (!announce) this.panel.reveal(record.record_id);
 
     let slot = null, spawnX;
     if (announce) {
@@ -269,7 +296,7 @@ class MapScene {
     while (this.boats.length > C.FLEET_CAPACITY) {
       const gone = this.boats.shift();
       this.slots.release(gone.slot);
-      if (this.arriving === gone) { this.arriving = null; this.panel.hideArrival(); }
+      if (this.arriving === gone) { this.arriving = null; this.panel.endLive(); }
     }
     this._reindex();
 
@@ -281,7 +308,7 @@ class MapScene {
     if (i >= 0) {
       const gone = this.boats[i];
       this.slots.release(gone.slot);
-      if (this.arriving === gone) { this.arriving = null; this.panel.hideArrival(); }
+      if (this.arriving === gone) { this.arriving = null; this.panel.endLive(); }
       this.boats.splice(i, 1);
       this._reindex();
     }
@@ -289,6 +316,9 @@ class MapScene {
     if (q >= 0) this.pending.splice(q, 1);   // 아직 제시 못 한 기록이 지워진 경우
     const j = this.records.findIndex((r) => r.record_id === recordId);
     if (j >= 0) { this.records.splice(j, 1); this.panel.setRecords(this.records); }
+    // 제시 중이던 배가 지워졌으면 줄의 다음 차례를 바로 부른다. 안 그러면 줄에 선 기록은
+    // 다음 제출이 들어올 때까지 연출을 못 받는다(다음 차례는 원래 연출이 끝날 때 부른다).
+    if (!this.arriving && this.pending.length) this._addRecord(this.pending.shift(), true);
   }
 
   /** 배 목록이 바뀌면 인스턴스 인덱스가 밀린다 — 색·소품을 다시 써 준다. */
@@ -332,6 +362,9 @@ class MapScene {
     const frozen = boat.camSec + C.ARRIVAL_HOLD_SEC;
     boat.slot.x0 = wrapCorridor(boat.x - this.flowDist - C.FLOW_DIR * this.flowSpeed * frozen);
     this.arriving = boat;
+    // 카메라가 먼저 움직인다. 패널은 지금 장을 그대로 둔 채 넘기기만 멈추고, 카메라가
+    // 도착해 배가 선 뒤에(hold) LIVE 장과 문장 카드를 띄운다 — 레퍼런스의 순서.
+    this.panel.incoming();
   }
 
   _updateArrival(dt) {
@@ -387,6 +420,7 @@ class MapScene {
       this.cam.setFocus(0, 0, 0);
       const next = this.pending.shift();
       if (next) this._addRecord(next, true);   // 배는 차례가 온 지금 만들어진다
+      else this.panel.endLive();               // 줄이 비었으면 끊긴 통계 장으로 돌아간다
     }
   }
 
@@ -405,9 +439,12 @@ class MapScene {
     layer.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:40";
     document.body.appendChild(layer);
 
+    // 보이는 바다의 왼쪽 절반 한가운데 (가로 화면에서는 왼쪽 띠를 피한다 — _visibleSea)
+    const sea = this._visibleSea();
+    const fMid = ((1 - 2 * sea.x0) + (-sea.x0)) / 2;
     for (const depth of depths) {
-      // 화면 왼쪽 절반의 한가운데. 깊이마다 화면 반폭이 다르므로 월드 좌표도 달라진다.
-      const x = this.cam.frameHalfWidthAt(depth) * 0.5;
+      // 깊이마다 화면 반폭이 다르므로 월드 좌표도 달라진다.
+      const x = this.cam.frameHalfWidthAt(depth) * fMid;
       const record = {
         record_id: `calib-${depth}`, text: "", region: "아산", state: "stay",
         keywords: [], display_name: "익명", created_at: new Date().toISOString(),

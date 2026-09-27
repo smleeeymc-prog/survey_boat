@@ -63,6 +63,10 @@ export const REGIONS = TAXONOMY.REGIONS;
 export const STATES = TAXONOMY.STATES;
 export const STATE_LABEL = Object.fromEntries(STATES.map((x) => [x.id, x.label]));
 export const KEYWORDS = TAXONOMY.KEYWORDS;
+// 상태마다 달라지는 Q3 질문 문구. 키워드는 "그 문장을 설명하는 키워드"라서, 같은 '가족'도
+// 머무르는 사람에게는 머무르게 하는 이유, 떠날 사람에게는 떠나게 하는 이유다. 통계가 이걸
+// 섞으면 틀린 결론이 나온다 — js/stats/metrics.js 의 MOTIVES 참고.
+export const SENTENCE_Q = TAXONOMY.SENTENCE_Q || {};
 
 // ── 표현 채널의 출처 ────────────────────────────────────────────────────────
 // [시안 단계] 어떤 답변이 배의 무엇을 바꿀지는 아직 확정되지 않았다. 그래서 채널의
@@ -146,7 +150,10 @@ export const CAM_SWAY_SEC = 71;
 //   3) 문장 카드를 띄우고 ARRIVAL_HOLD_SEC 동안 머문다 — 이 동안 배는 흐르지 않는다
 //   4) 카드를 내리고 카메라가 제자리로 돌아간다. 배는 이때부터 흐르기 시작한다
 export const ARRIVAL_DIST = 11;          // 제시할 때 카메라와 배 사이 거리
-export const ARRIVAL_HOLD_SEC = 6.5;     // 문장을 보여주는 시간 (이 동안 배는 정지)
+// 6.5 → 8.0: 카드가 문장 한 줄에서 항해일지(문장 + 출발한 곳·지금의 자리·싣고 온 것·기록 시각)로
+// 늘었고, 같은 시간에 패널이 "이 문장은 ‘일’ 때문에 떠나려는 7번째 이야기" 장을 띄운다.
+// 둘 다 읽히려면 1.5초가 더 필요했다. 카드가 뜨는 데만 1.6초(css .arrival.on)가 쓰인다.
+export const ARRIVAL_HOLD_SEC = 8.0;     // 문장을 보여주는 시간 (이 동안 배는 정지)
 export const ARRIVAL_APPEAR_LEAD = 0.3;  // 카메라가 도착하기 몇 초 전에 배가 나타나는가
 // 카메라 이동 시간은 거리에 비례시킨다. 가까운 배까지 4초를 쓰면 늘어지고, 먼 배까지
 // 2초에 가면 화면이 휙 날아간다. 속도를 정하고 시간을 거기서 얻는 편이 둘 다 막는다.
@@ -171,14 +178,22 @@ export const ARRIVAL_X_MAX = 0.88;       // 1=왼쪽 끝
 // 괄호 안은 그 깊이의 배가 카메라가 물러난 뒤 화면 세로 어디에 앉는가:
 //   10 (89%, 거의 잘림) · 14 (72%) · 18 (62%) · 22 (55%) · 26 (50%)
 //   32 (45%) · 40 (40%, 패널 경계) · 48 (37%, 패널 뒤)
-// 상한 33은 패널 높이에서 나온 값이다. 통계 칸이 늘면서 패널이 화면 위 44%까지
-// 내려왔고, 깊이 34부터는 흐름에 합류한 뒤 그 뒤에 가려진다. 패널 높이를 바꾸면
-// (css/stats.css 의 .p-rows min-height) 이 값도 같이 다시 재야 한다.
+// 상한 33은 패널 높이에서 나온 값이다(09-26 폰 430×900 에서 보정). 패널이 화면 위 44%를
+// 덮고, 깊이 34부터는 흐름에 합류한 뒤 그 뒤에 가려진다.
+// 화면 비율이 다르면 패널 경계도 달라지므로, 실제 상한은 main.js 가 패널의 실제 아래 끝에서
+// 다시 잰다(_visibleSea) — 33은 그 상한의 상한이다. ARRIVAL_PANEL_CLEAR 가 그 여유다:
+// 보정한 화면에서 깊이 33의 흘수선은 패널 아래 끝보다 화면 높이의 3.3% 아래에 있었다
+// (배의 선체·돛대가 그만큼 위로 솟는다).
 // 값을 정하려면 ?depths=1 로 열 것 — 주요 깊이마다 배를 한 척씩 놓고 숫자를 붙여 준다.
 export const ARRIVAL_DEPTH_MIN = 13;
 export const ARRIVAL_DEPTH_MAX = 33;
+export const ARRIVAL_PANEL_CLEAR = 0.033;
 // ?depths=1 (보정용)에서 늘어놓을 깊이들
 export const CALIBRATION_DEPTHS = [10, 14, 18, 22, 26, 32, 40, 48];
 
-// 패널 통계 자동 전환 주기(초) — 원본 UI 시안과 같은 5.2초
-export const STAT_ROTATE_SEC = 5.2;
+// 패널 통계 한 장이 머무는 기본 시간(초). 장마다 따로 줄 수 있다(js/stats/index.js 의 sec).
+// 5.2 → 9: 예전 한 칸은 낱말 몇 개였지만, 지금 한 장은 결론 문장 → 차트 → 각주를 차례로
+// 읽는 보고서다. 들어오는 연출에만 1.4초가 쓰이고, 결론 문장 두 줄을 읽고 차트에서 그 표식을
+// 찾는 데 5초 남짓이 든다. 9장이라 한 바퀴는 약 1분 50초 — 레퍼런스(dh-learning)의 3분
+// 주기의 절반쯤이다(그쪽은 한 주기에 이야기와 통계가 번갈아 한 번씩 나온다).
+export const STAT_ROTATE_SEC = 9;

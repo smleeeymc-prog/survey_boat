@@ -46,7 +46,8 @@ const MODULE_ORDER = [
   "clover.js", "fleet.js", "camera.js", "store.js",
   // 통계 모듈은 panel.js 보다 먼저다 — Panel 생성자가 StatDeck 을 만들고, StatDeck 은
   // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
-  "stats/metrics.js", "stats/views.js", "stats/index.js",
+  // text.js 는 셋 모두가 쓰는 글자 도구, insights.js 는 metrics 의 MOTIVE_OF 를 쓴다.
+  "stats/text.js", "stats/metrics.js", "stats/insights.js", "stats/views.js", "stats/index.js",
   "panel.js", "selfcheck.js", "main.js",
 ];
 
@@ -249,9 +250,11 @@ const shell = `<!doctype html>
     전시장 세로 화면(9:16) 기준입니다. 배는 <b>왼쪽 끝에서 나타나 오른쪽으로 빠지고</b>,
     화면 세로 중앙 근처의 배가 <b>40초</b>에 화면을 건넙니다. 가까운 배는 24초, 먼 배는 90초 —
     그 차이가 깊이감입니다.<br>
-    배의 <b>캐빈 색·선체 색조·갑판 소품은 지금 난수</b>입니다(채널 구성 미확정).
-    상단 패널의 누적 수와 통계는 <b>실제 기록에서 집계</b>하며, 5.2초마다 지표가 바뀝니다.
-    약 14초에 한 번 새 기록이 도착해 6.5초간 크게 제시된 뒤 제자리로 갑니다.
+    배의 <b>요소는 그 문장이 고른 키워드</b>이고, 선체 색조만 아직 난수입니다(채널 미확정).
+    상단 패널은 <b>실제 기록에서 집계한 통계 보고서 9장</b>이 한 장에 9초 안팎으로 넘어갑니다 —
+    장마다 한 줄 결론, 그 근거가 되는 차트, 기간·표본 각주.
+    약 14초에 한 번 새 기록이 도착하면 카메라가 그 배로 가고, 배가 선 뒤에 숫자가 +1 되며
+    패널은 <b>그 문장을 전체 속에 놓는 LIVE 장</b>, 아래에는 항해일지 카드가 8초간 뜹니다.
   </p>
   <div class="bar" id="bar"></div>
   <div class="frame"><iframe id="stage" title="머무름의 지도 미리보기"></iframe></div>

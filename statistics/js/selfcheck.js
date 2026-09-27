@@ -98,7 +98,10 @@ export function runSelfChecks(scene) {
   );
 
   // 8) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
-  for (const id of ["countNum", "statLabel", "statRows", "arrival", "arrivalText", "arrivalMeta"]) {
+  for (const id of ["panel", "countNum", "countPlus", "report", "rTag", "rIdx", "rLabel", "rValue",
+                    "rHeadline", "statRows", "rExtra", "rPeriod", "rLegend",
+                    "arrival", "logNo", "arrivalText", "arrivalSign",
+                    "logFrom", "logStatus", "logCargo", "logLogged"]) {
     console.assert(document.getElementById(id), `[selfCheck] #${id} 엘리먼트가 없음`);
   }
 
