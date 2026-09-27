@@ -20,4 +20,11 @@
   --gold:#b89a6a; --gold2:#d4b896;
   --dark:#16161e; --dark2:#22222e;
   --font:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic',sans-serif;
+
+  /* 3D 캔버스 위에 CSS로 얹는 화면 톤 — 09-27 사용자가 폰에서 고른 값. 시간대와 무관하게 고정이라 여기 둔다.
+     두 화면이 같은 작품으로 보이게 하는 마지막 층이다. 조명 비율은 ./look-tokens.js 에 있다.
+     --scene-grade    캔버스의 filter 에 그대로 넣는다 (대비·채도·따뜻함). GPU 합성 단계라 거의 공짜.
+     --scene-vignette 캔버스 위에 덮은 pointer-events:none 층의 background. */
+  --scene-grade:contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03);
+  --scene-vignette:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%);
 }

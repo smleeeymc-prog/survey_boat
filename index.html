@@ -289,9 +289,9 @@
      삼켜버렸다. 씬이 숨어 있을 때는 무대가 아예 입력을 받지 않게 한다. */
   #sceneStage:not(.visible){ pointer-events:none; }
   #sceneStage.visible{ opacity:1; }
-  /* 색보정 — 대비·채도·따뜻함. 캔버스에 CSS 필터라 GPU 합성 단계에서 거의 공짜 (09-27 고정) */
-  #bottleCanvas{ width:100%; height:100%; display:block;
-    filter:contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03); }
+  /* 색보정 — 대비·채도·따뜻함. 캔버스에 CSS 필터라 GPU 합성 단계에서 거의 공짜 (09-27 고정).
+     값은 지도와 같이 쓰는 statistics/shared/tokens.css 의 --scene-grade */
+  #bottleCanvas{ width:100%; height:100%; display:block; filter:var(--scene-grade); }
   /* 틸트시프트 — 화면 위아래를 흐리게 해 병 속 미니어처처럼. 무대 안에 있어 씬과 같이 나타나고 사라진다 */
   .tiltBlur{ position:absolute; left:0; right:0; height:34%; pointer-events:none;
     -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
@@ -301,7 +301,7 @@
     mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
   /* 비네트 — 가장자리를 살짝 어둡게 */
   .sceneVignette{ position:absolute; inset:0; pointer-events:none;
-    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
+    background:var(--scene-vignette); }
 
   /* 3D 초기화 실패 시 안내 (파일을 로컬로 직접 열었거나 인앱 브라우저인 경우 등) */
   #sceneError{
@@ -995,6 +995,7 @@ import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND }
 import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
 import { GLB_NODES, GLB_PROPS, KEYWORD_NODES, CODE_MADE_NODES } from "./statistics/shared/glb-nodes.js";
 import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
+import { SCENE_LOOK, HEMI, AO } from "./statistics/shared/look-tokens.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
 // Directory를 statistics 로 잡아 따로 배포되므로 그 폴더 밖의 파일을 못 읽는다.
@@ -1418,7 +1419,8 @@ const TONES = {
   none:    { label: "없음",    mapping: THREE.NoToneMapping,           exposure: 1.0 },
 };
 // 표면 효과 기본 세기 (this.fx 유니폼, 0 = 끔). 광택 0.8·테두리 0.2는 사용자가 고른 값(09-27).
-const FX_DEFAULT = { ao: 0.85, sheen: 0.8, rim: 0.2, facet: 1, wood: 0, caustic: 0 };
+// AO는 GLB에 같이 구워진 값이라 지도와 같아야 해서 statistics/shared/look-tokens.js 에서 온다.
+const FX_DEFAULT = { ao: AO.amount, sheen: 0.8, rim: 0.2, facet: 1, wood: 0, caustic: 0 };
 // 부드러운 그림자 기본값 — 켜져 있으면 매 프레임 그림자 맵을 그린다(헤드리스 +20%). 메뉴에서 끌 수 있다.
 const SOFT_SHADOWS_DEFAULT = true;
 // 09-27 사용자가 폰에서 고른 조합으로 고정: 필름 룩(톤 없음) + AO + 광택·테두리 빛 + 면 색 변주 +
@@ -1426,14 +1428,16 @@ const SOFT_SHADOWS_DEFAULT = true;
 const LOOK_DEFAULT = "film";
 const LOOKS = {
   basic: { tone: "none", exposure: 1, ambScale: 1, sunScale: 1, hemiScale: 0 },
+  // 조명 비율·톤·거칠기 상한은 지도와 같아야 같은 배가 같은 색으로 보인다 → statistics/shared/look-tokens.js
   film: {
-    tone: "none",        // 톤 매핑 (TONES의 키) — 사용자가 "없음"을 골랐다. AgX·ACES·Neutral은 setLook(name, tone)으로
+    tone: SCENE_LOOK.tone,        // 톤 매핑 (TONES의 키). AgX·ACES·Neutral은 setLook(name, tone)으로
     exposure: 1.0,
-    ambScale: 0.25,      // 평평한 채움광은 반구광이 대신하므로 조금만 남긴다
-    hemiScale: 0.9,      // 반구광 세기 (팔레트 채움광 세기 기준 배수)
-    sunScale: 1.5,       // 해 세기 배수 — 채움광을 줄인 만큼 올린다
-    roughness: 0.68,     // 이보다 거친 재질은 여기까지 매끈하게 — 해 하이라이트가 은은하게 돈다
+    ambScale: SCENE_LOOK.ambScale,
+    hemiScale: SCENE_LOOK.hemiScale,
+    sunScale: SCENE_LOOK.sunScale,
+    roughness: SCENE_LOOK.roughnessCap,
   },
+
 };
 // setLook()이 내용을 갈아 끼운다 (객체는 그대로 두고 속성만).
 const LOOK = { name: LOOK_DEFAULT, ...LOOKS[LOOK_DEFAULT] };
@@ -2902,7 +2906,7 @@ ${GERSTNER_GLSL}
       .replace("#include <aomap_fragment>", `
         float fxAO = mix(1.0, clamp(vFxAO, 0.0, 1.0), uAOAmt);
         reflectedLight.indirectDiffuse *= fxAO;
-        reflectedLight.directDiffuse *= mix(1.0, fxAO, 0.45);
+        reflectedLight.directDiffuse *= mix(1.0, fxAO, ${AO.direct.toFixed(3)});
         reflectedLight.directSpecular *= fxAO;
         #include <aomap_fragment>`)
       .replace("#include <opaque_fragment>", `
@@ -3836,11 +3840,12 @@ ${GERSTNER_GLSL}
     this.ambLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS * AMB_SCALE;
     // 반구광: 하늘색(둘째 띠, 채도 절반)과 바다색(절반 밝기). 세기는 채움광 팔레트 값을 따른다.
     const hemiSky = (p) => {
-      const c = new THREE.Color(p.sky[1] instanceof THREE.Color ? p.sky[1].getHex() : p.sky[1]);
+      const band = p.sky[HEMI.skyBand];   // 규칙은 statistics/shared/look-tokens.js (지도와 같이 씀)
+      const c = new THREE.Color(band instanceof THREE.Color ? band.getHex() : band);
       const g = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
-      return c.lerp(new THREE.Color(g, g, g), 0.5);
+      return c.lerp(new THREE.Color(g, g, g), HEMI.skyDesat);
     };
-    const hemiGround = (p) => new THREE.Color(typeof p.ocean === "number" ? p.ocean : p.ocean).multiplyScalar(0.5);
+    const hemiGround = (p) => new THREE.Color(p.ocean).multiplyScalar(HEMI.groundMul);
     this.hemiLight.color.copy(hemiSky(a)).lerp(hemiSky(b), k);
     this.hemiLight.groundColor.copy(hemiGround(a)).lerp(hemiGround(b), k);
     this.hemiLight.intensity = (a.ambI + (b.ambI - a.ambI) * k) * SCENE_BRIGHTNESS * HEMI_SCALE;

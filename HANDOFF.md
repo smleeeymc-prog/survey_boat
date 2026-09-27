@@ -2,6 +2,9 @@
 
 > 참여형 아카이브 프로토타입. Three.js 씬 + 설문 UI가 **`index.html` 단일 파일**에 들어 있다.
 > 새 세션은 여기부터 읽으면 된다.
+>
+> **지도 세션:** 설문 쪽 09-25~27 변경(새 GLB·공유 파일·룩)을 지도에 반영할 때는
+> [`HANDOFF-map.md`](./HANDOFF-map.md) 한 장만 보면 된다.
 
 ---
 
@@ -61,10 +64,11 @@ node statistics/tools/sync-model.mjs
 |---|:--:|:--:|
 | `ocean-core.js` 파도 표·GLSL·`waveHeightAt`·랩 도메인 | ✓ | ✓ |
 | `palette.js` 시간대 4종·밝기·지역 색 (키워드 색·`KEYWORD_PROP`은 지도만) | ✓ | ✓ (`config.js` 재수출) |
-| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) | ✓ `<link>` | ✓ `<link>` |
+| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) | ✓ `<link>` | ✓ `<link>` (색보정 변수는 아직 안 씀) |
 | `ship-tokens.js` 뱃머리 보정·흘수·캐빈 기본색 | ✓ | ✓ |
 | `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES`(설문만) | ✓ | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |
+| `look-tokens.js` 조명 비율·톤·거칠기 상한·구운 AO 세기 (09-27 새로) | ✓ | 아직 (`HANDOFF-map.md` 5장) |
 | `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
 
 그때 같이 바뀐 것: `fleet.js`의 `CABIN_NODE`/`HULL_NODE`/`PROP_NODES`가 `GLB_NODES`·
@@ -105,6 +109,11 @@ three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/asset
 - 새 요소(Toolbox·Lamp·Plant·Surfboard·Bell·Chair·Cup·Easel·Easelchair·Cat)는 GLB에
   **씬 바로 아래** 노드로 있다. 지도가 더 많은 소품을 붙이려면 `GLB_PROPS`처럼 `attach()`
   하면 된다. '우연'의 네잎클로버는 GLB에 없고 설문이 코드로 그리는 데칼이다.
+
+- (09-27 추가) **두 화면이 같아야 하는 룩 값을 `shared/`로 뺐다.** 조명 비율(채움광 0.25·반구광 0.9·해 1.5)·
+  톤 매핑 없음·거칠기 상한 0.68·구운 AO 세기 → `look-tokens.js`, 화면 색보정·비네트 → `tokens.css`.
+  설문은 거기서 읽는다(값 변화 없음). 지도가 연결하는 법과 가져가지 말 것은 **`HANDOFF-map.md`**.
+  "베끼지 말고 연결, 셰이더 코드는 화면마다"로 정한 이유도 거기 1장.
 
 ### 방향을 정해야 한다 — 지금은 `shared/` 가 원본이다
 
@@ -473,14 +482,16 @@ splash → onboard → region → state → sentence → share → keywords → 
 같이 잘려 구멍이 뚫린다(돌려 보면 보인다). 배는 눌러 담지 않으므로 배가 넘치면 selfCheck가 뜬다.
 
 ### 6.12 그림 톤 — 09-27 사용자가 고른 조합으로 고정
-폰에서 테스트 메뉴로 비교한 뒤 사용자가 고른 조합을 `index.html`에 고정했다:
+폰에서 테스트 메뉴로 비교한 뒤 사용자가 고른 조합을 `index.html`에 고정했다.
+**지도와 같아야 하는 값(조명 비율·톤·거칠기 상한·AO 세기·색보정·비네트)은 `statistics/shared/look-tokens.js`와
+`tokens.css`에 있고 `index.html`은 거기서 읽는다** — 바꿀 때는 그 두 파일을 고친다(`HANDOFF-map.md` 8장).
 
 | 무엇 | 어디 | 값 |
 |---|---|---|
 | 필름 룩 (반구광 + 채움광 25%·해 150% + 거칠기 0.68 상한), 톤 매핑 **없음** | `LOOK_DEFAULT = "film"`, `LOOKS.film.tone = "none"` | 톤은 `TONES`(AgX·ACES·Neutral·없음)에서 `setLook(name, tone)`으로 바꿀 수 있다 |
 | AO 0.85 · 광택 0.8 · 테두리 빛 0.2 · 면 색 변주 1 | `FX_DEFAULT` → `this.fx` 유니폼 | 나무 선체·물빛은 0(꺼짐). 셰이더는 남아 있다 |
 | 부드러운 그림자 (PCFSoft, 매 프레임) | `SOFT_SHADOWS_DEFAULT = true`, `setSoftShadows()` | 헤드리스 +20%. **메뉴에서 끌 수 있게 남긴 유일한 항목** |
-| 색보정 | `#bottleCanvas` CSS `filter` | 대비·채도·따뜻함 |
+| 색보정 | `#bottleCanvas` CSS `filter: var(--scene-grade)` (`shared/tokens.css`) | 대비·채도·따뜻함 |
 | 틸트시프트 · 비네트 | `#sceneStage` 안 `.tiltBlur` · `.sceneVignette` (CSS) | 무대 안이라 씬과 같이 나타나고 사라진다 |
 
 테스트 메뉴(`dev/look-lab.js`, 오른쪽 위 "룩")에는 부드러운 그림자 켜고 끄기와 FPS만 남았다.
