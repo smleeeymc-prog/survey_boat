@@ -993,7 +993,7 @@ import { GERSTNER_WAVES, WAVE_WRAP_DOMAIN, GERSTNER_GLSL, waveHeightAt, wrapWave
 import { INITIAL_TIME_KEY, TIME_OF_DAY, SCENE_BRIGHTNESS, REGION_SAND }
   from "./statistics/shared/palette.js";
 import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens.js";
-import { GLB_NODES, GLB_PROPS, KEYWORD_NODES, CODE_MADE_NODES } from "./statistics/shared/glb-nodes.js";
+import { GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, CLOVER } from "./statistics/shared/glb-nodes.js";
 import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 import { SCENE_LOOK, HEMI, AO } from "./statistics/shared/look-tokens.js";
 
@@ -1336,19 +1336,10 @@ const CAM_RADIUS = (function () {
 // (REGION_SAND 는 statistics/shared/palette.js 에서, 키워드 → 요소 매핑 KEYWORD_NODES 는
 //  statistics/shared/glb-nodes.js 에서 온다. 키워드는 더 이상 캐빈 색을 바꾸지 않는다)
 
-// '우연' — 뱃머리 옆면에 붙는 네잎클로버 데칼. GLB에 없는 요소라 코드가 그려서 붙인다.
-// 전부 눈으로 맞추는 값이다. 모양·색을 바꾸려면 _drawClover(), 자리·크기는 여기만.
-// 방향은 블렌더 기준이다: 뱃머리가 +X(섬 쪽)일 때 오른쪽(우현) = +Z = 블렌더 정면 뷰에서 보이는 면.
-// 주의: '머무르는 중·떠나는 중·오가는 중'에는 배가 뒤돌아 서서(헤딩 π) 우현이 카메라 반대편이 된다.
-const CLOVER = {
-  side: "starboard",   // "starboard"(우현, 오른쪽) | "port"(좌현, 왼쪽)
-  along: 0.62,         // 배 가운데(0) → 뱃머리 끝(1) 사이 어디쯤
-  height: 0.33,        // 수면 위 높이 (월드 단위)
-  size: 0.30,          // 데칼 한 변 (월드 단위)
-  spin: -0.35,         // 데칼 면 안에서 돌리는 각도 (라디안, +는 반시계)
-  leaf: "#4e9f4b",     // 잎
-  vein: "#2f6f33",     // 잎맥·테두리
-};
+// '우연' 네잎클로버 데칼의 자리·크기·색(CLOVER)은 지도도 같이 그려서 statistics/shared/glb-nodes.js 에 있다.
+// 모양은 _drawClover() — 지도 statistics/js/clover.js drawClover 와 두 벌이니 바꿀 때 같이 고칠 것.
+// 주의: '머무르는 중·떠나는 중·오가는 중'에는 배가 뒤돌아 서서(헤딩 π) 우현이 카메라 반대편이 된다
+// (그래서 뱃전 요소를 거울상으로 옮긴다 — 아래 SIDE_SWAP).
 
 // 두 손가락 줌(PC는 휠). 1 = 단계별 기본 거리. 작을수록 가까이. 가까이 갈수록 바라보는 지점이
 // 배 가운데로 옮겨 가서 배 쪽으로 파고든다. 단계가 바뀌면 1로 천천히 돌아온다.
@@ -1360,7 +1351,8 @@ const BOAT_FOCUS_Y = 0.55;   // 줌인할 때 바라볼 배 높이 (갑판 위 �
 // 교체는 선체가 카메라에 거의 뱃머리·고물 쪽으로(옆면이 가장 얇게) 보일 때 한다 — 그때가 가장
 // 덜 보인다. SIDE_SWAP_DEADZONE은 그 판정 폭(0~1, 클수록 옆면이 더 보일 때 바꾼다).
 // 드래그로 둘러봐도 같은 규칙이라, 요소는 늘 보이는 쪽 뱃전에 붙는다.
-const SIDE_SWAP = ["Surfboard", "Bell", "Tube", "Clover", "Cat"];   // Cat은 굴뚝 옆 갑판이라 반대편이면 굴뚝에 가린다
+// 어떤 요소가 뱃전 요소인지는 지도도 같이 써서 statistics/shared/glb-nodes.js SIDE_PROPS.
+const SIDE_SWAP = SIDE_PROPS;
 const SIDE_SWAP_DEADZONE = 0.15;
 
 // 등대 — 블렌더 자리에서 이만큼 옮긴다(월드 단위). 유리병 안에 들어가도록 살짝 내렸다
@@ -2255,9 +2247,12 @@ ${GERSTNER_GLSL}
           if (obj) ship.attach(obj);
           return obj;
         };
-        Object.keys(GLB_PROPS).forEach((name) => console.assert(
+        SIDE_SWAP.forEach((name) => console.assert(
           Object.values(KEYWORD_NODES).some((list) => list.indexOf(name) !== -1),
-          `[selfCheck] 지도 소품 "${name}"이 KEYWORD_NODES에 없다 — 설문 화면에서 안 보인다`));
+          `[selfCheck] 뱃전 요소 "${name}"이 KEYWORD_NODES에 없다 — shared/glb-nodes.js SIDE_PROPS 확인`));
+        // 지도는 CLOVER 단위를 refScale(= 이 화면의 배 배율)로 나눠 배 좌표로 옮긴다. 배 크기를 바꾸면 같이.
+        console.assert(Math.abs(CLOVER.refScale - SHIP_SCALE) < 1e-6,
+          `[selfCheck] CLOVER.refScale(${CLOVER.refScale}) ≠ SHIP_SCALE(${SHIP_SCALE}) — 지도 클로버 크기가 어긋난다`);
         this.keywordObjs = {};
         for (const [kw, names] of Object.entries(KEYWORD_NODES)) {
           this.keywordObjs[kw] = names
@@ -2271,7 +2266,7 @@ ${GERSTNER_GLSL}
         // 구우면서 한 메쉬로 합쳐져 있다(tools/build_scene_glb.py).
 
         // [삭제됨] 키워드 → 캐빈 색. 키워드는 이제 배에 나타나는 요소로만 표현한다.
-        // 캐빈은 GLB에 칠해 둔 크림색(Material_0 = 예전 CABIN_BASE_COLOR)을 그대로 쓴다.
+        // 캐빈은 GLB에 칠해 둔 크림색(Material_0)을 그대로 쓴다. 키워드는 캐빈 색을 바꾸지 않는다(두 화면 다).
 
         // 연기 기준점 = 굴뚝 꼭대기. 굴뚝 노드는 음수 배율 + 180° 회전이 겹쳐 있어서
         // 로컬 +Y가 실제로는 아래를 향한다 — 로컬 바운딩박스의 max.y를 쓰면 굴뚝 밑동에서

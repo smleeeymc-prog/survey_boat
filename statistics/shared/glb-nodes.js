@@ -39,14 +39,6 @@ export const GLB_NODES = {
   cat: "Cat",
 };
 
-// [옛 값] 지도가 갈매기·튜브 두 가지만 인스턴싱하던 때의 표. 지도는 이제 KEYWORD_NODES 전체를
-// 쓰므로 이 표를 읽지 않는다. 설문 selfCheck가 아직 import 해서 남겨 둔다 — 설문 쪽에서
-// 그 assert를 걷어내면 같이 지워도 된다.
-export const GLB_PROPS = {
-  [GLB_NODES.gull]: "gull",
-  [GLB_NODES.tube]: "tube",
-};
-
 // 키워드 → 배에 나타나는 요소 (GLB 노드 이름). 두 화면이 같이 쓴다.
 // 고른 키워드의 요소가 켜지고, 나머지는 꺼진다. 캐빈 색은 키워드와 무관하다(두 화면 다).
 // 둘 이상 적힌 것은 세트라 같이 켜지고 같이 꺼진다.
@@ -72,14 +64,14 @@ export const CODE_MADE_NODES = ["Clover"];
 // Cat은 굴뚝 옆 갑판이라 반대편이면 굴뚝에 가린다.
 //   설문: 드래그로 둘러보므로 카메라 쪽이 바뀔 때마다 옮긴다
 //   지도: 모든 배가 같은 방향으로 흘러 카메라가 늘 같은 뱃전을 보므로, 로드할 때 한 번 정한다
-// [요청] 설문 index.html 의 SIDE_SWAP 이 이 값과 같다. 설문도 여기서 읽게 바꾸면 한 곳이 된다.
+// 설문 index.html 의 SIDE_SWAP 은 이 값을 그대로 쓴다(09-27부터 한 곳).
 export const SIDE_PROPS = ["Surfboard", "Bell", "Tube", "Clover", "Cat"];
 
 // '우연' — 뱃머리 옆면에 붙는 네잎클로버 데칼. GLB에 없는 요소라 코드가 그려서 붙인다.
 // 전부 눈으로 맞춘 값이다. 방향은 블렌더 기준: 뱃머리가 +X일 때 우현(오른쪽) = +Z.
 // 단위는 설문 화면의 월드 단위다 — 배 배율 refScale(설문 SHIP_SCALE = GLB Ship 노드 배율)
 // 기준. 배를 다른 크기로 그리는 화면(지도)은 refScale 로 나눠 배 좌표로 옮겨 쓴다.
-// [요청] 설문 index.html 의 CLOVER 와 값이 같다. 설문도 여기서 읽게 바꾸면 한 곳이 된다.
+// 설문 index.html 도 이 값을 그대로 쓴다(09-27부터 한 곳). refScale 은 설문 SHIP_SCALE 과 같아야 한다(설문 selfCheck).
 export const CLOVER = {
   side: "starboard",   // "starboard"(우현) | "port"(좌현) — 지도는 늘 카메라 쪽 뱃전을 쓴다
   along: 0.62,         // 배 가운데(0) → 뱃머리 끝(1) 사이 어디쯤
