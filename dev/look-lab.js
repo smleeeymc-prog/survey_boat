@@ -1,160 +1,16 @@
 /* =============================================================================
- * look-lab.js — 그림 톤 테스트 메뉴 (임시). 오른쪽 위 "룩" 버튼.
+ * look-lab.js — 테스트 메뉴 (임시). 오른쪽 위 "룩" 버튼.
  *
- * 폰에서 켜고 끄며 비교해 보려고 만든 것이다. 정해지면 지운다:
- *   1) 이 파일(dev/look-lab.js)을 지우고
- *   2) index.html 의 `import("./dev/look-lab.js")` 한 줄을 지운다.
- * 고른 룩을 기본으로 남기려면 index.html 의 LOOK_DEFAULT 를 바꾼다.
+ * 그림 톤은 09-27에 사용자가 고른 조합으로 index.html에 고정했다(LOOK_DEFAULT·FX_DEFAULT·CSS).
+ * 여기에는 부드러운 그림자 켜고 끄기와 FPS만 남았다 — 폰에서 그림자 비용을 보고 정하려고.
  *
- * 켜고 끌 수 있는 것
- *   필름 룩   BottleScene.setLook("film" | "basic") — AgX 톤 매핑 + 반구광 + 명암 대비
- *   블룸      밝은 곳이 번지는 빛. 화면을 그린 뒤 1/4 해상도로 한 번 더 그려 밝은 부분만 흐리게
- *             만들어 위에 더한다(기존 렌더는 그대로). 켜면 장면을 두 번 그리므로 가장 무겁다.
- *   색보정    캔버스에 CSS 필터(대비·채도·따뜻함). GPU 합성 단계라 거의 공짜.
- *   그레인    필름 입자. 노이즈 타일을 화면 위에 overlay로 얹고 흔든다. 거의 공짜.
- *   AO        구운 구석 그늘(GLB의 _AO). 셰이더 곱하기 한 번.
- *   나무 선체 선체 외판·갑판 판자·흘수선 띠 + 절차적 요철(노말맵 대신).
- *   물빛      수면 근처 선체·바위·기둥에 일렁이는 코스틱.
- *   광택·테두리 빛  하늘이 비치는 광택(프레넬) + 실루엣 가장자리 하늘빛. 세기는 SHEEN_ON.
- *   톤        필름 룩의 톤 매핑만 바꾼다 (명암·반구광은 그대로).
- *   부드러운 그림자  PCFSoft, 배·소품·섬이 서로 드리우고 받는다. 매 프레임 그림자 맵을 그려 무겁다.
- *   면 색 변주  면마다 밝기·따뜻함을 조금씩 다르게 (로우폴리 바위 레퍼런스).
- *   얕은 물빛  섬 둘레 바다를 청록으로 (얕은 바다 레퍼런스).
- *   틸트시프트 화면 위아래를 흐리게 — 병 속 미니어처처럼. CSS backdrop-filter.
- *   비네트    가장자리를 살짝 어둡게. CSS.
- *   FPS       지금 초당 프레임 — 무엇을 켰을 때 버벅이는지 보기용.
+ * 지우는 법: 이 파일을 지우고 index.html 의 `import("./dev/look-lab.js")` 한 줄을 지운다.
+ * 그림자를 기본으로 켤지 끌지는 index.html 의 SOFT_SHADOWS_DEFAULT.
  * 고른 값은 이 기기 브라우저에만 기억한다(localStorage).
  * ========================================================================== */
-import * as THREE from "three";
-import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 
-const STORE_KEY = "lookLab.v1";
-const GRADE_FILTER = "contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03)";
-const BLOOM = { scale: 0.25, threshold: 0.78, knee: 0.12, strength: 0.9 };
-// 셰이더 효과 세기 (BottleScene.fx 유니폼에 넣는 값)
-const FX_AMT = { ao: 0.85, wood: 1, caustic: 1 };
-// 광택·테두리 빛 한 칸으로 켤 때의 세기 (테두리 0.2는 사용자가 슬라이더로 고른 값, 09-26)
-const SHEEN_ON = { uSheenAmt: 1.2, uRimAmt: 0.2 };   // 광택 1.2: 1은 은은, 2는 뿌얘진다(헤드리스 비교)
-// 필름 룩 톤 선택지 (index.html TONES의 키)
-const TONE_CHOICES = [["agx", "AgX"], ["aces", "ACES"], ["neutral", "Neutral"], ["none", "없음"]];
+const STORE_KEY = "lookLab.v2";
 
-// ── 블룸 ────────────────────────────────────────────────────────────────────
-const VERT = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-
-class OverlayBloom {
-  constructor(renderer) {
-    this.r = renderer;
-    const opt = { type: THREE.HalfFloatType, depthBuffer: false };
-    this.rtScene = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
-    this.rtA = new THREE.WebGLRenderTarget(1, 1, opt);
-    this.rtB = new THREE.WebGLRenderTarget(1, 1, opt);
-    this.rtC = new THREE.WebGLRenderTarget(1, 1, opt);
-    this.rtD = new THREE.WebGLRenderTarget(1, 1, opt);
-    this.bright = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { tDiffuse: { value: null }, uThreshold: { value: BLOOM.threshold }, uKnee: { value: BLOOM.knee } },
-      vertexShader: VERT,
-      fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uThreshold, uKnee; varying vec2 vUv;
-        void main() {
-          vec3 c = texture2D(tDiffuse, vUv).rgb;
-          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-          gl_FragColor = vec4(c * smoothstep(uThreshold - uKnee, uThreshold + uKnee, l), 1.0);
-        }`,
-    }));
-    this.blur = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2() } },
-      vertexShader: VERT,
-      fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 uDir; varying vec2 vUv;
-        void main() {
-          vec3 c = texture2D(tDiffuse, vUv).rgb * 0.227027;
-          c += (texture2D(tDiffuse, vUv + uDir * 1.3846).rgb + texture2D(tDiffuse, vUv - uDir * 1.3846).rgb) * 0.316216;
-          c += (texture2D(tDiffuse, vUv + uDir * 3.2308).rgb + texture2D(tDiffuse, vUv - uDir * 3.2308).rgb) * 0.070270;
-          gl_FragColor = vec4(c, 1.0);
-        }`,
-    }));
-    this.comp = new FullScreenQuad(new THREE.ShaderMaterial({
-      uniforms: { tA: { value: null }, tC: { value: null }, uStrength: { value: BLOOM.strength } },
-      vertexShader: VERT,
-      fragmentShader: `
-        uniform sampler2D tA, tC; uniform float uStrength; varying vec2 vUv;
-        void main() {
-          vec3 c = texture2D(tA, vUv).rgb + texture2D(tC, vUv).rgb * 1.3;
-          gl_FragColor = vec4(c * uStrength, 1.0);
-        }`,
-      blending: THREE.AdditiveBlending, transparent: true, depthTest: false, depthWrite: false,
-    }));
-    this._size = new THREE.Vector2();
-  }
-
-  _ensure(w, h) {
-    const w4 = Math.max(1, Math.round(w * BLOOM.scale)), h4 = Math.max(1, Math.round(h * BLOOM.scale));
-    if (this.rtScene.width === w4 && this.rtScene.height === h4) return;
-    this.rtScene.setSize(w4, h4); this.rtA.setSize(w4, h4); this.rtB.setSize(w4, h4);
-    const w8 = Math.max(1, w4 >> 1), h8 = Math.max(1, h4 >> 1);
-    this.rtC.setSize(w8, h8); this.rtD.setSize(w8, h8);
-  }
-
-  _pass(quad, src, dst) {
-    quad.material.uniforms.tDiffuse.value = src.texture;
-    this.r.setRenderTarget(dst);
-    quad.render(this.r);
-  }
-
-  _blur(src, tmp, dirScale) {
-    const u = this.blur.material.uniforms;
-    u.uDir.value.set(dirScale / src.width, 0); this._pass(this.blur, src, tmp);
-    u.uDir.value.set(0, dirScale / src.height); this._pass(this.blur, tmp, src);
-  }
-
-  render(scene, camera) {
-    const r = this.r;
-    r.getDrawingBufferSize(this._size);
-    this._ensure(this._size.x, this._size.y);
-    const prev = { target: r.getRenderTarget(), auto: r.autoClear, shadow: r.shadowMap.autoUpdate, bg: scene.background };
-    // 그림자 맵은 방금 본 화면을 그리면서 이미 갱신됐다 — 또 그리지 않는다.
-    // 하늘 배경은 빼고 그린다(검정) — 밝은 하늘 전체가 번져 화면이 뿌옇게 뜨지 않게.
-    r.shadowMap.autoUpdate = false;
-    scene.background = null;
-    r.setRenderTarget(this.rtScene);
-    r.setClearColor(0x000000, 1);
-    r.clear();
-    r.render(scene, camera);
-    scene.background = prev.bg;
-    r.setClearColor(0x000000, 0);
-    this._pass(this.bright, this.rtScene, this.rtA);
-    this._blur(this.rtA, this.rtB, 1.0);
-    this._pass(this.blur, this.rtA, this.rtC);      // 반 해상도로 내리면서 한 번 더 넓게
-    this._blur(this.rtC, this.rtD, 1.5);
-    const cu = this.comp.material.uniforms;
-    cu.tA.value = this.rtA.texture; cu.tC.value = this.rtC.texture;
-    r.setRenderTarget(null);
-    r.autoClear = false;
-    this.comp.render(r);
-    r.autoClear = prev.auto;
-    r.shadowMap.autoUpdate = prev.shadow;
-    r.setRenderTarget(prev.target);
-  }
-}
-
-// ── 그레인 ──────────────────────────────────────────────────────────────────
-function makeGrainLayer() {
-  const c = document.createElement("canvas");
-  c.width = c.height = 160;
-  const g = c.getContext("2d");
-  const img = g.createImageData(160, 160);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = Math.random() * 255;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  const el = document.createElement("div");
-  el.id = "lookLabGrain";
-  el.style.backgroundImage = `url(${c.toDataURL()})`;
-  return el;
-}
-
-// ── 메뉴 ────────────────────────────────────────────────────────────────────
 const CSS = `
   #lookLabBtn{ position:fixed; top:42px; right:10px; z-index:1000; border:0; cursor:pointer;
     background:rgba(20,22,30,.78); color:#f3e6cf; font:600 11px/1 var(--font, sans-serif);
@@ -165,31 +21,8 @@ const CSS = `
   #lookLabPanel.show{ display:block; }
   #lookLabPanel label{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0; cursor:pointer; }
   #lookLabPanel input{ width:18px; height:18px; accent-color:#d6b25e; }
-  #lookLabPanel .fps{ margin-top:6px; padding-top:7px; border-top:1px solid rgba(255,255,255,.15); opacity:.8; font-variant-numeric:tabular-nums; }
   #lookLabPanel .hint{ font-size:10.5px; opacity:.55; margin-top:3px; }
-  #lookLabGrain{ position:fixed; inset:-50%; z-index:1; pointer-events:none; display:none;
-    mix-blend-mode:overlay; opacity:.07; background-size:160px 160px;
-    animation:lookLabGrain .6s steps(6) infinite; }
-  #lookLabGrain.show{ display:block; }
-  .lookLabTilt{ position:fixed; left:0; right:0; height:34%; z-index:1; pointer-events:none; display:none;
-    -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
-  .lookLabTilt.top{ top:0; -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
-    mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
-  .lookLabTilt.bottom{ bottom:0; -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
-    mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
-  .lookLabTilt.show{ display:block; }
-  #lookLabVignette{ position:fixed; inset:0; z-index:1; pointer-events:none; display:none;
-    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
-  #lookLabVignette.show{ display:block; }
-  #lookLabPanel{ max-height:calc(100vh - 90px); overflow:auto; }
-  #lookLabPanel .tone{ display:flex; align-items:center; gap:4px; padding:0 0 6px; flex-wrap:wrap; }
-  #lookLabPanel .tone .hint{ margin:0 4px 0 0; }
-  #lookLabPanel .tone button{ border:1px solid rgba(255,255,255,.25); background:transparent; color:inherit;
-    font:inherit; font-size:11px; padding:3px 7px; border-radius:10px; cursor:pointer; }
-  #lookLabPanel .tone button.on{ background:#d6b25e; color:#1a1a22; border-color:#d6b25e; }
-  @keyframes lookLabGrain{
-    0%{transform:translate(0,0)} 17%{transform:translate(-7%,4%)} 33%{transform:translate(5%,-6%)}
-    50%{transform:translate(-3%,7%)} 67%{transform:translate(8%,2%)} 83%{transform:translate(-6%,-4%)} 100%{transform:translate(0,0)} }
+  #lookLabPanel .fps{ margin-top:6px; padding-top:7px; border-top:1px solid rgba(255,255,255,.15); opacity:.8; font-variant-numeric:tabular-nums; }
 `;
 
 export function installLookLab(bottleScene) {
@@ -198,49 +31,11 @@ export function installLookLab(bottleScene) {
   style.textContent = CSS;
   document.head.appendChild(style);
 
-  let state = { film: false, bloom: false, grade: false, grain: false,
-    ao: false, wood: false, caustic: false, sheen: false, tilt: false, vignette: false, tone: "agx",
-    shadows: false, facet: false, shallow: false };
+  let state = { shadows: !!bottleScene._softShadows };
   try { state = { ...state, ...JSON.parse(localStorage.getItem(STORE_KEY) || "{}") }; } catch (e) { /* 기억 못 해도 된다 */ }
   const save = () => { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* 무시 */ } };
-
-  const grain = makeGrainLayer();
-  document.body.appendChild(grain);
-  const tilts = ["top", "bottom"].map((side) => {
-    const el = document.createElement("div");
-    el.className = `lookLabTilt ${side}`;
-    document.body.appendChild(el);
-    return el;
-  });
-  const vignette = document.createElement("div");
-  vignette.id = "lookLabVignette";
-  document.body.appendChild(vignette);
-  let bloom = null;
-
   const apply = () => {
-    bottleScene.setLook(state.film ? "film" : "basic", state.tone);
-    toneRow.style.opacity = state.film ? "1" : ".4";
-    bottleScene.canvas.style.filter = state.grade ? GRADE_FILTER : "";
-    grain.classList.toggle("show", state.grain);
-    tilts.forEach((el) => el.classList.toggle("show", state.tilt));
-    vignette.classList.toggle("show", state.vignette);
-    const fx = bottleScene.fx;
-    if (fx) {
-      fx.uAOAmt.value = state.ao ? FX_AMT.ao : 0;
-      fx.uWoodAmt.value = state.wood ? FX_AMT.wood : 0;
-      fx.uCausticAmt.value = state.caustic ? FX_AMT.caustic : 0;
-      for (const k of Object.keys(SHEEN_ON)) fx[k].value = state.sheen ? SHEEN_ON[k] : 0;
-      fx.uFacetAmt.value = state.facet ? 1 : 0;
-    }
-    const wu = bottleScene.waterMesh && bottleScene.waterMesh.material.uniforms;
-    if (wu && wu.uShallowAmt) wu.uShallowAmt.value = state.shallow ? 1 : 0;
-    if (!!bottleScene._softShadows !== state.shadows && bottleScene.setSoftShadows) bottleScene.setSoftShadows(state.shadows);
-    if (state.bloom) {
-      bloom = bloom || new OverlayBloom(bottleScene.renderer);
-      bottleScene.postRender = () => bloom.render(bottleScene.scene, bottleScene.camera);
-    } else {
-      bottleScene.postRender = null;
-    }
+    if (!!bottleScene._softShadows !== state.shadows) bottleScene.setSoftShadows(state.shadows);
   };
 
   const btn = document.createElement("button");
@@ -249,46 +44,16 @@ export function installLookLab(bottleScene) {
   btn.textContent = "룩 ▾";
   const panel = document.createElement("div");
   panel.id = "lookLabPanel";
-  // 필름 룩의 톤 선택 (필름 룩이 꺼져 있으면 흐리게)
-  const toneRow = document.createElement("div");
-  toneRow.className = "tone";
-  toneRow.innerHTML = `<span class="hint">톤</span>`;
-  for (const [val, label] of TONE_CHOICES) {
-    const b = document.createElement("button");
-    b.type = "button"; b.textContent = label; b.dataset.tone = val;
-    b.addEventListener("click", () => {
-      state.tone = val; save(); apply();
-      toneRow.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.tone === state.tone));
-    });
-    b.classList.toggle("on", val === state.tone);
-    toneRow.appendChild(b);
-  }
-  const items = [
-    ["film", "필름 룩", "명암 · 반구광 (톤은 아래에서)"],
-    ["ao", "AO", "구운 구석 그늘"],
-    ["wood", "나무 선체", "카툰 판자 · 꿀색 갑판"],
-    ["caustic", "물빛", "수면 근처 일렁이는 빛"],
-    ["sheen", "광택·테두리 빛", "하늘 반사 · 가장자리 빛"],
-    ["shadows", "부드러운 그림자", "무거움 — 매 프레임 그림자 맵"],
-    ["facet", "면 색 변주", "면마다 색이 조금씩 다르게"],
-    ["shallow", "얕은 물빛", "섬 둘레 바다를 청록으로"],
-    ["bloom", "블룸", "가장 무거움 — 장면을 두 번 그림"],
-    ["grade", "색보정", "대비·채도·따뜻함"],
-    ["grain", "그레인", "필름 입자"],
-    ["tilt", "틸트시프트", "위아래 흐림 · 미니어처"],
-    ["vignette", "비네트", "가장자리 어둡게"],
-  ];
-  for (const [key, label, hint] of items) {
-    const row = document.createElement("label");
-    row.innerHTML = `<span>${label}<div class="hint">${hint}</div></span>`;
-    const box = document.createElement("input");
-    box.type = "checkbox";
-    box.checked = !!state[key];
-    box.addEventListener("change", () => { state[key] = box.checked; save(); apply(); });
-    row.appendChild(box);
-    panel.appendChild(row);
-    if (key === "film") panel.appendChild(toneRow);
-  }
+
+  const row = document.createElement("label");
+  row.innerHTML = `<span>부드러운 그림자<div class="hint">무거움 — 매 프레임 그림자 맵</div></span>`;
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = state.shadows;
+  box.addEventListener("change", () => { state.shadows = box.checked; save(); apply(); });
+  row.appendChild(box);
+  panel.appendChild(row);
+
   const fps = document.createElement("div");
   fps.className = "fps";
   fps.textContent = "FPS —";

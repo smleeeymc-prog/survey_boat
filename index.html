@@ -289,7 +289,19 @@
      삼켜버렸다. 씬이 숨어 있을 때는 무대가 아예 입력을 받지 않게 한다. */
   #sceneStage:not(.visible){ pointer-events:none; }
   #sceneStage.visible{ opacity:1; }
-  #bottleCanvas{ width:100%; height:100%; display:block; }
+  /* 색보정 — 대비·채도·따뜻함. 캔버스에 CSS 필터라 GPU 합성 단계에서 거의 공짜 (09-27 고정) */
+  #bottleCanvas{ width:100%; height:100%; display:block;
+    filter:contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03); }
+  /* 틸트시프트 — 화면 위아래를 흐리게 해 병 속 미니어처처럼. 무대 안에 있어 씬과 같이 나타나고 사라진다 */
+  .tiltBlur{ position:absolute; left:0; right:0; height:34%; pointer-events:none;
+    -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
+  .tiltBlur.top{ top:0; -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
+  .tiltBlur.bottom{ bottom:0; -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
+  /* 비네트 — 가장자리를 살짝 어둡게 */
+  .sceneVignette{ position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%); }
 
   /* 3D 초기화 실패 시 안내 (파일을 로컬로 직접 열었거나 인앱 브라우저인 경우 등) */
   #sceneError{
@@ -1405,12 +1417,18 @@ const TONES = {
   neutral: { label: "Neutral", mapping: THREE.CustomToneMapping,       exposure: 1.0 },
   none:    { label: "없음",    mapping: THREE.NoToneMapping,           exposure: 1.0 },
 };
-const LOOK_DEFAULT = "basic";
+// 표면 효과 기본 세기 (this.fx 유니폼, 0 = 끔). 광택 0.8·테두리 0.2는 사용자가 고른 값(09-27).
+const FX_DEFAULT = { ao: 0.85, sheen: 0.8, rim: 0.2, facet: 1, wood: 0, caustic: 0 };
+// 부드러운 그림자 기본값 — 켜져 있으면 매 프레임 그림자 맵을 그린다(헤드리스 +20%). 메뉴에서 끌 수 있다.
+const SOFT_SHADOWS_DEFAULT = true;
+// 09-27 사용자가 폰에서 고른 조합으로 고정: 필름 룩(톤 없음) + AO + 광택·테두리 빛 + 면 색 변주 +
+// 부드러운 그림자 + 색보정·틸트시프트·비네트. 메뉴(dev/look-lab.js)에는 그림자 켜고 끄기만 남겼다.
+const LOOK_DEFAULT = "film";
 const LOOKS = {
   basic: { tone: "none", exposure: 1, ambScale: 1, sunScale: 1, hemiScale: 0 },
   film: {
-    tone: "agx",         // 톤 매핑 — 밝은 곳을 부드럽게 누르고 색을 담백하게
-    exposure: 1.25,      // AgX는 중간톤을 눌러서 노출을 올려 준다
+    tone: "none",        // 톤 매핑 (TONES의 키) — 사용자가 "없음"을 골랐다. AgX·ACES·Neutral은 setLook(name, tone)으로
+    exposure: 1.0,
     ambScale: 0.25,      // 평평한 채움광은 반구광이 대신하므로 조금만 남긴다
     hemiScale: 0.9,      // 반구광 세기 (팔레트 채움광 세기 기준 배수)
     sunScale: 1.5,       // 해 세기 배수 — 채움광을 줄인 만큼 올린다
@@ -1488,6 +1506,12 @@ class BottleScene {
   constructor() {
     this.canvas = document.getElementById("bottleCanvas");
     this.stage = document.getElementById("sceneStage");
+    // 틸트시프트·비네트 층 (CSS는 #bottleCanvas 아래 .tiltBlur/.sceneVignette)
+    for (const cls of ["tiltBlur top", "tiltBlur bottom", "sceneVignette"]) {
+      const el = document.createElement("div");
+      el.className = cls;
+      this.stage.appendChild(el);
+    }
 
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
     // 픽셀비 상한을 2→1.5로 낮춤: 파도 프래그먼트 셰이더(스펙큘러/프레넬 등)가 전체화면을 덮는
@@ -1499,10 +1523,13 @@ class BottleScene {
     // 병 안 물 덩어리를 수평면으로 자르는 데 쓴다 (_buildBottleWater).
     this.renderer.localClippingEnabled = true;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    // 부드러운 그림자(SOFT_SHADOWS_DEFAULT)면 PCFSoft, 아니면 가장 싼 BasicShadowMap. setSoftShadows()로 바꾼다.
+    this._softShadows = SOFT_SHADOWS_DEFAULT;
+    this.renderer.shadowMap.type = this._softShadows ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
     // 룩(LOOK)의 톤 매핑. 바다(커스텀 셰이더)와 하늘(sRGB 배경)은 톤 매핑을 안 탄다 — 그대로다.
-    this.renderer.toneMapping = LOOK.tone === "agx" ? THREE.AgXToneMapping : THREE.NoToneMapping;
-    this.renderer.toneMappingExposure = LOOK.exposure ?? 1;
+    const tone0 = TONES[LOOK.tone] || TONES.none;
+    this.renderer.toneMapping = tone0.mapping;
+    this.renderer.toneMappingExposure = LOOK.tone === "none" ? 1 : tone0.exposure;
     // 프레임 성능 워치독: 초반 ~2초간 평균 프레임타임이 계속 느리면(약 33fps 미만)
     // 자동으로 스펙큘러 반짝임을 끄고 픽셀비를 1로 더 낮춰 저사양 기기에서 렉을 줄임.
     // (한 번만 판단하고 다시는 되돌리지 않음 — 매 프레임 체크하는 비용도 없음)
@@ -1560,12 +1587,12 @@ class BottleScene {
     // 다시 컴파일하지 않도록 셰이더는 늘 붙여 두고 값만 바꾼다. 테스트 메뉴(dev/look-lab.js)가 바꾼다.
     this.fx = {
       uFxTime: { value: 0 },
-      uAOAmt: { value: 0 },        // 구운 AO(구석 그늘)
-      uWoodAmt: { value: 0 },      // 선체 나무 외판·갑판·흘수선 띠 + 절차적 요철
-      uCausticAmt: { value: 0 },   // 수면 근처에 일렁이는 물빛
-      uSheenAmt: { value: 0 },     // 하늘이 비치는 광택 (매끈한 면에만)
-      uRimAmt: { value: 0 },       // 테두리 빛 (실루엣 가장자리에만)
-      uFacetAmt: { value: 0 },     // 면마다 색 변주 (로우폴리 바위처럼 면마다 조금씩 다른 색)
+      uAOAmt: { value: FX_DEFAULT.ao },       // 구운 AO(구석 그늘)
+      uWoodAmt: { value: FX_DEFAULT.wood },       // 선체 카툰 나무 판자
+      uCausticAmt: { value: FX_DEFAULT.caustic }, // 수면 근처에 일렁이는 물빛
+      uSheenAmt: { value: FX_DEFAULT.sheen }, // 하늘이 비치는 광택 (매끈한 면에만)
+      uRimAmt: { value: FX_DEFAULT.rim },     // 테두리 빛 (실루엣 가장자리에만)
+      uFacetAmt: { value: FX_DEFAULT.facet }, // 면마다 색 변주 (로우폴리 바위처럼 면마다 조금씩 다른 색)
       uSkyTop: { value: new THREE.Color() },
       uSkyHor: { value: new THREE.Color() },
       uRimColor: { value: new THREE.Color() },
@@ -2480,11 +2507,17 @@ ${GERSTNER_GLSL}
     geo.translate(0, -L / 2, 0);
     geo.rotateZ(Math.PI / 2);
     this.lhBeamMat = new THREE.ShaderMaterial({
-      uniforms: { uColor: { value: new THREE.Color(LIGHTHOUSE.color) }, uOpacity: { value: 0 } },
+      uniforms: {
+        uColor: { value: new THREE.Color(LIGHTHOUSE.color) }, uOpacity: { value: 0 },
+        // 병 안에서는 빛줄기를 병 모양으로 자른다 — 물 클리핑 유니폼을 같이 쓴다
+        ...(({ uClipOn, uClipCenter, uClipT, uClipScaleX, uClipScaleR, uProfU, uProfR }) =>
+          ({ uClipOn, uClipCenter, uClipT, uClipScaleX, uClipScaleR, uProfU, uProfR }))(this.waterMesh.material.uniforms),
+      },
       vertexShader: `
-        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vW;
         void main() {
           vUv = uv;
+          vW = (modelMatrix * vec4(position, 1.0)).xyz;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           vN = normalize(normalMatrix * normal);
           vV = normalize(-mv.xyz);
@@ -2492,13 +2525,33 @@ ${GERSTNER_GLSL}
         }`,
       fragmentShader: `
         uniform vec3 uColor; uniform float uOpacity;
-        varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        uniform float uClipOn; uniform vec3 uClipCenter; uniform float uClipT;
+        uniform float uClipScaleX; uniform float uClipScaleR;
+        uniform float uProfU[7]; uniform float uProfR[7];
+        varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vW;
+        float beamBottleRadius(float ax) {
+          if (ax <= uProfU[0] || ax >= uProfU[6]) return 0.0;
+          for (int i = 0; i < 6; i++) {
+            if (ax >= uProfU[i] && ax <= uProfU[i + 1]) {
+              float t = (ax - uProfU[i]) / max(1e-5, uProfU[i + 1] - uProfU[i]);
+              return mix(uProfR[i], uProfR[i + 1], t);
+            }
+          }
+          return 0.0;
+        }
         void main() {
+          float clipA = 1.0;
+          if (uClipOn > 0.5) {
+            vec3 rel = vW - uClipCenter;
+            float rad = beamBottleRadius(-rel.x / uClipScaleX) * uClipScaleR;
+            clipA = mix(1.0, 1.0 - smoothstep(rad - 0.12, rad, length(rel.yz)), uClipT);
+            if (clipA < 0.004) discard;
+          }
           // 옆에서 보면 가운데가 진하고 가장자리가 옅다(부피감). 축을 따라 보면 거의 안 보인다 —
           // 빛줄기가 카메라를 쓸고 지나갈 때 원판이 번쩍이지 않게.
           float face = pow(abs(dot(normalize(vN), normalize(vV))), 1.5);
           float along = vUv.y * vUv.y;   // 등불(1) → 끝(0)
-          gl_FragColor = vec4(uColor, face * along * uOpacity);
+          gl_FragColor = vec4(uColor, face * along * uOpacity * clipA);
         }`,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     });
@@ -2543,8 +2596,9 @@ ${GERSTNER_GLSL}
     this._lhAngle = (this._lhAngle + LIGHTHOUSE.spin * dt * (2 * Math.PI / LIGHTHOUSE.period)) % (2 * Math.PI);
     this.lhPivot.rotation.set(0, this._lhAngle, -LIGHTHOUSE.tilt);
     this.lhPivot.visible = on > 0.001;
-    // 병 안에서는 빛줄기가 유리를 뚫고 나가므로 바다와 같이 걷는다. 조명·창문·번짐은 남는다.
-    this.lhBeamMat.uniforms.uOpacity.value = on * LIGHTHOUSE.beamOpacity * (1 - seaOut);
+    // 병 안에서도 빛줄기를 보인다 — 유리 밖으로 나가는 부분은 셰이더가 병 모양으로 자른다.
+    // (예전엔 바다와 같이 걷어서 병 안에선 등불과 빛 받는 곳만 보였다 — 09-27 사용자)
+    this.lhBeamMat.uniforms.uOpacity.value = on * LIGHTHOUSE.beamOpacity;
     this.lhGlowMat.opacity = on;
     this.lhGlow.visible = on > 0.001;
     if (this.lhWindowMat) {
@@ -2836,14 +2890,14 @@ ${GERSTNER_GLSL}
         void main() {`)
       .replace("#include <normal_fragment_maps>", `
         #include <normal_fragment_maps>
-        // 면마다 색 변주 — 면의 법선(화면 미분)으로 해시를 내서 밝기 ±14%, 따뜻함/차가움을 돌린다.
+        // 면마다 색 변주 — 면의 법선(화면 미분)으로 해시를 내서 밝기 ±10%, 따뜻함/차가움을 살짝 돌린다.
         // 레퍼런스(로우폴리 해변 바위)처럼 한 덩어리 안에서도 면마다 색이 조금씩 다르게.
         if (uFacetAmt > 0.0) {
           vec3 fxFN = normalize(cross(dFdx(vFxWorld), dFdy(vFxWorld)));
           float fxH = fract(sin(dot(floor(fxFN * 9.0 + 0.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
           float fxH2 = fract(fxH * 7.31 + 0.13);
-          vec3 fxTint = mix(vec3(0.90, 0.97, 1.10), vec3(1.10, 0.98, 0.86), fxH2);
-          diffuseColor.rgb *= mix(vec3(1.0), fxTint * (0.86 + fxH * 0.28), uFacetAmt);
+          vec3 fxTint = mix(vec3(0.93, 0.98, 1.07), vec3(1.07, 0.99, 0.90), fxH2);
+          diffuseColor.rgb *= mix(vec3(1.0), fxTint * (0.9 + fxH * 0.2), uFacetAmt);
         }`)
       .replace("#include <aomap_fragment>", `
         float fxAO = mix(1.0, clamp(vFxAO, 0.0, 1.0), uAOAmt);
@@ -4395,11 +4449,7 @@ ${GERSTNER_GLSL}
         `yaw: ${yaw.toFixed(3)}\npitch: ${pitch.toFixed(3)}\nradius: ${radius.toFixed(2)}\n(드래그로 각도 잡고 이 값을 baseYaw/basePitch/radius에 붙여넣기)`;
     }
 
-    if (this.visible) {
-      this.renderer.render(this.scene, this.camera);
-      // 화면을 그린 뒤 덧그리는 자리 — 테스트 메뉴의 블룸(dev/look-lab.js)이 쓴다
-      if (this.postRender) this.postRender();
-    }
+    if (this.visible) this.renderer.render(this.scene, this.camera);
   }
 }
 
