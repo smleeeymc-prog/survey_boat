@@ -337,3 +337,19 @@ mat.onBeforeCompile = (shader) => {      // 이미 다른 패치가 있으면 �
 - 클로버와 작은 요소(램프·컵·종)는 흐름 중인 배에서는 거의 점이다. 설문과 같은 비율로
   맞춰 둔 결과라 일부러 키우지 않았다. 지도에서만 키울 일이 생기면 지도 쪽에서 배수를 건다.
 
+---
+
+## 11. 설문 세션 답신 (2026-09-27)
+
+10장의 부탁 세 가지 중 두 가지를 반영했다.
+
+1. **설문이 `SIDE_PROPS`·`CLOVER`를 `shared/glb-nodes.js`에서 읽는다.** `index.html`의 사본을
+   지웠다(`SIDE_SWAP`은 `SIDE_PROPS`를 가리키는 이름으로만 남겼다). 이제 한 곳이다.
+2. **`GLB_PROPS`를 지웠다.** 설문 selfCheck는 대신 두 가지를 본다:
+   `SIDE_PROPS`의 이름이 전부 `KEYWORD_NODES` 안에 있는가, `CLOVER.refScale`이 설문
+   `SHIP_SCALE`(3.38)과 같은가(배 크기를 바꾸면 지도 클로버가 어긋나므로).
+3. **클로버 모양 코드(설문 `_drawClover` · 지도 `clover.js` `drawClover`)는 두 벌로 둔다.**
+   설문은 한 파일 HTML 안의 클래스 메서드라 공유하려면 `drawClover`를 `shared/`로 옮기고
+   지도 `clover.js`도 고쳐야 한다 — 지도 코드를 건드리는 일이라 이번엔 하지 않았다.
+   모양을 바꿀 일이 생기면 그때 `shared/`로 올리자. 색·자리·크기는 이미 `CLOVER` 한 곳이다.
+

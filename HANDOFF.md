@@ -66,13 +66,14 @@ node statistics/tools/sync-model.mjs
 | `palette.js` 시간대 4종·밝기·지역 색 (`KEYWORD_COLOR`·`KEYWORD_PROP`은 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ (`config.js` 재수출) |
 | `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) | ✓ `<link>` | ✓ `<link>` (색보정·비네트도 씀) |
 | `ship-tokens.js` 뱃머리 보정·흘수 (`CABIN_BASE_COLOR`는 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ |
-| `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES` + `SIDE_PROPS`·`CLOVER`(09-27 새로 — 설문 `SIDE_SWAP`·`CLOVER`와 같은 값) | ✓ (`SIDE_PROPS`·`CLOVER`는 아직 자기 사본) | ✓ |
+| `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES` + `SIDE_PROPS`·`CLOVER`(09-27 새로, `GLB_PROPS`는 삭제) | ✓ | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |
 | `look-tokens.js` 조명 비율·톤·거칠기 상한·구운 AO 세기 (09-27 새로) | ✓ | ✓ (조명·거칠기·AO 전부) |
 | `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
 
 **09-27 지도 세션 답신 → `HANDOFF-map.md` 10장.** 인수인계 체크리스트를 다 반영했고, 설문
 쪽에 부탁할 것 세 가지(`SIDE_SWAP`·`CLOVER`를 shared에서 읽기, `GLB_PROPS` 정리)를 적어 뒀다.
+설문 쪽에서 1·2번을 반영했다(같은 문서 11장). 클로버 **모양** 코드만 두 벌로 남아 있다.
 
 그때 같이 바뀐 것: `fleet.js`의 `CABIN_NODE`/`HULL_NODE`/`PROP_NODES`가 `GLB_NODES`·
 `GLB_PROPS`에서 온다. `panel.css`의 색이 `var()` 참조가 됐다. `selfcheck.js` 맨 앞에
@@ -154,9 +155,10 @@ three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/asset
    그 화면 콘솔에서 리비전 불일치 assert가 뜬다.
 7. **`SENTENCE_Q`·`SHARES`를 빠뜨리지 말 것.** 실제로 이 둘이 반환 객체에서 누락돼
    설문이 3단계에서 죽은 적이 있다(`5d96f59`). 반환 객체와 사용처를 대조할 것.
-8. **`KEYWORD_NODES`(설문)와 `KEYWORD_PROP`·`GLB_PROPS`(지도)는 따로 있지만 묶여 있다.**
-   지도용 둘은 설문 매핑의 부분집합이어야 한다. `KEYWORD_NODES`의 키는
-   `survey-taxonomy.js`의 `KEYWORDS`와 정확히 같아야 한다(설문 `selfCheck`가 대조).
+8. **`KEYWORD_NODES`는 이제 두 화면이 같이 쓴다** (09-27부터 지도도 요소 전부를 붙인다.
+   `KEYWORD_PROP`·`GLB_PROPS`는 지웠다). 키는 `survey-taxonomy.js`의 `KEYWORDS`와 정확히
+   같아야 하고, `SIDE_PROPS`의 이름은 전부 `KEYWORD_NODES` 안에 있어야 한다(설문 `selfCheck`가 대조).
+   `CLOVER.refScale`은 설문 `SHIP_SCALE`과 같아야 한다 — 지도가 그 값으로 나눠 배 좌표로 옮긴다.
 9. **노드 이름의 공백은 `_`가 된다.** 블렌더의 `Back Mountain`은 three.js에서
    `Back_Mountain`이다. `glb-nodes.js`에는 three.js 쪽 이름을 적는다.
 
