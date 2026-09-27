@@ -60,6 +60,18 @@ html, body {
   width: 100%; height: 100%;
   display: block;
   z-index: 0;
+  /* 화면 색보정 — 설문과 같은 값(shared/tokens.css). 캔버스에만 건다: 패널의 backdrop-filter가
+     필터 먹은 캔버스를 비치므로 유리 너머 톤도 두 화면이 맞는다. GPU 합성 단계라 프레임
+     비용이 거의 없어서 성능 워치독의 가장 낮은 단계에서도 그대로 둔다. */
+  filter: var(--scene-grade);
+}
+
+/* 비네트 — 캔버스 바로 위, 패널(z 2)·문장 카드(z 3)보다 아래. 패널 글자까지 어두워지면 안 된다. */
+.sceneVignette {
+  position: fixed; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--scene-vignette);
 }
 
 /* ── 상단 패널 ────────────────────────────────────────────────────────────── */

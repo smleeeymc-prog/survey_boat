@@ -254,15 +254,17 @@ mat.onBeforeCompile = (shader) => {      // 이미 다른 패치가 있으면 �
 
 순서대로. 1~3이 "두 화면 톤 맞추기"의 전부다.
 
-- [ ] 1. `main.js` 조명을 5.1처럼 `SCENE_LOOK`·`HEMI`로 (Ambient·Sun 배수 + HemisphereLight 추가)
-- [ ] 2. `fleet.js` 재질 복제 뒤 `roughness = min(…, SCENE_LOOK.roughnessCap)`
-- [ ] 3. 캔버스 `filter: var(--scene-grade)` + 비네트 층 (5.2)
-- [ ] 4. `build-standalone.mjs` `SHARED_ORDER`에 `"look-tokens.js"` 추가, 번들 크기(≈ +1.2MB GLB) 확인
-- [ ] 5. `fleet.js` "[함정 2] Cabin 노드에는 재질이 없다" 주석 갱신 (Cabin에 크림색 비금속 재질이 있다)
-- [ ] 6. 튜브 = **가족** — 지도 문구·범례·통계 설명에 '관계=튜브'가 남았는지
-- [ ] 7. **사용자 확인:** 지도도 캐빈 색을 키워드와 끊을지 (4장 1번) → 정해지면 `style.js`
-- [ ] 8. (선택) 구운 AO (5.3)
-- [ ] 9. `statistics/README.md`에 `look-tokens.js`·`--scene-grade` 항목 추가
+- [x] 1. `main.js` 조명을 5.1처럼 `SCENE_LOOK`·`HEMI`로 (Ambient·Sun 배수 + HemisphereLight 추가)
+- [x] 2. `fleet.js` 재질 복제 뒤 `roughness = min(…, SCENE_LOOK.roughnessCap)`
+- [x] 3. 캔버스 `filter: var(--scene-grade)` + 비네트 층 (5.2)
+- [x] 4. `build-standalone.mjs` `SHARED_ORDER`에 `"look-tokens.js"` 추가, 번들 크기(≈ +1.2MB GLB) 확인
+- [x] 5. `fleet.js` "[함정 2] Cabin 노드에는 재질이 없다" 주석 갱신 (Cabin에 크림색 비금속 재질이 있다)
+- [x] 6. 튜브 = **가족** — 지도 문구·범례·통계 설명에 '관계=튜브'가 남았는지
+- [x] 7. **사용자 확인:** 지도도 캐빈 색을 키워드와 끊을지 (4장 1번) → 정해지면 `style.js`
+- [x] 8. (선택) 구운 AO (5.3)
+- [x] 9. `statistics/README.md`에 `look-tokens.js`·`--scene-grade` 항목 추가
+
+(09-27 지도 세션이 전부 반영했다 — 아래 10장)
 
 두 화면 비교는 같은 시간대(지도 `?time=day` 등, 설문은 공유 시간대 단계에서 같은 값)에서 배 한 척을 나란히 캡처해 캐빈·선체 색을 보면 된다.
 
@@ -289,3 +291,49 @@ mat.onBeforeCompile = (shader) => {      // 이미 다른 패치가 있으면 �
 | `6049106` `7082f53` `37cc2da` | 광택·테두리 조정, 카툰 선체, 부드러운 그림자 토글 |
 | `3b034e9` | 사용자가 고른 톤으로 고정, 메뉴는 그림자 토글만 |
 | (이 문서와 같은 커밋) | 공유할 룩 값을 `shared/look-tokens.js`·`tokens.css`로 옮김 (설문 화면 값 변화 없음) |
+
+---
+
+## 10. 지도 세션 답신 (2026-09-27)
+
+위 체크리스트를 전부 반영했다. 사용자 결정 두 가지가 더 있었다.
+
+1. **지도도 캐빈 색을 키워드와 끊는다.** 캐빈은 GLB 크림색 재질 그대로.
+2. **지도에도 키워드 요소를 전부 붙인다** (`KEYWORD_NODES` 10개 키워드 · 요소 11개 + 클로버).
+   베이스 모델은 `scene_baked.glb` → `Scene.glb` 흐름 그대로다(`scene_baked2.glb`는 안 쓴다).
+
+### 확인한 것
+
+| 항목 | 결과 |
+|---|---|
+| 조명 | 같은 시간대(`day`)에서 두 화면 조명을 읽어 대조 — 주변광 0.22 · 해 1.7325 · 테두리광 0.33 · 반구광 0.792(하늘 `#b0d1da` 바닥 `#2083a9`) **소수점까지 같다** |
+| 요소 | 요소마다 InstancedMesh 하나. **그 요소를 단 배에만** 인스턴스를 둔다 — 전 배에 깔고 0 행렬로 지우면 6,894 tri × 80척을 헛돈다. 결과: 요소 12종을 붙이고도 화면 전체가 264,226 → 211,140 tri. draw call = 몸체 4 + 쓰이는 요소 수 |
+| 뱃전 요소 | 지도는 카메라가 늘 우현을 보므로 로드 때 한 번 판정해 지오메트리에 구워 넣는다(InstancedMesh는 인스턴스 행렬의 행렬식을 안 봐서 음수 배율로 못 뒤집는다). 지금 GLB에서는 **튜브만** 옮겨졌다 |
+| 클로버 | 설문과 같은 방식(`DecalGeometry`로 선체 투영). 배율 1로 구운 좌표라 `CLOVER` 값을 `refScale`로 나눠 쓴다 |
+| 구운 AO | 켰다. 근접 장면을 켜고 끄고 비교하니 고물 우묵한 곳·캐빈 밑동·요소 접지면에 그늘이 들어갔다. 값이 이미 GLB에 있어 비용은 픽셀당 곱셈 몇 번 |
+| 튜브 두 개 | 버그 아님 — GLB `Tube` 메쉬에 링 두 개가 들어 있다(정점이 x −1.5~1.5 / 2.4~6.2 두 덩어리) |
+| 설문 화면 | `shared/`를 고친 뒤에도 콘솔·selfCheck 깨끗 |
+
+### `shared/`에서 바꾼 것
+
+- **삭제**: `palette.js` `KEYWORD_COLOR`·`KEYWORD_PROP`, `ship-tokens.js` `CABIN_BASE_COLOR`.
+  셋 다 지도만 쓰던 값이다. 설문 `index.html`이 import 하지 않는 것을 확인하고 지웠다
+  (`index.html` 2274줄 주석에 이름만 남아 있다).
+- **추가**: `glb-nodes.js` `SIDE_PROPS`·`CLOVER`. 설문 `index.html`의 `SIDE_SWAP`·`CLOVER`와
+  **같은 값**이다. `CLOVER`에는 단위 기준 `refScale: 3.38`(설문 `SHIP_SCALE`)만 더했다.
+
+### 설문 쪽에 부탁할 것
+
+1. **`SIDE_SWAP`·`CLOVER`를 `shared/glb-nodes.js`에서 읽게 바꿔 주면 한 곳이 된다.** 지금은
+   설문 사본과 shared 값이 같아서 문제없지만, 설문에서만 고치면 지도 클로버가 따로 논다.
+   (`SIDE_SWAP` → `SIDE_PROPS`로 이름만 다르다. `CLOVER`는 그대로 쓰면 되고 `refScale`은 무시해도 된다)
+2. **`GLB_PROPS`는 이제 설문 selfCheck만 읽는다.** 지도는 `KEYWORD_NODES`를 쓴다. 그 assert를
+   걷어내면 `GLB_PROPS`도 같이 지워도 된다.
+3. **클로버 그림(`_drawClover`)은 코드라 두 벌이다** — 지도 `statistics/js/clover.js` `drawClover`.
+   모양을 바꾸면 두 곳을 같이 고칠 것(색은 `CLOVER`에서 오므로 한 곳).
+
+### 알아둘 것 (지도 화면 특성)
+
+- 클로버와 작은 요소(램프·컵·종)는 흐름 중인 배에서는 거의 점이다. 설문과 같은 비율로
+  맞춰 둔 결과라 일부러 키우지 않았다. 지도에서만 키울 일이 생기면 지도 쪽에서 배수를 건다.
+

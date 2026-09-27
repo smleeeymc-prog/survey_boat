@@ -35,9 +35,12 @@ export const FLEET_SHIP_SCALE = 1.5;
 // 이제 원본은 statistics/shared/ 안에 하나뿐이고 여기서는 그대로 다시 내보내기만 한다
 // — 이 파일을 import 하던 다른 모듈들은 손댈 필요가 없다.
 export { GERSTNER_WAVES, WAVE_WRAP_DOMAIN } from "../shared/ocean-core.js";
-export { TIME_OF_DAY, SCENE_BRIGHTNESS, KEYWORD_COLOR, KEYWORD_PROP } from "../shared/palette.js";
-export { SHIP_FORWARD_OFFSET, SHIP_DRAFT, CABIN_BASE_COLOR } from "../shared/ship-tokens.js";
-export { GLB_NODES, GLB_PROPS } from "../shared/glb-nodes.js";
+export { TIME_OF_DAY, SCENE_BRIGHTNESS } from "../shared/palette.js";
+export { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "../shared/ship-tokens.js";
+export { GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, CLOVER } from "../shared/glb-nodes.js";
+// 두 화면이 같은 배를 같은 색으로 찍는 데 필요한 룩 값 (조명 비율·거칠기 상한·구운 AO 세기).
+// 광택·테두리 빛·그림자 같은 "가까이서 한 척" 전용 효과는 설문에만 있고 여기엔 없다.
+export { SCENE_LOOK, HEMI, AO } from "../shared/look-tokens.js";
 
 // 기본 시간대도 온보딩과 같은 값을 쓴다 (설문 페이지가 처음 보여주는 하늘).
 // 바다 색을 팔레트에서 떼어내 하나만 바꿀 수는 없다 — 하늘·안개·조명·반사색이 한 세트라

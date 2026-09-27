@@ -24,6 +24,5 @@ export const SHIP_DRAFT = 0.17;
 // 지도 전용 선체 패턴까지 한 곳에 모아야 "블렌더에서 이름이 바뀌면 조용히 깨진다"를
 // 실제로 막을 수 있어서다. 여기는 수치·색 토큰만 남긴다.
 
-// 키워드가 없는 배의 캐빈 색. three.js는 color를 map에 곱하므로 나중에 UV 아틀라스
-// 텍스처가 붙어도 이 색이 틴트로 남는다.
-export const CABIN_BASE_COLOR = 0xf3e6cf;
+// [삭제됨 2026-09-27] CABIN_BASE_COLOR. 캐빈 색은 이제 GLB의 Cabin 재질(Material_0, 크림)을
+// 그대로 쓴다 — 코드에 같은 색을 따로 적어 둘 이유가 없어졌다. 지도만 쓰던 값이다.

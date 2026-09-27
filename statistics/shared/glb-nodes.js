@@ -39,17 +39,19 @@ export const GLB_NODES = {
   cat: "Cat",
 };
 
-// 소품: GLB 노드 이름 → 역할 키. 순회 순서가 곧 붙이는 순서다.
+// [옛 값] 지도가 갈매기·튜브 두 가지만 인스턴싱하던 때의 표. 지도는 이제 KEYWORD_NODES 전체를
+// 쓰므로 이 표를 읽지 않는다. 설문 selfCheck가 아직 import 해서 남겨 둔다 — 설문 쪽에서
+// 그 assert를 걷어내면 같이 지워도 된다.
 export const GLB_PROPS = {
   [GLB_NODES.gull]: "gull",
   [GLB_NODES.tube]: "tube",
 };
 
-// 키워드 → 배에 나타나는 요소 (GLB 노드 이름). 설문 화면만 쓴다.
-// 고른 키워드 두 개의 요소가 켜지고, 나머지는 꺼진다. 캐빈 색은 키워드와 무관하다.
+// 키워드 → 배에 나타나는 요소 (GLB 노드 이름). 두 화면이 같이 쓴다.
+// 고른 키워드의 요소가 켜지고, 나머지는 꺼진다. 캐빈 색은 키워드와 무관하다(두 화면 다).
 // 둘 이상 적힌 것은 세트라 같이 켜지고 같이 꺼진다.
-// "Clover"는 GLB에 없다 — 설문 화면이 코드로 만들어 뱃머리에 붙이는 데칼이다(index.html CLOVER).
-// 지도는 아직 이걸 안 쓰고 GLB_PROPS(갈매기·튜브)만 인스턴싱한다 — 팔레트의 KEYWORD_PROP 참고.
+// "Clover"는 GLB에 없다 — 코드가 선체에 투영하는 데칼이다(아래 CLOVER).
+// 지도는 요소마다 InstancedMesh 하나를 만들고, 그 요소를 실제로 단 배에만 인스턴스를 둔다.
 export const KEYWORD_NODES = {
   "일":     ["Toolbox"],
   "관계":   ["Lamp"],
@@ -64,3 +66,27 @@ export const KEYWORD_NODES = {
 };
 // 코드가 만드는 요소 — GLB에서 찾지 않는다.
 export const CODE_MADE_NODES = ["Clover"];
+
+// 뱃전에 걸린 요소. 카메라 반대쪽 뱃전에 있으면 선체에 가려지므로, 그쪽이 안 보일 때는
+// 배 중심선에 대칭인 자리(거울상)로 옮긴다. 갑판 위 요소는 중심선 근처라 해당 없다.
+// Cat은 굴뚝 옆 갑판이라 반대편이면 굴뚝에 가린다.
+//   설문: 드래그로 둘러보므로 카메라 쪽이 바뀔 때마다 옮긴다
+//   지도: 모든 배가 같은 방향으로 흘러 카메라가 늘 같은 뱃전을 보므로, 로드할 때 한 번 정한다
+// [요청] 설문 index.html 의 SIDE_SWAP 이 이 값과 같다. 설문도 여기서 읽게 바꾸면 한 곳이 된다.
+export const SIDE_PROPS = ["Surfboard", "Bell", "Tube", "Clover", "Cat"];
+
+// '우연' — 뱃머리 옆면에 붙는 네잎클로버 데칼. GLB에 없는 요소라 코드가 그려서 붙인다.
+// 전부 눈으로 맞춘 값이다. 방향은 블렌더 기준: 뱃머리가 +X일 때 우현(오른쪽) = +Z.
+// 단위는 설문 화면의 월드 단위다 — 배 배율 refScale(설문 SHIP_SCALE = GLB Ship 노드 배율)
+// 기준. 배를 다른 크기로 그리는 화면(지도)은 refScale 로 나눠 배 좌표로 옮겨 쓴다.
+// [요청] 설문 index.html 의 CLOVER 와 값이 같다. 설문도 여기서 읽게 바꾸면 한 곳이 된다.
+export const CLOVER = {
+  side: "starboard",   // "starboard"(우현) | "port"(좌현) — 지도는 늘 카메라 쪽 뱃전을 쓴다
+  along: 0.62,         // 배 가운데(0) → 뱃머리 끝(1) 사이 어디쯤
+  height: 0.33,        // 수면 위 높이 (월드 단위, refScale 기준)
+  size: 0.30,          // 데칼 한 변 (월드 단위, refScale 기준)
+  spin: -0.35,         // 데칼 면 안에서 돌리는 각도 (라디안, +는 반시계)
+  leaf: "#4e9f4b",     // 잎
+  vein: "#2f6f33",     // 잎맥·테두리
+  refScale: 3.38,      // 위 단위의 기준이 된 배 배율
+};

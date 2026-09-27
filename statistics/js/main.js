@@ -73,14 +73,28 @@ class MapScene {
     // 끝나야 경계가 드러나지 않는다.
     this.scene.fog = new THREE.Fog(P.fog, C.FOG_NEAR, C.FOG_FAR);
 
-    const B = C.SCENE_BRIGHTNESS;
-    this.scene.add(new THREE.AmbientLight(P.amb, P.ambI * B));
-    const sun = new THREE.DirectionalLight(P.sun, P.sunI * B);
+    // 조명 비율은 설문과 같은 값을 쓴다(shared/look-tokens.js). 설문은 평평한 채움광(Ambient)을
+    // 줄이고 반구광(위 = 하늘색, 아래 = 바닷색)으로 대신했다 — 면이 위를 보느냐 옆을 보느냐에 따라
+    // 채움광 색이 달라져서 입체가 산다. 이걸 안 따라가면 같은 텍스처가 지도에서만 평평하고
+    // 밝게 뜬다. 톤 매핑은 없음(SCENE_LOOK.tone "none") = three 기본값이라 따로 안 건드린다.
+    // 조명 개수는 처음부터 고정한다. three.js는 조명 수가 바뀌면 모든 재질을 다시 컴파일한다.
+    // 물은 커스텀 셰이더라 이 조명들을 안 받는다(설문도 같다).
+    const B = C.SCENE_BRIGHTNESS, L = C.SCENE_LOOK;
+    this.scene.add(new THREE.AmbientLight(P.amb, P.ambI * B * L.ambScale));
+    const sun = new THREE.DirectionalLight(P.sun, P.sunI * B * L.sunScale);
     sun.position.set(P.sunPos[0], P.sunPos[1], P.sunPos[2]).multiplyScalar(6);
     this.scene.add(sun);
-    const rim = new THREE.DirectionalLight(P.rim, P.rimI * B);
+    const rim = new THREE.DirectionalLight(P.rim, P.rimI * B);   // 테두리광은 설문도 배수 없이 팔레트 값
     rim.position.set(-3, 1, -2).multiplyScalar(6);
     this.scene.add(rim);
+    // 반구광 — 하늘 쪽은 팔레트 하늘 띠 하나를 회색 쪽으로 조금 뺀 색(원색 그대로면 배가
+    // 하늘색으로 물든다), 바닥 쪽은 바닷색을 어둡게 한 색.
+    const H = C.HEMI;
+    const hemiSky = new THREE.Color(P.sky[H.skyBand]);
+    const lum = hemiSky.r * 0.2126 + hemiSky.g * 0.7152 + hemiSky.b * 0.0722;
+    hemiSky.lerp(new THREE.Color(lum, lum, lum), H.skyDesat);
+    const hemiGround = new THREE.Color(P.ocean).multiplyScalar(H.groundMul);
+    this.scene.add(new THREE.HemisphereLight(hemiSky, hemiGround, P.ambI * B * L.hemiScale));
 
     this.water = buildWater();
     this.scene.add(this.water);

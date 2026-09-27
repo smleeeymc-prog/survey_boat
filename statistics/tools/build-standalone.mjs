@@ -39,10 +39,11 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 // 이어붙이는 순서 = 최상위에서 평가되는 순서. const/class는 호이스팅되지 않으므로
 // "먼저 평가돼야 하는 것"이 앞에 와야 한다 (panel.js의 METRICS가 config의 STATE_LABEL을 읽는 식).
 // shared/ 가 먼저다 — config.js가 그 값들을 다시 내보내기 때문에 앞에 평가돼 있어야 한다.
-const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js"];
+const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js", "look-tokens.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
-  "fleet.js", "camera.js", "store.js",
+  // clover.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만든다.
+  "clover.js", "fleet.js", "camera.js", "store.js",
   // 통계 모듈은 panel.js 보다 먼저다 — Panel 생성자가 StatDeck 을 만들고, StatDeck 은
   // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
   "stats/metrics.js", "stats/views.js", "stats/index.js",
@@ -103,10 +104,12 @@ const three = read(path.join(THREE_PKG, "build", "three.min.js"))
   .replace(/^console\.warn\('Scripts[^\n]*?\),/, "void 0,");
 
 // GLTFLoader는 BufferGeometryUtils의 toTrianglesDrawMode도 쓴다. 그것도 같이 넣어야 한다.
+// DecalGeometry는 '우연' 클로버를 선체에 투영하는 데 쓴다(js/clover.js).
 const jsmDir = path.join(THREE_PKG, "examples", "jsm");
 const gltfLoader = [
   jsmModule(path.join(jsmDir, "utils", "BufferGeometryUtils.js"), ["toTrianglesDrawMode"]),
   jsmModule(path.join(jsmDir, "loaders", "GLTFLoader.js"), ["GLTFLoader"]),
+  jsmModule(path.join(jsmDir, "geometries", "DecalGeometry.js"), ["DecalGeometry"]),
 ].join("\n");
 
 const configSrc = read(path.join(STAT, "js", "config.js"));

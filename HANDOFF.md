@@ -55,7 +55,7 @@ node statistics/tools/sync-model.mjs
 넣는다 — 둘째 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
 `--report` 폴더에 아틀라스 미리보기(`atlas_labeled.png`)와 요약이 떨어진다.
 
-### `shared/` 에 지금 무엇이 있나 (2026-09-06 기준)
+### `shared/` 에 지금 무엇이 있나 (2026-09-27 기준)
 
 설문 세션이 `statistics/` 안을 고친 적이 있다 — 두 화면에 걸친 문제라 한쪽만 고칠 수
 없었다(커밋 `ecf3c7a`). 지도 세션이 모르고 지나갈 수 있어 여기 남긴다.
@@ -63,13 +63,16 @@ node statistics/tools/sync-model.mjs
 | 파일 | 설문이 읽는가 | 지도가 읽는가 |
 |---|:--:|:--:|
 | `ocean-core.js` 파도 표·GLSL·`waveHeightAt`·랩 도메인 | ✓ | ✓ |
-| `palette.js` 시간대 4종·밝기·지역 색 (키워드 색·`KEYWORD_PROP`은 지도만) | ✓ | ✓ (`config.js` 재수출) |
-| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) | ✓ `<link>` | ✓ `<link>` (색보정 변수는 아직 안 씀) |
-| `ship-tokens.js` 뱃머리 보정·흘수·캐빈 기본색 | ✓ | ✓ |
-| `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES`(설문만) | ✓ | ✓ |
+| `palette.js` 시간대 4종·밝기·지역 색 (`KEYWORD_COLOR`·`KEYWORD_PROP`은 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ (`config.js` 재수출) |
+| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) | ✓ `<link>` | ✓ `<link>` (색보정·비네트도 씀) |
+| `ship-tokens.js` 뱃머리 보정·흘수 (`CABIN_BASE_COLOR`는 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ |
+| `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES` + `SIDE_PROPS`·`CLOVER`(09-27 새로 — 설문 `SIDE_SWAP`·`CLOVER`와 같은 값) | ✓ (`SIDE_PROPS`·`CLOVER`는 아직 자기 사본) | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |
-| `look-tokens.js` 조명 비율·톤·거칠기 상한·구운 AO 세기 (09-27 새로) | ✓ | 아직 (`HANDOFF-map.md` 5장) |
+| `look-tokens.js` 조명 비율·톤·거칠기 상한·구운 AO 세기 (09-27 새로) | ✓ | ✓ (조명·거칠기·AO 전부) |
 | `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
+
+**09-27 지도 세션 답신 → `HANDOFF-map.md` 10장.** 인수인계 체크리스트를 다 반영했고, 설문
+쪽에 부탁할 것 세 가지(`SIDE_SWAP`·`CLOVER`를 shared에서 읽기, `GLB_PROPS` 정리)를 적어 뒀다.
 
 그때 같이 바뀐 것: `fleet.js`의 `CABIN_NODE`/`HULL_NODE`/`PROP_NODES`가 `GLB_NODES`·
 `GLB_PROPS`에서 온다. `panel.css`의 색이 `var()` 참조가 됐다. `selfcheck.js` 맨 앞에
