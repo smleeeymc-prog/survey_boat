@@ -9,7 +9,6 @@
  *
  * data 의 구조는 accepts 가 정한다 (metrics.js 머리말의 shape 표). ctx 에는
  *   highlight  결론 문장이 가리키는 것 (insights.js) — 그것만 강조색, 나머지는 한 회색
- *   ordinals   방금 도착한 문장의 키워드 → 몇 번째 (LIVE 에서만)
  * three.js도, 패널의 DOM 구조도, 어떤 지표였는지도 모른다. 이 화면 밖(다른 레이아웃,
  * 다른 페이지, 인쇄물)으로 옮길 때 가져갈 것은 여기 함수 하나와 css/stats.css 의 같은
  * 이름 블록 하나뿐이다.
@@ -80,46 +79,38 @@ export const VIEWS = {
   },
 
   /**
-   * 버블 — 강조한 것을 먹색으로, 나머지는 옅은 회색으로 한 줄에 세운다(레퍼런스 2장:
-   * 최다 이유를 가운데 검게). 넓이가 빈도에 비례한다.
+   * 버블 — 강조한 것(결론이 가리키는 이유)을 가운데 먹색으로, 나머지는 옅은 회색으로 둘러싼다
+   * (레퍼런스 2장: 최다 이유를 가운데 검게). 넓이가 빈도에 비례한다.
    *
-   * LIVE(방금 도착한 문장)에서는 그 문장의 키워드를 먹색으로 세우고 "+1"을 붙인다 —
-   * 이 사람의 선택이 모두의 선택 가운데 어디쯤에 있는지 한눈에 보인다.
-   *
-   * 배치는 가로 한 줄이다. 패널이 폭 대 높이 3:1 넘게 납작해서, 둘러싸는 원형으로 두면
-   * 높이에 맞춰 축소되고 좌우가 텅 빈다. 1위를 가운데 두고 좌우로 번갈아 놓는다.
-   * 시뮬레이션이 아니라 접선 계산이라 매번 같은 그림이 나오고 겹칠 일이 구조적으로 없다.
+   * 배치는 자리의 가로세로 비율(ctx.aspect)에 맞춘 타원형 무리다. 예전 패널은 폭 대 높이가
+   * 3:1 넘게 납작해서 한 줄로 늘어놨지만, 가운데 카드는 2:1 안팎이라 한 줄이면 위아래가 빈다.
+   * 가장 큰 원을 가운데 두고, 다음 원부터 이미 놓인 원 두 개에 동시에 닿는 자리 가운데
+   * 가운데에서 가장 가까운(타원 거리) 곳에 붙인다. 시뮬레이션이 아니라 계산이라 매번 같은
+   * 그림이 나오고 겹칠 일이 구조적으로 없다.
    */
   bubble: {
     accepts: "rows",
     render({ items }, ctx = {}) {
       if (!items.length) return `<span class="sv-bubble"></span>`;
       const hl = asSet(ctx.highlight);
-      // 강조할 것이 7위 밖에 있어도 빠지면 안 된다 — LIVE에서 내 키워드가 안 보이는 일이 없게
-      const top = items.slice(0, 7);
+      // 강조할 것이 8위 밖에 있어도 빠지면 안 된다
+      const top = items.slice(0, 8);
       for (const r of items) if (hl.has(r.label) && !top.includes(r)) top.push(r);
       const lead = hl.size ? hl : new Set([top[0].label]);
-      const live = !!ctx.ordinals;
-      const pack = packBubbles(top);
+      const pack = packCluster(top, ctx.aspect || 2.2);
       const circles = pack.nodes.map((n) => {
         const on = lead.has(n.label);
-        // 원 안에 글자가 들어가는지 먼저 본다. 안 들어가면 원 아래에 적는다 — 잘린 라벨은 없느니만 못하다.
-        const fit = (1.76 * n.r) / Math.max(1, n.label.length);
-        const inside = fit >= 0.19;
-        const fs = inside ? Math.min(fit, n.r * 0.66) : 0.21;
-        const plus = live && on
-          ? `<g class="sv-bub-plus"><circle cx="${svgNum(n.x + n.r * 0.72)}" cy="${svgNum(-n.r * 0.72)}" r="0.2"></circle>
-             <text x="${svgNum(n.x + n.r * 0.72)}" y="${svgNum(-n.r * 0.72 + 0.075)}">+1</text></g>` : "";
+        const fs = n.inside ? n.fs : 0.2;
         return `<g class="sv-bub${on ? " lead" : ""}" style="--i:${n.order}">
           <circle cx="${svgNum(n.x)}" cy="${svgNum(n.y)}" r="${svgNum(n.r)}"></circle>
-          <text class="${inside ? "in" : "out"}" x="${svgNum(n.x)}"
-                y="${svgNum(inside ? n.y + fs * 0.35 : n.y + n.r + fs * 1.05)}"
-                style="font-size:${svgNum(fs)}px">${esc(n.label)}</text>${plus}
+          <text class="${n.inside ? "in" : "out"}" x="${svgNum(n.x)}"
+                y="${svgNum(n.inside ? n.y + fs * 0.35 : n.y + n.r + fs * 1.05)}"
+                style="font-size:${svgNum(fs)}px">${esc(n.label)}</text>
         </g>`;
       }).join("");
       const b = pack.box;
       return `<span class="sv-bubble">
-        <svg viewBox="${svgNum(b.x)} ${svgNum(b.y - (live ? 0.22 : 0))} ${svgNum(b.w)} ${svgNum(b.h + (live ? 0.22 : 0))}"
+        <svg viewBox="${svgNum(b.x)} ${svgNum(b.y)} ${svgNum(b.w)} ${svgNum(b.h)}"
              role="img" aria-label="${esc([...lead].join(", "))}">${circles}</svg>
       </span>`;
     },
@@ -333,26 +324,78 @@ const isPair = (l, h) => (h && ((l.a === h.a && l.b === h.b) || (l.a === h.b && 
 /* ── 버블 배치 ────────────────────────────────────────────────────────────── */
 
 /**
- * 1위를 가운데, 나머지를 좌우로 번갈아 접선으로 붙인다.
+ * 가장 큰 원을 가운데, 나머지를 크기순으로 무리에 붙인다.
  * 반지름은 넓이가 빈도에 비례하도록 √(count) 로 잡는다 — 반지름을 빈도에 비례시키면
  * 넓이가 제곱으로 커져서 1위가 실제 차이보다 훨씬 압도적으로 보인다.
- * @returns {{nodes, box:{x,y,w,h}}} box 는 라벨까지 포함한 실제 내용 범위다.
+ * 원에 낱말이 안 들어가면 원 아래에 적는데, 그 글자 자리까지 원의 몫으로 쳐서 붙인다
+ * (그래야 아래 낱말이 이웃 원에 먹히지 않는다).
+ * @param aspect 자리의 가로/세로. 가운데에서의 거리를 (x/aspect, y) 로 재서 무리가 자리 모양을 닮는다.
+ * @returns {{nodes, box:{x,y,w,h}}} box 는 글자까지 포함한 실제 내용 범위다.
  */
-function packBubbles(items) {
-  const GAP = 0.17;
-  const base = items[0].count || 1;
-  const nodes = items.map((it, k) => ({ ...it, r: Math.max(0.18, Math.sqrt(it.count / base)), x: 0, y: 0, order: k }));
-  const left = [], right = [];
-  nodes.slice(1).forEach((b, i) => (i % 2 === 0 ? right : left).push(b));
-  left.reverse();
-  const row = [...left, nodes[0], ...right];
-  const c = left.length;
-  for (let i = c + 1; i < row.length; i++) row[i].x = row[i - 1].x + row[i - 1].r + GAP + row[i].r;
-  for (let i = c - 1; i >= 0; i--) row[i].x = row[i + 1].x - row[i + 1].r - GAP - row[i].r;
-  const maxR = Math.max(...nodes.map((n) => n.r));
-  const x0 = row[0].x - row[0].r;
-  const x1 = row[row.length - 1].x + row[row.length - 1].r;
-  return { nodes, box: { x: x0 - 0.05, y: -maxR - 0.06, w: (x1 - x0) + 0.10, h: maxR * 2 + 0.52 } };
+function packCluster(items, aspect) {
+  const GAP = 0.1;
+  const base = Math.max(...items.map((it) => it.count)) || 1;
+  const nodes = items.map((it, k) => {
+    const r = Math.max(0.2, Math.sqrt(it.count / base));
+    // 원 안에 글자가 들어가는지 먼저 본다. 안 들어가면 원 아래에 적는다 — 잘린 라벨은 없느니만 못하다.
+    const fit = (1.76 * r) / Math.max(1, String(it.label).length);
+    const inside = fit >= 0.19;
+    return { ...it, r, order: k, inside, fs: inside ? Math.min(fit, r * 0.66) : 0.2,
+             reach: r + (inside ? 0 : 0.32), x: 0, y: 0 };
+  });
+  const order = [...nodes].sort((a, b) => b.r - a.r || a.order - b.order);
+  const placed = [order[0]];
+  const cost = (x, y) => (x / aspect) ** 2 + y * y;
+  const free = (n, x, y) => placed.every((p) => Math.hypot(x - p.x, y - p.y) >= p.reach + n.reach + GAP - 1e-6);
+  for (const n of order.slice(1)) {
+    let best = null;
+    const tryAt = (x, y) => {
+      if (!free(n, x, y)) return;
+      const c = cost(x, y);
+      if (!best || c < best.c - 1e-9) best = { x, y, c };
+    };
+    // 이미 놓인 원 둘에 동시에 닿는 자리 (두 원의 교점)
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        const a = placed[i], b = placed[j];
+        const ra = a.reach + n.reach + GAP, rb = b.reach + n.reach + GAP;
+        const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+        if (d > ra + rb || d < Math.abs(ra - rb) || d === 0) continue;
+        const t = (ra * ra - rb * rb + d * d) / (2 * d);
+        const hh = Math.sqrt(Math.max(0, ra * ra - t * t));
+        const mx = a.x + (dx * t) / d, my = a.y + (dy * t) / d;
+        tryAt(mx - (dy * hh) / d, my + (dx * hh) / d);
+        tryAt(mx + (dy * hh) / d, my - (dx * hh) / d);
+      }
+    }
+    // 원 하나에만 닿는 자리 — 두 번째 원이거나 교점이 다 막혔을 때
+    for (const a of placed) {
+      for (let k = 0; k < 24; k++) {
+        const th = (k / 24) * Math.PI * 2;
+        const rr = a.reach + n.reach + GAP;
+        tryAt(a.x + Math.cos(th) * rr, a.y + Math.sin(th) * rr);
+      }
+    }
+    if (!best) {   // 이론상 없지만 — 자리가 하나도 안 나오면 무리 오른쪽 끝에 붙인다
+      const edge = Math.max(...placed.map((p) => p.x + p.reach));
+      best = { x: edge + n.reach + GAP, y: 0 };
+    }
+    n.x = best.x; n.y = best.y;
+    placed.push(n);
+  }
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const n of nodes) {
+    x0 = Math.min(x0, n.x - n.r); x1 = Math.max(x1, n.x + n.r);
+    y0 = Math.min(y0, n.y - n.r);
+    y1 = Math.max(y1, n.y + n.r + (n.inside ? 0 : n.fs * 1.4));
+    // 원 아래 낱말이 원보다 넓을 수 있다
+    if (!n.inside) {
+      const half = String(n.label).length * n.fs * 0.55;
+      x0 = Math.min(x0, n.x - half); x1 = Math.max(x1, n.x + half);
+    }
+  }
+  const pad = 0.06;
+  return { nodes, box: { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 } };
 }
 
 /**

@@ -1,24 +1,20 @@
 /* =============================================================================
- * camera.js — 전시장용 고정 카메라.
+ * camera.js — 전시장용 카메라. 한 자리에 선 촬영 장비다.
  *
- * 온보딩의 카메라는 배 1척을 중심으로 고정 오빗(±0.85 rad)에 망원 FOV 34도였다.
- * 1척만 보이게 하려고 일부러 좁힌 설정이라, 넓은 바다에는 그대로 쓸 수 없다.
+ * 바다·하늘·조명·배는 실제 공간처럼 월드에 고정돼 있고, 카메라는 그 공간 밖에서 따로
+ * 움직인다. 할 수 있는 건 두 가지뿐이다: 고개 돌리기(팬·틸트)와 렌즈 당기기(줌).
  *
- * [변경 이력] 처음엔 카메라가 바다 위를 순회했다. 하지만 배가 한 방향으로 흐르는
- * 연출로 바꾸면서 카메라를 세웠다 — 카메라가 도는 동안 흐름 방향이 화면 안에서
- * 계속 바뀌면 "화면 끝에서 등장해 반대쪽으로 퇴장"이라는 규칙 자체가 성립하지 않고,
- * 배의 속도와 카메라의 속도가 더해져 화면에서의 체감 속도가 들쭉날쭉해진다.
- * 이제 흐름 중에는 카메라가 서 있고, 움직이는 건 배다.
+ * [변경 이력] 처음엔 카메라가 바다 위를 순회했고, 그다음엔 새 기록을 제시할 때만 그 배
+ * 앞까지 수면 위를 날아갔다(돌리). 날아가는 카메라에는 시차가 생긴다 — 가까운 바다는
+ * 빨리, 먼 배는 느리게 지나가서 "바다가 배보다 더 움직인다"로 보였다. 게다가 예전 바다는
+ * 카메라를 따라 옮겨 다니는 판이라 면이 매 프레임 다시 만들어지며 빛이 따로 놀았다.
+ * 지금은 카메라가 원점에 서서 돌고 당기기만 한다. 제자리 회전·줌에는 시차가 없어서
+ * 화면 속 모든 것이 한 장의 사진처럼 같이 커지고 같이 움직인다.
  *
- * [변경 이력 2] 다만 새 기록을 제시할 때만은 카메라가 그 배 앞까지 다녀온다.
- * 배를 화면 한가운데로 끌어와 부풀리던 예전 방식은 배가 제 속도의 몇 배로 날아가
- * "급히 제자리로 돌아가는" 것처럼 보였다. 카메라가 대신 가면 배는 가만히 있어도 된다.
- * 흐름 규칙이 깨지지 않는 건 카메라가 회전이 아니라 평행이동만 하기 때문이다 —
- * 시선 방향(+Z)이 그대로라 흐름 축과 화면 가로축의 정렬이 유지된다.
+ * 흐름 규칙이 깨지지 않는 이유: 평소 시선은 +Z 이고 흐름 축(X)은 화면 가로축과 나란하다.
+ * 줌할 때만 잠깐 고개를 돌리고, 끝나면 정확히 원래 시선으로 돌아온다.
  *
- * 화면 구성상 위쪽 절반은 리퀴드 글래스 패널이 덮는다. 그래서 수평선이 화면
- * 15% 부근(패널 뒤)에 오도록 높이와 시선 거리를 잡았다 — 유리 뒤로 하늘과
- * 수평선이 비쳐 굴절되고, 패널 아래 열린 절반은 전부 바다가 된다.
+ * 평소 구성(세로 FOV 50): 수평선이 화면 위에서 28%, 그 위 하늘 띠에 제목 카드가 앉는다.
  *   수평선 화면 위치 = 0.5 − 0.5·tan(pitch)/tan(fov/2),  pitch = atan(높이/시선거리)
  * ========================================================================== */
 
@@ -28,33 +24,29 @@ import {
   CAM_BOB, CAM_BOB_SEC, CAM_SWAY, CAM_SWAY_SEC,
 } from "./config.js";
 
+const HOME_PITCH = Math.atan2(CAM_HEIGHT, CAM_LOOK_AHEAD);   // 평소 시선이 수평에서 내려간 각
+const TAN_HALF = Math.tan((CAM_FOV * Math.PI) / 360);
+
 export class TourCamera {
   constructor(aspect, interactive = false) {
-    // far는 안개가 바다를 다 지운 지점보다 뒤에 있어야 한다. 그러지 않으면 안개보다
-    // far 평면이 먼저 잘라서 타일 경계가 드러난다.
+    // far는 바다가 다 지워지는 거리(160)와 하늘 돔(300)보다 뒤에 있어야 한다.
     this.camera = new THREE.PerspectiveCamera(CAM_FOV, aspect, 0.1, 400);
     this.aspect = aspect;
     this.t = 0;
-    this.speedMul = 1;        // 새 기록 연출 중에는 여기를 낮춰 숨쉬기까지 거의 세운다
+    this.speedMul = 1;        // 줌 중에는 여기를 낮춰 숨쉬기까지 거의 세운다
     this._speedTarget = 1;
     this.pos = new THREE.Vector3();
     this.target = new THREE.Vector3();
-    // 카메라의 수면 위 자리. 평소엔 원점이고, 새 기록을 제시할 때만 그 배 앞으로
-    // 옮겨 간다(main.js의 _updateArrival). 예전에는 시선만 끌어당기고 자리는 못
-    // 옮겨서, 멀리 있는 배를 크게 보이려면 배 쪽을 부풀리는 수밖에 없었다.
-    this.eyeX = 0;
-    this.eyeZ = 0;
-    // 카메라는 +Z를 바라본다. 그러면 배가 흐르는 축(X)이 화면 가로축과 나란해진다 —
-    // "화면 끝에서 끝까지"를 계산할 수 있는 건 이 정렬 덕분이다.
-    this._dir = new THREE.Vector2(0, 1);
-    this._focus = null;
+    this._zoom = null;        // { yaw, pitch, tanHalf } — 줌 끝에서 볼 방향과 렌즈
+    this._zoomT = 0;          // 0 = 평소, 1 = 완전히 당긴 상태
+    this._fov = CAM_FOV;
     this.interactive = interactive;
     this.yawOffset = 0;
     this.pitchOffset = 0;
   }
 
   /**
-   * 카메라 앞 depth 만큼 떨어진 수면에서, 화면 가로 절반이 월드로 몇 단위인지.
+   * 카메라 앞 depth 만큼 떨어진 수면에서, 화면 가로 절반이 월드로 몇 단위인지 (평소 화각).
    * 흐름 속도("기준 깊이의 배가 40초에 화면을 건넌다")를 여기서 역산하고,
    * 배를 화면 밖에서 감기게 할 경계도 여기서 얻는다.
    *
@@ -63,32 +55,35 @@ export class TourCamera {
    */
   frameHalfWidthAt(depth) {
     const slant = Math.hypot(depth, CAM_HEIGHT);
-    return slant * Math.tan((CAM_FOV * Math.PI) / 360) * this.aspect;
+    return slant * TAN_HALF * this.aspect;
   }
 
   /**
-   * 카메라가 제자리(원점, 숨쉬기·흔들림 없음)에 있을 때, 화면 세로 yFrac(0=위, 1=아래)
-   * 줄이 닿는 수면의 깊이. 수평선보다 위의 줄이면 Infinity.
-   *
-   * 새 배가 등장할 자리를 고를 때 쓴다 — 연출이 끝나면 카메라는 제자리로 돌아오고,
-   * 그때 배가 패널 뒤에 숨어 있으면 안 된다. 패널 높이는 화면 비율에 따라 달라지므로
-   * 깊이 상한을 상수로만 두지 않고 패널의 실제 아래 끝에서 이 함수로 다시 잰다.
-   * 세로 방향 계산이라 화면 가로 비율과는 무관하다(FOV 가 세로 기준).
+   * 줌 목표를 정한다. 월드의 점 (x, y, z) 를 화면 가로 한가운데, 세로 frameY(위에서 0~1)
+   * 자리에 두고, 렌즈를 tan(화각/2) = tanHalf 까지 당긴다. 진행은 setZoomProgress 가 한다.
    */
-  homeDepthAtScreenY(yFrac) {
-    const pitch = Math.atan2(CAM_HEIGHT, CAM_LOOK_AHEAD);          // 시선이 수평에서 내려간 각
-    const up = Math.atan((1 - 2 * yFrac) * Math.tan((CAM_FOV * Math.PI) / 360));
-    const below = pitch - up;                                      // 그 줄이 수평에서 내려간 각
-    return below > 1e-4 ? CAM_HEIGHT / Math.tan(below) : Infinity;
+  setZoomTarget(x, y, z, tanHalf, frameY = 0.5) {
+    const dx = x, dz = z, dy = y - CAM_HEIGHT;
+    const flat = Math.hypot(dx, dz);
+    // 점을 세로 frameY 에 두려면 시선을 그만큼 더 숙인다 (화면 가운데보다 위에 두려면 아래를 본다)
+    const lift = Math.atan((0.5 - frameY) * 2 * tanHalf);
+    this._zoom = {
+      yaw: Math.atan2(dx, dz),
+      pitch: Math.atan2(-dy, flat) + lift,
+      tanHalf,
+    };
   }
 
-  /** 카메라를 이 수면 좌표 위로 옮긴다. 높이와 숨쉬기는 그대로 얹힌다. */
-  setEye(x, z) { this.eyeX = x; this.eyeZ = z; }
-
-  /** 연출 중인 배 쪽으로 시선을 끌어당긴다. w=0이면 평소대로. */
-  setFocus(x, z, w) {
-    this._focus = w > 0.001 ? { x, z, w } : null;
-    this._speedTarget = w > 0.001 ? 1 - 0.85 * w : 1;
+  /**
+   * 0 → 1 로 당기고, 1 → 0 으로 푼다. 고개 돌리기와 렌즈를 같은 속도로 섞지 않는다:
+   * 고개는 앞 75% 안에 다 돌리고, 렌즈는 15%부터 당긴다. 반대로 풀 때는 렌즈가 먼저
+   * 풀리고 고개가 나중에 돌아온다(같은 곡선을 거꾸로 밟으므로 저절로 그렇게 된다).
+   * 둘을 똑같이 섞으면 중간쯤에서 화각이 좁아지는 속도가 시선이 따라가는 속도보다 빨라,
+   * 배가 화면 가장자리 밖으로 잠깐 빠졌다 돌아온다.
+   */
+  setZoomProgress(t) {
+    this._zoomT = Math.max(0, Math.min(1, t));
+    this._speedTarget = 1 - 0.85 * this._zoomT;
   }
 
   update(dt) {
@@ -98,18 +93,22 @@ export class TourCamera {
     // 완전히 고정하면 화면이 죽는다. 파도에 얹힌 정도로만 흔든다.
     const bob = Math.sin((this.t / CAM_BOB_SEC) * Math.PI * 2) * CAM_BOB;
     const sway = Math.sin((this.t / CAM_SWAY_SEC) * Math.PI * 2) * CAM_SWAY;
-    this.pos.set(this.eyeX, CAM_HEIGHT + bob, this.eyeZ);
-    this._dir.set(Math.sin(sway), Math.cos(sway));
+    this.pos.set(0, CAM_HEIGHT + bob, 0);
 
-    let tx = this._dir.x * CAM_LOOK_AHEAD;
-    let tz = this._dir.y * CAM_LOOK_AHEAD;
-    if (this._focus) {
-      // 연출 중에는 시선을 이 점으로 끌어당긴다. 어느 점을 줄지는 부르는 쪽이 정한다
-      // (main.js의 _focusBeyond — 배가 아니라 배보다 조금 더 먼 수면을 준다).
-      tx += (this._focus.x - tx) * this._focus.w;
-      tz += (this._focus.z - tz) * this._focus.w;
+    let yaw = sway, pitch = HOME_PITCH, tanHalf = TAN_HALF;
+    const z = this._zoom, k = this._zoomT;
+    if (z && k > 0) {
+      const pan = camEase(Math.min(1, k / 0.75));
+      const lens = camEase(Math.max(0, (k - 0.15) / 0.85));
+      yaw = sway + (z.yaw - sway) * pan;
+      pitch = HOME_PITCH + (z.pitch - HOME_PITCH) * pan;
+      // 렌즈는 배율이 고르게 변하도록 tan(화각/2) 의 로그로 섞는다 — 화각을 직선으로 섞으면
+      // 끝으로 갈수록 확 당겨진다.
+      tanHalf = Math.exp(Math.log(TAN_HALF) + (Math.log(z.tanHalf) - Math.log(TAN_HALF)) * lens);
     }
-    this.target.set(tx, 0, tz);
+    // 시선 = 원점에서 (yaw, pitch) 방향. yaw 0 이 +Z.
+    const c = Math.cos(pitch);
+    this.target.set(Math.sin(yaw) * c * 100, CAM_HEIGHT + bob - Math.sin(pitch) * 100, Math.cos(yaw) * c * 100);
 
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.target);
@@ -117,11 +116,13 @@ export class TourCamera {
       this.camera.rotateY(this.yawOffset);
       this.camera.rotateX(this.pitchOffset);
     }
+    const fov = (Math.atan(tanHalf) * 360) / Math.PI;
+    if (Math.abs(fov - this._fov) > 1e-4) {
+      this._fov = fov;
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
   }
-
-  /** 물 타일을 재중심할 지점 — 카메라 발밑이다. */
-  groundX() { return this.pos.x; }
-  groundZ() { return this.pos.z; }
 
   setAspect(aspect) {
     this.aspect = aspect;
@@ -145,3 +146,5 @@ export class TourCamera {
     ["pointerup", "pointercancel", "pointerleave"].forEach((k) => el.addEventListener(k, end));
   }
 }
+
+const camEase = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);

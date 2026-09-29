@@ -16,10 +16,10 @@
  *     9월 14일 – 9월 27일 · 문장 128개 기준                 [범례]   ← period · legend
  * ========================================================================== */
 
-import { METRIC, METRICS, rowsOf } from "./metrics.js";
-import { INSIGHTS, liveInsight } from "./insights.js";
+import { METRIC, METRICS } from "./metrics.js";
+import { INSIGHTS } from "./insights.js";
 import { VIEWS } from "./views.js";
-import { fmtDay, fmtClock, num } from "./text.js";
+import { fmtDay, num } from "./text.js";
 import { STAT_ROTATE_SEC } from "../config.js";
 
 /**
@@ -88,7 +88,7 @@ export class StatDeck {
    * 지금 장을 보고서 조각으로. 결론 문장이 가리키는 것(highlight)을 차트에도 그대로
    * 넘긴다 — 문장은 "관계"라고 말하는데 차트는 다른 막대를 세우는 일이 없게.
    */
-  render(records) {
+  render(records, box = {}) {
     const s = this.slides[this.i];
     const metric = METRIC[s.metric];
     const view = VIEWS[s.view];
@@ -107,45 +107,16 @@ export class StatDeck {
       extra: ins.extra || "",
       period: periodOf(records) + (metric.votes ? " · 키워드는 한 문장에 두 개까지" : ""),
       legend: view.legend ? view.legend(data) : "",
-      html: view.render(data, { highlight: ins.highlight }),
+      // box.aspect = 차트 자리의 가로/세로 — 무리 짓는 그림(버블)이 자리 모양을 닮게 한다
+      html: view.render(data, { highlight: ins.highlight, aspect: box.aspect }),
       sec: s.sec ?? STAT_ROTATE_SEC,
     };
   }
 
-  /**
-   * 방금 도착한 문장 한 장. 그 문장을 전체 속에 놓는다 — 같은 질문에 답한 사람들의
-   * 키워드 분포 위에 이 사람의 키워드를 먹색으로 세우고 "+1"을 붙인다.
-   * 키워드가 없는 문장은 지역 막대 위에 그 지역을 세운다.
-   */
-  renderLive(record, records) {
-    const li = liveInsight(record, records, rowsOf);
-    const kws = li.highlight;
-    const upto = li.rows;
-    let html, basis;
-    if (kws.length && upto.items.length) {
-      html = VIEWS.bubble.render(upto, { highlight: kws, ordinals: li.ordinals });
-      basis = `${li.motiveLabel ? `${li.motiveLabel}에 답한 ` : ""}문장 ${num(upto.n)}개 기준`;
-    } else {
-      const idx = records.findIndex((r) => r.record_id === record.record_id);
-      const seen = idx >= 0 ? records.slice(0, idx + 1) : records.concat([record]);
-      html = VIEWS.bars.render(rowsOf(seen, (r) => r.region), { highlight: [record.region] });
-      basis = `문장 ${num(seen.length)}개 기준`;
-    }
-    const t = Date.parse(record.created_at);
-    return {
-      kind: "live",
-      key: `live:${record.record_id}`,
-      view: kws.length ? "bubble" : "bars",
-      tagline: "Just arrived",
-      stamp: Number.isFinite(t) ? fmtClock(t) : "",
-      label: "이 문장이 고른 이유",
-      value: li.value,
-      headline: li.headline,
-      extra: li.extra,
-      period: basis,
-      legend: "",
-      html,
-    };
+  /** 다음에 나올 장 — 풍경 시간에 제목 카드가 예고한다("다음 장 02 같은 낱말, 다른 이유") */
+  peek() {
+    const s = this.slides[this.i];
+    return { index: this.i + 1, total: this.slides.length, label: METRIC[s.metric].label, tagline: s.tagline };
   }
 
   advance() { this.i = (this.i + 1) % this.slides.length; }

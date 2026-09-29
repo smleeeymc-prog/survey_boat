@@ -41,9 +41,6 @@ const early = (n) => ({
 /** 기록 가운데 이 키워드를 고른 "사람" 수 (한 문장에 같은 키워드가 두 번 있어도 한 번) */
 const peopleWith = (records, kw) => records.filter((r) => (r.keywords || []).includes(kw)).length;
 
-/** 상태 → 결론 문장에 쓰는 동사. 없는 상태는 "고른"으로 물러선다 */
-const VERB = { stay: "머무는", returned: "머무는", leaving: "떠나려는", between: "오가는", unsure: "망설이는" };
-
 export const INSIGHTS = {
   /** 머무는 사람이 꼽은 1위 — 레퍼런스 2장 "사람들이 가장 원하는 건, “○○” 입니다" */
   stayTop(d, ctx) {
@@ -210,47 +207,6 @@ export const INSIGHTS = {
 function short(label) {
   const m = String(label).match(/^(\S+게)/);
   return m ? m[1] : label;
-}
-
-/**
- * 방금 도착한 문장을 전체 속에 놓는다 — "이 문장은 “일” 때문에 떠나려는 7번째 이야기입니다."
- *
- * 몇 번째인지는 그 문장까지의 기록만 센다. 연출이 밀려 줄을 선 문장은 차례가 왔을 때
- * 이미 뒤에 온 문장들이 기록에 들어와 있다 — 전체를 세면 "7번째"가 "9번째"가 된다.
- * 순서는 같은 동기(같은 질문에 답한 사람) 안에서 센다. '일' 때문에 머무는 사람과
- * '일' 때문에 떠나는 사람을 한 줄에 세우면 순번이 아무 뜻도 없어진다.
- *
- * @returns {{value, headline, extra, rows, highlight, ordinals}}
- *   rows 는 그 동기 묶음의 키워드 집계(버블에 그린다), ordinals 는 키워드 → 순번
- */
-export function liveInsight(record, records, rowsOf) {
-  const idx = records.findIndex((r) => r.record_id === record.record_id);
-  const upto = idx >= 0 ? records.slice(0, idx + 1) : records.concat([record]);
-  const motive = MOTIVE_OF[record.state];
-  const peers = motive ? upto.filter((r) => motive.states.includes(r.state)) : upto;
-  const kws = [...new Set(record.keywords || [])];
-  const ordinals = Object.fromEntries(kws.map((k) => [k, peopleWith(peers, k)]));
-  const regionOrd = upto.filter((r) => r.region === record.region).length;
-  const verb = VERB[record.state];
-
-  let headline;
-  if (kws.length && verb) {
-    headline = `이 문장은 ${qe(kws[0])} 때문에 ${verb} ${em(`${ordinals[kws[0]]}번째`)} 이야기입니다.`;
-  } else if (kws.length) {
-    headline = `이 문장은 ${qe(kws[0])}${josa(kws[0], "을를")} 고른 ${em(`${ordinals[kws[0]]}번째`)} 이야기입니다.`;
-  } else {
-    headline = `이 문장은 ${em(record.region)}에서 온 ${em(`${regionOrd}번째`)} 이야기입니다.`;
-  }
-  const more = kws.slice(1).map((k) => `${q(k)} ${ordinals[k]}번째`);
-  return {
-    value: kws.length ? kws.join(" · ") : "—",
-    headline,
-    extra: [...more, `${record.region}에서 온 ${num(regionOrd)}번째 문장`].join(" · "),
-    rows: rowsOf(peers, (r) => r.keywords),
-    motiveLabel: motive ? motive.label : null,
-    highlight: kws,
-    ordinals,
-  };
 }
 
 export { MOTIVES };

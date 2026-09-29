@@ -4,9 +4,9 @@
  * 온보딩 씬(루트 index.html)의 GPU 셰이더 파도를 그대로 가져와서, 지도에 필요한
  * 만큼만 넓혔다. 손댄 곳은 딱 두 가지다.
  *
- *  1) 재중심이 1축 → 2축.
- *     온보딩은 배가 +X로만 나아가서 uBoatX(float) 하나면 됐다. 지도는 카메라가
- *     XZ 평면 위를 자유롭게 흐르므로 uCenter(vec2)로 바꿨다. 수식은 그대로다.
+ *  1) 바다를 월드에 고정했다(재중심 없음). 온보딩은 배를 따라 타일을 옮기지만,
+ *     지도는 카메라가 제자리에서 돌고 당기기만 해서 옮길 이유가 없다. 옮기면 면이
+ *     카메라를 따라 미끄러진다 — buildWater 머리말. 격자는 곳곳의 칸 크기가 다르다.
  *  2) 유리병 클리핑(uClip*) 제거.
  *     지도엔 병이 없다. 남겨두면 프래그먼트마다 안 쓰는 분기를 도는 값이라 뺐다.
  *
@@ -16,7 +16,8 @@
 
 import * as THREE from "three";
 import {
-  WATER_TILE_SIZE, WATER_TILE_SEGMENTS,
+  WATER_CELL, WATER_CELL_GROWTH, WATER_CELL_MAX, WATER_CORE_X, WATER_CORE_Z,
+  WATER_EXTENT_X, WATER_Z_MIN, WATER_Z_MAX,
   WATER_FADE_NEAR, WATER_FADE_FAR,
 } from "./config.js";
 // 파도 수식은 온보딩 씬과 같은 파일에서 온다 — 한쪽만 고쳐 두 화면이 갈라지는 걸 막는다.
@@ -48,8 +49,8 @@ export function buildWaterMaterial() {
         uSpecSunDir: { value: new THREE.Vector3(0.30, 0.72, -0.62).normalize() },
         uExposure: { value: 1.12 },
         uTime: { value: 0 },
-        // 온보딩의 uBoatX(float)를 2축으로 넓힌 것. 타일이 매 프레임 여기로 재중심되고,
-        // 파도 위상만 "진짜 월드좌표"(로컬 + uCenter)로 계산된다 → 이음매 없는 무한 바다.
+        // 온보딩의 uBoatX(float)를 2축으로 넓힌 것. 지도에서는 바다가 월드에 고정돼 있어
+        // 늘 0이다(buildWater 머리말). 셰이더는 온보딩과 같은 모양으로 남겨 둔다.
         uCenter: { value: new THREE.Vector2(0, 0) },
         uChop: { value: 0.13 },
         uAmpScale: { value: 0.5 },
@@ -85,9 +86,8 @@ export function buildWaterMaterial() {
       ${GERSTNER_GLSL}
 
       void main () {
-        // 무한 바다: 타일은 매 프레임 카메라 발밑으로 재중심되고(JS: waterMesh.position),
-        // 파도 위상만 "진짜 월드좌표"로 계산한다. 타일은 언제나 카메라를 덮고 있고,
-        // 파도는 월드에 고정된 것처럼 배들 사이를 지나간다.
+        // 파도 위상은 월드 좌표로 계산한다. 지도에서는 바다 자체가 월드에 고정이라
+        // uCenter 는 0이다 — 정점도, 면도, 면이 받는 빛도 실제 공간처럼 제자리에 있다.
         vec2 worldXZ = position.xz + uCenter;
         vec3 wave = gerstnerSum(worldXZ, uTime);
 
@@ -207,24 +207,79 @@ export function buildWaterMaterial() {
 }
 
 /**
- * 바다 타일 하나. 카메라를 따라다니므로 "화면에 보이는 만큼"만 크면 된다.
- * 정점을 셀 크기의 60% 안에서 흔들어 놔야 격자 무늬가 눈에 띄지 않는다(원본과 동일).
+ * 한 축의 격자 좌표. [coreMin, coreMax] 는 cell 간격으로 촘촘하게 두고, 그 밖으로는 한 칸마다
+ * growth 배씩 넓혀 cellMax 까지 키운다. 칸 크기가 서서히 변해야 로우폴리 면의 크기 변화가
+ * 띠처럼 보이지 않는다(한 칸에 4.5%씩).
+ */
+function gradedAxis(min, max, coreMin, coreMax, cell, growth, cellMax) {
+  const n = Math.max(1, Math.round((coreMax - coreMin) / cell));
+  const step = (coreMax - coreMin) / n;
+  const core = Array.from({ length: n + 1 }, (_, i) => coreMin + i * step);
+  const walk = (from, limit, dir) => {
+    const out = [];
+    let x = from, s = step;
+    // 마지막 칸이 실처럼 가늘어지지 않게, 남은 거리가 한 칸 반보다 짧으면 끝점으로 닫는다
+    while (Math.abs(limit - x) > s * growth * 1.5) {
+      s = Math.min(cellMax, s * growth);
+      x += dir * s;
+      out.push(x);
+    }
+    out.push(limit);
+    return out;
+  };
+  return [...walk(coreMin, min, -1).reverse(), ...core, ...walk(coreMax, max, 1)];
+}
+
+/**
+ * 바다 한 장. 월드에 고정돼 있다 — 카메라가 움직이지 않으므로(제자리에서 돌고 당길 뿐,
+ * camera.js) 따라다닐 필요가 없다.
+ *
+ * [변경] 예전에는 이 타일이 매 프레임 카메라 발밑으로 옮겨 다녔다. 파도의 높이는 월드
+ * 좌표로 계산했지만 그 높이를 재는 "정점"들이 카메라와 함께 미끄러져서, 카메라가 움직이는
+ * 동안 삼각형 면이 매 프레임 다른 자리에서 다시 만들어졌다. 플랫 셰이딩이라 면마다 빛이
+ * 달라 보여서, 줌 인·아웃 때 "바다가 배보다 더 움직이고 빛이 면과 따로 논다"로 보였다.
+ * 이제 정점이 월드에 박혀 있어 면도, 면이 받는 빛도 실제 공간처럼 제자리에 있다.
+ *
+ * 칸 크기가 곳곳이 다르다. 새 배를 망원으로 당겨 보는 구역(카메라 앞 8~46, 좌우 ±16)은
+ * WATER_CELL(0.32)로 촘촘하게 — 균일한 0.83 칸이었다면 3배 줌에서 삼각형 하나가 화면 폭의
+ * 3분의 1을 차지한다. 멀어질수록 칸을 키워 먼 바다는 2.6까지. 원근 때문에 먼 칸은 작게
+ * 보이므로 화면에서의 면 크기는 오히려 고르게 된다. 정점 수는 예전과 같은 5만 남짓이다.
+ * 정점을 칸 크기의 60% 안에서 흔드는 건 원본과 같다(격자 무늬가 안 보이게).
  */
 export function buildWater() {
-  const SIZE = WATER_TILE_SIZE, SEGMENTS = WATER_TILE_SEGMENTS;
-  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEGMENTS, SEGMENTS);
-  geo.rotateX(-Math.PI / 2);
-
-  const cellSize = SIZE / SEGMENTS;
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    pos.array[i * 3] += (Math.random() - 0.5) * cellSize * 0.6;
-    pos.array[i * 3 + 2] += (Math.random() - 0.5) * cellSize * 0.6;
+  const xs = gradedAxis(-WATER_EXTENT_X, WATER_EXTENT_X, -WATER_CORE_X, WATER_CORE_X,
+    WATER_CELL, WATER_CELL_GROWTH, WATER_CELL_MAX);
+  const zs = gradedAxis(WATER_Z_MIN, WATER_Z_MAX, WATER_CORE_Z[0], WATER_CORE_Z[1],
+    WATER_CELL, WATER_CELL_GROWTH, WATER_CELL_MAX);
+  const nx = xs.length, nz = zs.length;
+  const pos = new Float32Array(nx * nz * 3);
+  // 흔드는 폭은 그 정점 양옆 칸 중 좁은 쪽 기준 — 칸이 뒤집히지 않는다
+  const room = (a, i) => Math.min(i > 0 ? a[i] - a[i - 1] : Infinity, i < a.length - 1 ? a[i + 1] - a[i] : Infinity);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const k = (j * nx + i) * 3;
+      const edge = i === 0 || j === 0 || i === nx - 1 || j === nz - 1;
+      pos[k] = xs[i] + (edge ? 0 : (Math.random() - 0.5) * room(xs, i) * 0.6);
+      pos[k + 1] = 0;
+      pos[k + 2] = zs[j] + (edge ? 0 : (Math.random() - 0.5) * room(zs, j) * 0.6);
+    }
   }
-  pos.needsUpdate = true;
+  const index = new Uint32Array((nx - 1) * (nz - 1) * 6);
+  let t = 0;
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      index[t++] = a; index[t++] = c; index[t++] = b;
+      index[t++] = b; index[t++] = c; index[t++] = d;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(new THREE.BufferAttribute(index, 1));
 
   const mesh = new THREE.Mesh(geo, buildWaterMaterial());
-  // 타일이 매 프레임 카메라 밑으로 옮겨다니므로 절두체 컬링 판정이 의미가 없다.
+  // 정점을 셰이더가 파도로 밀어 올리므로 기하의 경계 상자가 실제와 다르다
   mesh.frustumCulled = false;
+  mesh.userData.grid = { nx, nz, vertices: nx * nz };
   return mesh;
 }

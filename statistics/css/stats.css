@@ -72,7 +72,8 @@
   gap: .08em .34em;
   height: 100%;
   overflow: hidden;
-  font-size: var(--stat-base);
+  /* 가운데 카드는 예전 패널보다 차트 자리가 두 배 넘게 높다 — 낱말이 곧 그림이라 그만큼 키운다 */
+  font-size: calc(var(--stat-base) * 1.35);
 }
 .sv-rank-item { line-height: 1.12; white-space: nowrap; }
 /* 여기서는 낱말이 곧 표식이다 — 1위 낱말이 금색인 건 시안 그대로다 */
@@ -142,18 +143,10 @@
 .sv-bub text.in { fill: var(--ink2); }
 .sv-bub.lead text.in { fill: var(--c-ground); font-weight: 800; }
 .sv-bub text.out { fill: var(--c-label); font-weight: 600; }
-/* LIVE: 이 문장이 고른 낱말 위의 +1 (표식은 금색, 글자는 먹색) */
-.sv-bub .sv-bub-plus circle { fill: var(--gold2); stroke: var(--c-ground); stroke-width: .03; }
-.sv-bub .sv-bub-plus text { fill: var(--ink); font-size: .2px; font-weight: 800; }
 .report.in .sv-bub {
   transform-box: fill-box;
   transform-origin: center;
   animation: sv-pop .8s var(--ease-back) calc(var(--sv-d0) + var(--i, 0) * .09s) both;
-}
-.report.in .sv-bub-plus {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: sv-pop .6s var(--ease-back) 1.5s both;
 }
 
 /* ── headline — 1위 하나만 크게 (보정 화면 안내) ──────────────────────────── */

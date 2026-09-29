@@ -1,36 +1,50 @@
 /* =============================================================================
- * panel.js — 상단 리퀴드 글래스 패널과 "방금 도착한 문장" 카드.
+ * panel.js — 화면 위의 글자들과, 그것들이 나오는 시간.
  *
  * 미결정이던 "문장을 3D 씬 안에 띄울지, 별도 UI 레이어로 뺄지"는 UI 레이어로
  * 확정됐다(인수인계 6장). 그래서 3D에는 배 실루엣만 있고, 숫자·통계·문장은 전부
  * 여기서 처리한다. 씬 쪽 모듈은 이 파일을 모르고, 이 파일도 three.js를 모른다.
  *
  * 구성:
- *   1) 헤더     타이틀 → 누적 문장 수(초대형) → "개의 문장이 이곳에 머물러 있습니다"
- *   2) 보고서   한 장씩 넘어가는 통계. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드를
- *              옮겼다 — 장 번호 · 굵은 선 · 라벨·····값 · 한 줄 결론 · 차트 · 각주.
+ *   제목 카드   왼쪽 위 하늘. 제목 · 누적 문장 수 · 다음 통계 장 예고. 늘 떠 있다.
+ *   통계 카드   화면 가운데. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드 — 장 번호 ·
+ *              굵은 선 · 라벨·····값 · 한 줄 결론 · 차트 · 각주. 통계 시간에만 뜬다.
  *              무엇을 세고 어떻게 그리는지는 js/stats/ 에 있고, 여기는 받은 조각을 꽂는다.
- *   3) 문장 카드 새 기록이 도착하면 아래에 뜬다. 레퍼런스의 "Drug Facts" 라벨을 배의
- *              항해일지(Ship's Log)로 옮겼다 — 출발한 곳 · 지금의 자리 · 싣고 온 것 · 기록 시각.
+ *   항해일지    새 기록이 도착하면 아래에 뜬다. 레퍼런스의 "Drug Facts" 라벨을 옮겼다.
  *
- * ── 새 문장과 통계는 겹치지 않는다 ─────────────────────────────────────────
- * 레퍼런스 화면은 개인의 이야기와 통계가 번갈아 나오고 절대 동시에 뜨지 않는다. 카메라가
- * 먼저 움직이고, 멈춘 뒤에 카드가 뜬다. 여기서도 같은 순서를 지킨다:
+ * ── 화면의 두 시간 ─────────────────────────────────────────────────────────
+ * 통계를 크게 보여주려면 화면 한가운데를 내줘야 하고, 그러면 바다가 가려진다. 그래서
+ * 둘을 겹치지 않고 번갈아 보낸다 — 한 편의 필름처럼.
  *
- *   incoming()   카메라가 배로 가는 중   통계 장은 그대로 두고 넘기기만 멈춘다(진행 막대 정지)
- *   live()       카메라 도착 · 배 등장   숫자 +1, 통계 장이 물러나고 LIVE 장이 들어온다.
- *                                        문장 카드가 뜬다. LIVE 장은 그 문장을 전체 속에 놓는다
- *                                        ("이 문장은 ‘일’ 때문에 떠나려는 7번째 이야기입니다")
- *   hideArrival  카메라가 돌아가는 중    카드만 내린다. LIVE 장은 배가 제자리에 갈 때까지 남는다
- *   endLive()    연출 끝                 끊긴 장으로 돌아간다 — 절반도 못 보여줬으면 그 장을
- *                                        처음부터, 절반 넘게 보여줬으면 다음 장으로
+ *   풍경   LANDSCAPE_SEC 초. 수평선까지 트인 바다와 흐르는 배들. 제목 카드 아래 가는 선이
+ *          차오르며 다음 장을 예고한다("다음 장 02 같은 낱말, 다른 이유").
+ *   통계   바다가 한 톤 가라앉고 가운데 카드가 떠서 SESSION_CHAPTERS 장을 차례로 보여준다.
+ *          다 보여주면 카드가 내려가고 다시 풍경. 다음 통계 시간은 그다음 장부터 잇는다.
+ *
+ * ── 새 배가 들어오면 — 딜레마를 푸는 규칙 ──────────────────────────────────
+ * 통계 시간에도 배는 들어온다. 방금 제출한 사람은 화면에서 자기 배를 찾는다 — 이 화면에서
+ * 가장 중요한 순간이다. 그래서 새 배가 언제나 먼저다:
+ *
+ *   incoming()   카메라가 그 배로 고개를 돌리기 시작   통계 카드가 바로 비켜선다(바다도 다시 밝게).
+ *                                                     풍경이었다면 예고 선이 그 자리에 멈춘다
+ *   showArrival  줌이 끝나 배가 선 순간                숫자 +1, 항해일지 카드
+ *   hideArrival  줌을 푸는 중                          카드만 내린다
+ *   endLive()    연출 끝                               끊긴 시간으로 돌아간다 — 통계였다면 카드가
+ *                                                     다시 뜨고, 그 장을 절반도 못 보여줬으면 처음부터,
+ *                                                     넘게 보여줬으면 다음 장으로. 풍경이었다면 남은 시간만큼
+ *
+ * 통계는 잃어버리지 않고 밀릴 뿐이다. 새 배가 잇달아 들어오면(줄 최대 3척) 그동안 통계는
+ * 기다린다 — 그 시간엔 사람이 곧 통계다.
  *
  * 숫자도 같은 박자에 맞춘다. 기록은 제출되는 순간 들어오지만, 화면의 숫자와 통계는 그
  * 배가 관람객 눈앞에 나타날 때 +1 된다(expect/reveal). 숫자가 먼저 올라가고 몇 초 뒤에
  * 배가 오면, 관람객에게는 둘이 서로 다른 사건으로 보인다.
  * ========================================================================== */
 
-import { STAT_ROTATE_SEC, STATE_LABEL, ARRIVAL_HOLD_SEC } from "./config.js";
+import {
+  STAT_ROTATE_SEC, STATE_LABEL,
+  LANDSCAPE_SEC, LANDSCAPE_FIRST_SEC, SESSION_CHAPTERS,
+} from "./config.js";
 import { StatDeck } from "./stats/index.js";
 import { esc, fmtStamp } from "./stats/text.js";
 
@@ -45,6 +59,8 @@ export class Panel {
     const $ = (id) => root.getElementById(id);
     this.el = {
       count: $("countNum"), plus: $("countPlus"),
+      next: $("mNext"), nextBar: $("mBarFill"), nextIdx: $("mNextIdx"), nextLabel: $("mNextLabel"),
+      dim: $("stageDim"),
       report: $("report"), tag: $("rTag"), idx: $("rIdx"),
       label: $("rLabel"), value: $("rValue"), headline: $("rHeadline"),
       chart: $("statRows"), extra: $("rExtra"), period: $("rPeriod"), legend: $("rLegend"),
@@ -54,13 +70,17 @@ export class Panel {
     this.records = [];
     this.deck = new StatDeck();
     this._expected = new Map();   // record_id → 기다린 시간(초)
+    this._mode = "boot";          // boot | landscape | session | arrival | pin
+    this._landT = 0;
+    this._landSec = LANDSCAPE_FIRST_SEC;
+    this._session = null;         // { left } — 이번 통계 시간에 남은 장 수
+    this._paused = null;          // 새 배 때문에 끊긴 시간
     this._rotateT = 0;
     this._dwell = STAT_ROTATE_SEC;
     this._shownCount = 0;
     this._targetCount = 0;
     this._countT = 1;
     this._tok = 0;
-    this._mode = "deck";          // deck | incoming | live | pin
     this._shownIds = new Set();
   }
 
@@ -75,8 +95,8 @@ export class Panel {
     // 문장 벽에 부적절한 문장이 20초 더 흐르는 일이 없게.
     const removed = [...this._shownIds].some((id) => !ids.has(id));
     this._syncCount(false);
-    if (!this._rendered) { this._showDeck(false); return; }
-    if (removed && this._mode === "deck") this._showDeck(true);
+    if (this._mode === "boot") { this._enterLandscape(LANDSCAPE_FIRST_SEC); return; }
+    if (removed && this._mode === "session") this._showChapter("still");
   }
 
   /** 제출됐지만 아직 배가 나타나지 않은 기록. 숫자·통계에서 잠시 빼 둔다. */
@@ -115,36 +135,94 @@ export class Panel {
     if (this.el.count) this.el.count.textContent = Math.round(n).toLocaleString("ko-KR");
   }
 
-  /* ── 보고서 한 장 ──────────────────────────────────────────────────────── */
+  /* ── 화면의 시간 ───────────────────────────────────────────────────────── */
 
-  /**
-   * 통계 자리를 고정 문구로 바꾸고 자동 전환을 멈춘다. 보정 화면(?depths=1)처럼
-   * 통계가 의미 없는 상태에서, 빈 칸을 띄워 고장처럼 보이게 하지 않으려고 둔다.
-   */
-  pin(label, html) {
-    this._mode = "pin";
-    this._show({ kind: "pin", tagline: "Calibration", label, value: "", headline: "", html,
-                 extra: "", period: "", legend: "" }, true);
+  /** 무대 — 어느 카드가 떠 있고 바다가 가라앉았는가 */
+  _stage(kind) {
+    const e = this.el;
+    e.report && e.report.classList.toggle("show", kind === "session" || kind === "pin");
+    e.dim && e.dim.classList.toggle("on", kind === "session");
+    e.next && e.next.classList.toggle("on", kind === "landscape");
   }
 
-  _showDeck(instant) {
-    const c = this.deck.render(this._visible());
+  /** 풍경. fromT 초가 이미 지난 것으로 시작한다(새 배 때문에 끊겼다 이어질 때). */
+  _enterLandscape(sec, fromT = 0) {
+    this._mode = "landscape";
+    this._landSec = sec;
+    this._landT = fromT;
+    const p = this.deck.peek();
+    if (this.el.nextIdx) this.el.nextIdx.textContent = `${pad2(p.index)} / ${pad2(p.total)}`;
+    if (this.el.nextLabel) this.el.nextLabel.textContent = p.label;
+    if (this.el.nextBar) {
+      this.el.nextBar.style.setProperty("--land", `${sec}s`);
+      this.el.nextBar.style.setProperty("--land-from", `${-fromT}s`);
+      restart(this.el.nextBar, "run");
+    }
+    this._stage("landscape");
+  }
+
+  _startSession() {
+    this._mode = "session";
+    this._session = { left: SESSION_CHAPTERS };
+    this._stage("session");
+    this._showChapter("fresh");
+  }
+
+  _nextChapter() {
+    this.deck.advance();
+    this._session.left--;
+    if (this._session.left <= 0) { this._endSession(); return; }
+    this._showChapter("swap");
+  }
+
+  _endSession() {
+    this._session = null;
+    this._enterLandscape(LANDSCAPE_SEC);
+  }
+
+  /**
+   * 시간을 멈추고 제목 카드 아랫줄에 고정 안내를 적는다. 보정 화면(?depths=1)처럼 통계가
+   * 의미 없는 상태에서, 빈 통계를 띄워 고장처럼 보이게 하지 않으려고 둔다.
+   * 가운데 카드는 띄우지 않는다 — 보정 화면에서 보려는 배들이 바로 그 뒤에 있다.
+   */
+  pin(label, text) {
+    this._mode = "pin";
+    const e = this.el;
+    if (e.nextIdx) e.nextIdx.textContent = label;
+    if (e.nextLabel) e.nextLabel.textContent = text;
+    if (e.next) {
+      const t = e.next.querySelector(".m-next-text");
+      if (t && t.firstChild) t.firstChild.textContent = "Calibration";
+      if (t && t.childNodes[1]) t.childNodes[1].textContent = " ";
+    }
+    if (e.nextBar) e.nextBar.classList.remove("run");
+    this._stage("landscape");
+  }
+
+  /* ── 통계 카드 한 장 ───────────────────────────────────────────────────── */
+
+  _showChapter(how) {
+    // 차트 자리의 비율을 재서 넘긴다. 카드가 숨어 있어도(visibility) 자리 크기는 잡혀 있다.
+    const box = this.el.chart;
+    const aspect = box && box.clientHeight ? box.clientWidth / box.clientHeight : undefined;
+    const c = this.deck.render(this._visible(), { aspect });
     this._dwell = c.sec || STAT_ROTATE_SEC;
     // 바로 바꿔 끼울 때(가려진 기록을 뺄 때)는 같은 장을 다시 그리는 것뿐이라 시계를 두고
     // 간다 — 진행 막대도 멈추지 않고 이어서 차므로 둘이 어긋나지 않는다.
-    if (!instant) this._rotateT = 0;
-    this._show(c, instant);
+    if (how !== "still") this._rotateT = 0;
+    this._show(c, how);
   }
 
   /**
-   * 한 장을 꽂는다. 물러남(.out) → 갈아끼움 → 들어옴(.in) 순서이고, 들어오는 단계는
-   * css 가 순번(--i)대로 늦춰 차례로 올린다: 선이 그어지고 → 라벨·값 → 결론 문장 →
-   * 차트의 표식들 → 각주.
-   * instant 면 움직임 없이 바로 바꾼다(보정 화면, 가려진 기록을 뺄 때).
-   * 토큰이 있는 이유: 물러나는 0.46초 사이에 LIVE 가 끼어들 수 있다. 늦게 도착한
-   * 예전 장이 LIVE 를 덮어쓰면 안 된다.
+   * 한 장을 꽂는다.
+   *   swap   물러남(.out) → 갈아끼움 → 들어옴(.in). 통계 시간 안에서 장이 넘어갈 때
+   *   fresh  바로 갈아끼우고 들어옴. 카드가 막 뜰 때(물러날 옛 장이 화면에 없다)
+   *   still  움직임 없이 바꿔 끼움. 보정 화면, 가려진 기록을 뺄 때
+   * 들어오는 단계는 css 가 순번(--i)대로 늦춰 차례로 올린다: 선 → 라벨·값 → 결론 → 표식 → 각주.
+   * 토큰이 있는 이유: 물러나는 0.46초 사이에 새 배가 끼어들 수 있다. 늦게 도착한 갈아끼우기가
+   * 비켜선 카드에 옛 장을 다시 채우면 안 된다.
    */
-  _show(c, instant) {
+  _show(c, how) {
     const tok = ++this._tok;
     const el = this.el.report;
     if (!el) return;
@@ -152,29 +230,22 @@ export class Panel {
       if (tok !== this._tok) return;
       this._fill(c);
       el.classList.remove("out");
-      el.classList.toggle("live", c.kind === "live");
       el.dataset.kind = c.kind;
-      el.classList.toggle("still", !!instant);
+      el.classList.toggle("still", how === "still");
       el.style.setProperty("--dwell", `${c.sec || this._dwell}s`);
-      if (!instant) restart(el, "in");
-      else el.classList.add("in");
+      if (how === "still") el.classList.add("in");
+      else restart(el, "in");
     };
-    this._rendered = true;
-    if (instant || !el.classList.contains("in")) { swap(); return; }
+    if (how !== "swap" || !el.classList.contains("in")) { swap(); return; }
+    el.classList.remove("in");
     el.classList.add("out");
-    el.classList.remove("hold");
     setTimeout(swap, OUT_MS);
   }
 
   _fill(c) {
     const e = this.el;
-    if (c.kind === "live") {
-      e.tag.innerHTML = `<b class="r-live">LIVE</b><i>${esc(c.tagline)}</i> — 방금 도착한 문장`;
-      e.idx.textContent = c.stamp || "";
-    } else {
-      e.tag.innerHTML = `<i>Data Analysis</i>${c.tagline ? ` — ${esc(c.tagline)}` : ""}`;
-      e.idx.textContent = c.index ? `${pad2(c.index)} / ${pad2(c.total)}` : "";
-    }
+    e.tag.innerHTML = `<i>Data Analysis</i>${c.tagline ? ` — ${esc(c.tagline)}` : ""}`;
+    e.idx.textContent = c.index ? `${pad2(c.index)} / ${pad2(c.total)}` : "";
     e.label.textContent = c.label || "";
     e.value.textContent = c.value || "";
     e.headline.innerHTML = keepTogether(c.headline || "");   // insights.js 가 참여자 글을 이미 esc 했다
@@ -185,34 +256,29 @@ export class Panel {
     e.legend.innerHTML = c.legend || "";
     // 지금 화면에 걸린 기록들 — 나중에 이 중 하나가 가려지면 바로 다시 그린다
     this._shownIds = new Set(c.kind === "chapter" && c.view === "textwall"
-      ? this._visible().slice(-12).map((r) => r.record_id)
-      : c.kind === "live" ? [c.key.slice(5)] : []);
+      ? this._visible().slice(-12).map((r) => r.record_id) : []);
   }
 
-  /* ── 새 문장 ────────────────────────────────────────────────────────────── */
+  /* ── 새 배 ──────────────────────────────────────────────────────────────── */
 
-  /** 카메라가 배로 가기 시작했다. 장을 넘기지 않고 그 자리에서 기다린다. */
+  /** 카메라가 새 배로 고개를 돌리기 시작했다. 통계 카드는 바로 비켜선다(머리말의 규칙). */
   incoming() {
-    if (this._mode === "pin") return;
-    if (this._mode === "deck") this._resume = { frac: this._rotateT / (this._dwell || STAT_ROTATE_SEC) };
-    this._mode = "incoming";
-    if (this.el.report) this.el.report.classList.add("hold");
+    if (this._mode === "pin" || this._mode === "arrival") return;
+    this._paused = this._mode === "session"
+      ? { mode: "session", frac: this._rotateT / (this._dwell || STAT_ROTATE_SEC) }
+      : { mode: "landscape", landT: this._landT, landSec: this._landSec };
+    this._mode = "arrival";
+    this._tok++;                  // 물러나는 중이던 장의 갈아끼우기를 취소
+    this._stage("arrival");
   }
 
   /**
-   * 카메라가 도착해 배가 나타났다 — 숫자를 올리고, 문장 카드와 LIVE 장을 띄운다.
-   * 문장 카드는 배가 다 선 뒤에 뜬다(css 의 지연). 레퍼런스: 카메라 먼저, 카드는 그다음.
+   * 줌이 끝나 배가 섰다 — 숫자를 올리고 항해일지 카드를 띄운다.
+   * 카드는 배가 다 선 뒤에 뜬다(css 의 지연). 레퍼런스: 카메라 먼저, 카드는 그다음.
    */
   showArrival(record) {
     this.reveal(record.record_id);
-    if (this._mode !== "pin") {
-      if (this._mode === "deck") this._resume = { frac: this._rotateT / (this._dwell || STAT_ROTATE_SEC) };
-      this._mode = "live";
-      const c = this.deck.renderLive(record, this._visible());
-      c.sec = ARRIVAL_HOLD_SEC;
-      if (this.el.report) this.el.report.classList.remove("hold");
-      this._show(c, false);
-    }
+    if (this._mode !== "pin" && this._mode !== "arrival") this.incoming();
     this._fillLog(record);
     if (this.el.arrival) restart(this.el.arrival, "on");
   }
@@ -221,16 +287,24 @@ export class Panel {
     if (this.el.arrival) this.el.arrival.classList.remove("on");
   }
 
-  /** 연출이 끝났다. 끊긴 장으로 돌아간다(머리말의 규칙). */
+  /** 연출이 끝났다. 끊긴 시간으로 돌아간다(머리말의 규칙). */
   endLive() {
     this.hideArrival();
-    if (this._mode === "pin" || this._mode === "deck") return;
-    const r = this._resume;
-    this._resume = null;
-    this._mode = "deck";
-    if (this.el.report) this.el.report.classList.remove("hold");
-    if (r && r.frac >= 0.5) this.deck.advance();
-    this._showDeck(false);
+    if (this._mode !== "arrival") return;
+    const p = this._paused || { mode: "landscape", landT: 0, landSec: LANDSCAPE_SEC };
+    this._paused = null;
+    if (p.mode === "session" && this._session) {
+      this._mode = "session";
+      this._stage("session");
+      if (p.frac >= 0.5) {
+        this.deck.advance();
+        this._session.left--;
+        if (this._session.left <= 0) { this._endSession(); return; }
+      }
+      this._showChapter("fresh");
+      return;
+    }
+    this._enterLandscape(p.landSec || LANDSCAPE_SEC, p.landT || 0);
   }
 
   /** 항해일지 카드. 레퍼런스 라벨의 "항목 ······ 값" 줄을 그대로 쓴다. */
@@ -270,11 +344,12 @@ export class Panel {
       }
     }
 
-    if (this._mode !== "deck") return;
-    this._rotateT += dt;
-    if (this._rotateT >= this._dwell) {
-      this.deck.advance();
-      this._showDeck(false);
+    if (this._mode === "landscape") {
+      this._landT += dt;
+      if (this._landT >= this._landSec) this._startSession();
+    } else if (this._mode === "session") {
+      this._rotateT += dt;
+      if (this._rotateT >= this._dwell) this._nextChapter();
     }
   }
 }

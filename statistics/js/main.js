@@ -12,7 +12,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as C from "./config.js";
-import { buildWater, waveHeightAt, wrapWave, RIPPLE_MAX } from "./ocean.js";
+import { buildWater, waveHeightAt, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
 import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed } from "./motion.js";
 import { makeStyle } from "./style.js";
@@ -38,21 +38,59 @@ if (GLASS_PIN) document.documentElement.dataset.glass = GLASS_PIN;
 // 0.35 = 잔잔하되 죽지는 않은 정도 (ampScale 0.82, chop 0.20).
 const WIND_T = 0.35;
 
-/** 하늘 그라디언트 텍스처 (온보딩과 같은 방식·같은 정지점). */
-function makeSkyTexture(colors) {
-  const c = document.createElement("canvas");
-  c.width = 8; c.height = 256;
-  const ctx = c.getContext("2d");
-  const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, colors[0]);
-  grad.addColorStop(0.48, colors[1]);
-  grad.addColorStop(0.78, colors[2]);
-  grad.addColorStop(1, colors[3]);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 8, 256);
-  const tex = new THREE.CanvasTexture(c);
-  if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+/**
+ * 하늘 돔. 온보딩과 같은 네 색·같은 정지점(0 · 0.48 · 0.78 · 1)의 그라디언트다.
+ *
+ * [변경] 예전에는 이 그라디언트를 화면 배경(scene.background)에 칠했다. 화면에 붙은 그림이라
+ * 카메라가 고개를 돌리거나 줌해도 하늘은 제자리였고, 수평선만 움직여 하늘과 바다가 따로 놀았다.
+ * 이제 하늘도 월드에 있다 — 색은 "그 방향이 수평선에서 몇 도 위/아래인가"로 정한다.
+ * 평소 화면(화각 50·시선 CAM_LOOK_AHEAD)에서는 예전과 같은 자리에 같은 색이 오도록,
+ * 방향의 높이각을 평소 화면의 세로 위치로 바꿔 그 자리의 정지점 색을 쓴다.
+ * 바다는 반투명(0.92)이라 먼 바다가 지워지는 자리에서 이 돔이 비쳐 수평선이 녹아든다.
+ */
+function makeSkyDome(colors) {
+  // 팔레트는 sRGB 값이다. 캔버스 그라디언트처럼 sRGB 공간에서 섞고, 변환 없이 그대로 내보낸다.
+  const srgb = (v) => {
+    const h = new THREE.Color(v).getHex();
+    return new THREE.Vector3(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
+  };
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    fog: false,
+    uniforms: {
+      c0: { value: srgb(colors[0]) }, c1: { value: srgb(colors[1]) },
+      c2: { value: srgb(colors[2]) }, c3: { value: srgb(colors[3]) },
+      uPitch: { value: Math.atan2(C.CAM_HEIGHT, C.CAM_LOOK_AHEAD) },
+      uTanHalf: { value: Math.tan((C.CAM_FOV * Math.PI) / 360) },
+    },
+    vertexShader: `
+      varying vec3 vDir;
+      void main() {
+        vDir = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 c0, c1, c2, c3;
+      uniform float uPitch, uTanHalf;
+      varying vec3 vDir;
+      void main() {
+        // 이 방향이 평소 화면에서 세로 어디(위 0 ~ 아래 1)에 오는가
+        float a = asin(clamp(normalize(vDir).y, -1.0, 1.0)) + uPitch;
+        float y = clamp(0.5 - 0.5 * tan(clamp(a, -1.35, 1.35)) / uTanHalf, 0.0, 1.0);
+        vec3 col = y < 0.48 ? mix(c0, c1, y / 0.48)
+                 : y < 0.78 ? mix(c1, c2, (y - 0.48) / 0.30)
+                 :            mix(c2, c3, (y - 0.78) / 0.22);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), mat);
+  dome.renderOrder = -1000;       // 맨 먼저 그린다 (깊이를 안 쓰므로 무엇도 가리지 않는다)
+  dome.frustumCulled = false;
+  return dome;
 }
 
 class MapScene {
@@ -68,7 +106,8 @@ class MapScene {
     this.renderer.shadowMap.enabled = false;
 
     this.scene = new THREE.Scene();
-    this.scene.background = makeSkyTexture(P.sky);
+    this.sky = makeSkyDome(P.sky);
+    this.scene.add(this.sky);
     // 안개 = 바다 타일의 끝을 가리는 유일한 장치. 타일 반경(70)보다 확실히 안쪽에서
     // 끝나야 경계가 드러나지 않는다.
     this.scene.fog = new THREE.Fog(P.fog, C.FOG_NEAR, C.FOG_FAR);
@@ -195,25 +234,17 @@ class MapScene {
    */
   _pickArrivalSpot(record) {
     const rng = makeRng(hashSeed(String(record.record_id)) ^ 0x5f3a);
-    // 패널이 덮지 않은 바다 안에서 고른다. 깊이 상한은 설정값(33)과 "패널 아래 끝 + 여유"가
-    // 닿는 깊이 중 가까운 쪽 — 화면 비율이 달라 패널이 더 내려오면 상한도 따라 당겨진다.
-    // 가로는 보이는 바다의 한가운데(f=fC)에서 왼쪽 끝(f=fL) 사이. f 는 그 깊이에서의 화면
-    // 반폭 대비 비율이고 +가 왼쪽이다(카메라가 +Z를 보므로 화면 왼쪽이 월드 +X).
-    const sea = this._visibleSea();
-    const depthMax = Math.max(C.ARRIVAL_DEPTH_MIN + 1, Math.min(C.ARRIVAL_DEPTH_MAX,
-      this.cam.homeDepthAtScreenY(sea.y0 + C.ARRIVAL_PANEL_CLEAR)));
-    const fL = 1 - 2 * sea.x0, fC = -sea.x0;
     // 제시하는 동안 이 배만 멈춰 서 있고 나머지는 계속 흐른다. 그 시간만큼 흐름
     // 방향으로 격자가 밀리므로, 얼어 있는 자리가 곧 "연출이 끝났을 때의 격자 자리"다.
     // 배가 얼어 있는 시간은 카메라 이동 시간 + 머무는 시간이다. 이동 시간은 거리에서
     // 나오므로 자리를 정하기 전에는 모른다 — 겹침 검사에는 상한을 쓴다(길게 잡을수록 안전).
-    const freeze = C.CAM_TRAVEL_MAX_SEC + C.ARRIVAL_HOLD_SEC;
+    const freeze = C.ARRIVAL_ZOOM_SEC + C.ARRIVAL_HOLD_SEC;
     const lead = C.FLOW_DIR * this.flowSpeed * freeze;
     let best = null, bestClear = -Infinity;
     for (let n = 0; n < 64; n++) {
-      const depth = C.ARRIVAL_DEPTH_MIN + rng() * (depthMax - C.ARRIVAL_DEPTH_MIN);
+      const depth = C.ARRIVAL_DEPTH_MIN + rng() * (C.ARRIVAL_DEPTH_MAX - C.ARRIVAL_DEPTH_MIN);
       const hw = this.cam.frameHalfWidthAt(depth);
-      const spawnX = hw * (fC + (fL - fC) * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN)));
+      const spawnX = hw * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN));
       // 얼어 있는 동안 이웃들이 옆을 흘러 지나간다. 한 점이 아니라 그 구간 전체에서
       // 간격이 유지돼야 한다 — 지금 비어 있어도 3초 뒤에 옆구리를 스칠 수 있다.
       // 한쪽으로만 쓸면 된다: 이 배는 서 있고 남들만 흐른다. 제시는 한 번에 하나뿐이고
@@ -230,20 +261,6 @@ class MapScene {
       if (clear >= C.FLEET_MIN_GAP) break;   // 넉넉하면 더 볼 것 없다
     }
     return best;
-  }
-
-  /**
-   * 패널이 덮지 않은 바다가 화면의 어디서 시작하는가 (화면 비율 0~1).
-   * 세로 화면에서는 패널 아래(y0), 가로 화면에서는 왼쪽 띠가 된 패널의 오른쪽(x0)이다.
-   * 패널 크기는 CSS가 화면 비율마다 정하므로(css/panel.css) 여기서 숫자로 가정하지 않고 잰다.
-   */
-  _visibleSea() {
-    const el = document.getElementById("panel");
-    const W = window.innerWidth, H = window.innerHeight;
-    if (!el || !W || !H) return { x0: 0, y0: 0 };
-    const r = el.getBoundingClientRect();
-    const sidebar = r.width < W * 0.9;
-    return { x0: sidebar ? r.right / W : 0, y0: sidebar ? 0 : r.bottom / H };
   }
 
   _addRecord(record, announce) {
@@ -331,53 +348,44 @@ class MapScene {
   /**
    * 기획서 연출: 새 기록은 5~8초간 크게 제시된 뒤 기존 기록들 사이에 남는다.
    *
-   * 움직이는 건 카메라다. 배는 자기 자리에 생겨서 그 자리에 그대로 있는다.
-   *   approach  카메라가 배 앞 ARRIVAL_DIST 까지 간다. 도착 0.3초 전에 배가 나타난다
+   * 배는 자기 자리에 생겨서 그대로 있고, 카메라는 제자리에서 그쪽으로 고개를 돌려 렌즈를
+   * 당긴다(camera.js 머리말 — 수면 위를 날아가지 않는다).
+   *   approach  고개를 돌리며 줌. 줌이 끝나기 0.3초 전에 배가 나타난다
    *   hold      문장 카드를 띄우고 머문다. 배는 흐르지 않는다
-   *   return    카드를 내리고 카메라가 제자리로. 배는 여기서부터 흐르기 시작한다
+   *   return    카드를 내리고 줌을 푼다. 배는 여기서부터 흐르기 시작한다
    *
-   * 카메라가 배를 정면으로 겨누면 배가 화면 세로 한가운데(=패널 바로 아래 경계)에
-   * 걸리거나, 반대로 너무 내려와 문장 카드에 가린다. 그래서 시선은 배가 아니라
-   * "배보다 조금 더 먼 수면"에 둔다 — 그만큼 배가 화면에서 위로 올라온다.
-   * 계수 1.17은 세로 화면(FOV 50, 카메라 높이 8, 제시 거리 11) 기준으로 배가
-   * 화면 58% 자리에 오도록 역산한 값이다. 카드는 78%부터 시작하므로 겹치지 않는다.
+   * 줌 배율은 "예전 제시 화면보다 배가 3배 크게"(config.js ARRIVAL_ZOOM). 배가 화면에서
+   * 차지하는 크기는 거리 × tan(화각/2) 에 반비례하므로 배까지 거리로 화각을 정한다.
+   * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y)에 둔다 — 아래에 항해일지 카드가 뜬다.
    */
   _beginArrival(boat) {
     boat.phase = "approach";
     boat.phaseT = 0;
-    boat.renderScale = 0;                    // 카메라가 거의 다 갈 때까지 안 보인다
-    // 배 앞 ARRIVAL_DIST 에 서면 배가 화면 한가운데에 온다 (카메라는 +Z를 본다).
-    boat.camToX = boat.x;
-    boat.camToZ = boat.z - C.ARRIVAL_DIST;
-    boat.camFromX = this.cam.eyeX;
-    boat.camFromZ = this.cam.eyeZ;
-    // 이동 시간은 거리에서 얻는다. 가까운 배까지 늘어지지도, 먼 배까지 휙 날아가지도
-    // 않게 하려면 "시간"이 아니라 "속도"를 고정하는 쪽이 맞다.
-    const d = Math.hypot(boat.camToX - boat.camFromX, boat.camToZ - boat.camFromZ);
-    boat.camSec = Math.max(C.CAM_TRAVEL_MIN_SEC,
-                  Math.min(C.CAM_TRAVEL_MAX_SEC, d / C.CAM_TRAVEL_SPEED));
-    // 이 배는 지금부터 camSec + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 흘러간다.
+    boat.renderScale = 0;                    // 줌이 거의 끝날 때까지 안 보인다
+    const y = ARRIVAL_AIM_Y;
+    const slant = Math.hypot(boat.x, C.CAM_HEIGHT - y, boat.z);
+    const tanHalf = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
+    this.cam.setZoomTarget(boat.x, y, boat.z, tanHalf, C.ARRIVAL_FRAME_Y);
+    boat.camSec = C.ARRIVAL_ZOOM_SEC;
+    // 이 배는 지금부터 줌 + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 흘러간다.
     // 연출이 끝나는 순간의 격자 좌표를 역산해 자리에 적어 둔다 — 그래야 이후 이 배도
     // 나머지와 똑같은 한 격자 위에서 흐른다 (_latticeX).
     const frozen = boat.camSec + C.ARRIVAL_HOLD_SEC;
     boat.slot.x0 = wrapCorridor(boat.x - this.flowDist - C.FLOW_DIR * this.flowSpeed * frozen);
     this.arriving = boat;
-    // 카메라가 먼저 움직인다. 패널은 지금 장을 그대로 둔 채 넘기기만 멈추고, 카메라가
-    // 도착해 배가 선 뒤에(hold) LIVE 장과 문장 카드를 띄운다 — 레퍼런스의 순서.
+    // 카메라가 먼저 움직인다. 화면의 통계 카드는 지금 바로 비켜서고(panel.js), 줌이 끝나
+    // 배가 선 뒤에(hold) 문장 카드가 뜬다 — 레퍼런스의 순서.
     this.panel.incoming();
   }
 
   _updateArrival(dt) {
     const b = this.arriving;
-    if (!b) { this.cam.setEye(0, 0); this.cam.setFocus(0, 0, 0); return; }
+    if (!b) { this.cam.setZoomProgress(0); return; }
     b.phaseT += dt;
 
     if (b.phase === "approach") {
-      const e = easeInOutCubic(Math.min(1, b.phaseT / b.camSec));
-      this.cam.setEye(b.camFromX + (b.camToX - b.camFromX) * e,
-                      b.camFromZ + (b.camToZ - b.camFromZ) * e);
-      this._focusBeyond(b.x, b.z, e);
-      // 도착 직전에 배가 나타난다. 0에서 시작해 살짝 넘겼다가 제 크기로 앉는다 —
+      this.cam.setZoomProgress(b.phaseT / b.camSec);
+      // 줌이 끝나기 직전에 배가 나타난다. 0에서 시작해 살짝 넘겼다가 제 크기로 앉는다 —
       // 아무것도 없던 수면에 배가 그냥 툭 나타나면 렌더 오류처럼 보인다.
       const lead = b.phaseT - (b.camSec - C.ARRIVAL_APPEAR_LEAD);
       const a = Math.max(0, Math.min(1, lead / C.ARRIVAL_APPEAR_LEAD));
@@ -390,8 +398,7 @@ class MapScene {
     }
 
     if (b.phase === "hold") {
-      this.cam.setEye(b.camToX, b.camToZ);
-      this._focusBeyond(b.x, b.z, 1);
+      this.cam.setZoomProgress(1);
       b.renderScale = C.ARRIVAL_SCALE;
       if (b.phaseT >= C.ARRIVAL_HOLD_SEC) {
         b.phase = "return"; b.phaseT = 0;
@@ -400,12 +407,10 @@ class MapScene {
       return;
     }
 
-    // 돌아가는 길. 이 구간부터 배도 흐르기 시작한다 (frame()의 stepBoat 조건).
+    // 줌을 푸는 길. 이 구간부터 배도 흐르기 시작한다 (frame()의 stepBoat 조건).
     const k = Math.min(1, b.phaseT / b.camSec);
-    const e = easeInOutCubic(k);
-    this.cam.setEye(b.camToX * (1 - e), b.camToZ * (1 - e));
-    this._focusBeyond(b.x, b.z, 1 - e);
-    b.renderScale = C.ARRIVAL_SCALE + (1 - C.ARRIVAL_SCALE) * e;
+    this.cam.setZoomProgress(1 - k);
+    b.renderScale = C.ARRIVAL_SCALE + (1 - C.ARRIVAL_SCALE) * easeInOutCubic(k);
 
     // 항적은 막 출발하는 이 배에만 준다 (셰이더 슬롯이 하나뿐이고, 지금 "떠나는"
     // 배도 이것뿐이다). 앞쪽에서 부풀었다가 잦아든다.
@@ -416,11 +421,10 @@ class MapScene {
       b.phase = null; b.renderScale = 1;
       wake.set(0, 0, 0, 0);
       this.arriving = null;
-      this.cam.setEye(0, 0);
-      this.cam.setFocus(0, 0, 0);
+      this.cam.setZoomProgress(0);
       const next = this.pending.shift();
       if (next) this._addRecord(next, true);   // 배는 차례가 온 지금 만들어진다
-      else this.panel.endLive();               // 줄이 비었으면 끊긴 통계 장으로 돌아간다
+      else this.panel.endLive();               // 줄이 비었으면 끊긴 장면(풍경·통계)으로 돌아간다
     }
   }
 
@@ -439,12 +443,9 @@ class MapScene {
     layer.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:40";
     document.body.appendChild(layer);
 
-    // 보이는 바다의 왼쪽 절반 한가운데 (가로 화면에서는 왼쪽 띠를 피한다 — _visibleSea)
-    const sea = this._visibleSea();
-    const fMid = ((1 - 2 * sea.x0) + (-sea.x0)) / 2;
     for (const depth of depths) {
-      // 깊이마다 화면 반폭이 다르므로 월드 좌표도 달라진다.
-      const x = this.cam.frameHalfWidthAt(depth) * fMid;
+      // 화면 왼쪽 절반의 한가운데. 깊이마다 화면 반폭이 다르므로 월드 좌표도 달라진다.
+      const x = this.cam.frameHalfWidthAt(depth) * 0.5;
       const record = {
         record_id: `calib-${depth}`, text: "", region: "아산", state: "stay",
         keywords: [], display_name: "익명", created_at: new Date().toISOString(),
@@ -464,13 +465,11 @@ class MapScene {
       this.calibLabels.push({ boat, tag });
     }
     this._reindex();
-    // 통계 자리는 보정 안내로 바꿔 둔다. 가짜 기록으로 통계를 돌리면 빈 칸이 뜨는데,
-    // 그게 고장인지 데이터가 없는 건지 구분이 안 된다.
+    // 통계는 멈추고 제목 카드에 보정 안내를 적는다. 가짜 기록으로 통계를 돌리면 빈 칸이 뜨는데,
+    // 그게 고장인지 데이터가 없는 건지 구분이 안 된다. 가운데 카드는 띄우지 않는다 — 보려는 배를 덮는다.
     this.panel.pin(
       "등장 깊이 보정",
-      `<span class="sv-headline"><span class="sv-head-word">${depths[0]}–${depths[depths.length - 1]}</span>` +
-      `<span class="sv-head-rest">숫자는 카메라에서의 거리. 지금 설정은 ` +
-      `${C.ARRIVAL_DEPTH_MIN}–${C.ARRIVAL_DEPTH_MAX} 사이에서 무작위로 고른다.</span></span>`
+      `숫자는 카메라에서의 거리 · 지금 설정 ${C.ARRIVAL_DEPTH_MIN}–${C.ARRIVAL_DEPTH_MAX}`
     );
   }
 
@@ -487,12 +486,6 @@ class MapScene {
       tag.style.left = `${(v.x * 0.5 + 0.5) * w}px`;
       tag.style.top = `${(-v.y * 0.5 + 0.5) * h}px`;
     }
-  }
-
-  /** 배보다 조금 더 먼 수면을 본다 (위 _beginArrival 주석 참고). */
-  _focusBeyond(x, z, w) {
-    const px = this.cam.pos.x, pz = this.cam.pos.z;
-    this.cam.setFocus(px + (x - px) * ARRIVAL_LOOK_FACTOR, pz + (z - pz) * ARRIVAL_LOOK_FACTOR, w);
   }
 
   /**
@@ -579,14 +572,10 @@ class MapScene {
     this.panel.update(dt);
     this._updateArrival(dt);
 
-    // 바다 타일을 카메라 발밑으로 재중심. 파도 위상은 월드좌표로 계산되므로 이음매가 없다.
-    // uCenter는 랩을 거쳐 들어간다 — 파도장이 WAVE_WRAP_DOMAIN 주기라 값만 작게 유지되고
-    // 화면에는 아무 티도 안 난다(selfcheck가 이 성질을 검산한다).
-    const gx = this.cam.groundX(), gz = this.cam.groundZ();
-    this.water.position.set(gx, 0, gz);
-    const wu = this.water.material.uniforms;
-    wu.uTime.value = t;
-    wu.uCenter.value.set(wrapWave(gx), wrapWave(gz));
+    // 바다는 월드에 고정이다 — 카메라를 따라 옮기지 않는다(ocean.js buildWater 머리말).
+    this.water.material.uniforms.uTime.value = t;
+    // 하늘 돔은 방향만 의미가 있다. 카메라가 숨쉬기로 오르내려도 하늘이 따라 흔들리지 않게 붙여 둔다.
+    this.sky.position.copy(this.cam.pos);
 
     if (this.fleet) {
       const d = 0.5;   // 파도 기울기를 재는 간격
@@ -652,8 +641,8 @@ const loadShipGltf = () => tryLoadFirst(C.MODEL_URLS);
 
 // 등장 연출을 기다리는 줄의 상한 (_addRecord 참고)
 const ARRIVAL_QUEUE_MAX = 3;
-// 시선을 배보다 얼마나 더 멀리 둘지 (_beginArrival 머리말 참고)
-const ARRIVAL_LOOK_FACTOR = 1.17;
+// 줌이 겨누는 높이 — 흘수선이 아니라 선체·캐빈의 가운데쯤 (배 몸 높이 약 0.9)
+const ARRIVAL_AIM_Y = 0.45;
 
 const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
 // 나타날 때만 쓰는 오버슈트. 제 크기를 살짝 넘겼다가 앉아야 "나타났다"로 읽힌다.

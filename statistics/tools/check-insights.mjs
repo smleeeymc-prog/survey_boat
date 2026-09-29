@@ -21,8 +21,8 @@ globalThis.SURVEY_TAXONOMY = SURVEY_TAXONOMY; // eslint-disable-line no-undef
 
 const imp = (p) => import(pathToFileURL(path.join(STAT, p)).href);
 const { hasFinal, josa, pct } = await imp("js/stats/text.js");
-const { METRIC, MOTIVES, rowsOf } = await imp("js/stats/metrics.js");
-const { INSIGHTS, liveInsight, MIN_N } = await imp("js/stats/insights.js");
+const { METRIC, MOTIVES } = await imp("js/stats/metrics.js");
+const { INSIGHTS, MIN_N } = await imp("js/stats/insights.js");
 
 let fail = 0, pass = 0;
 const strip = (h) => String(h).replace(/<[^>]+>/g, "");
@@ -164,22 +164,6 @@ const run = (metricId, insightId, records) => {
   // 칸마다 하나씩(동률)이면 붐빈 때를 지어내지 않는다
   const flat = [rec("stay", "아산", [], 12), rec("stay", "아산", [], 32), rec("stay", "아산", [], 52)];
   eq("동률이면 가장 최근 문장", strip(run("inflow", "inflow", flat).extra), "가장 최근 문장은 12분 전에 도착했습니다");
-}
-
-// ── 방금 도착한 문장 ─────────────────────────────────────────────────────
-{
-  const rs = [
-    ...Array.from({ length: 6 }, () => rec("leaving", "천안", ["일"])),
-    ...Array.from({ length: 3 }, () => rec("stay", "아산", ["일"])),     // 머무는 사람의 '일'은 세지 않는다
-  ];
-  const mine = rec("leaving", "아산", ["일", "주거"]);
-  rs.push(mine);
-  rs.push(rec("leaving", "천안", ["일"]));                               // 내 뒤에 온 문장도 세지 않는다
-  const r = liveInsight(mine, rs, rowsOf);
-  eq("같은 동기 안에서 순번(뒤에 온 문장 제외)", strip(r.headline), "이 문장은 “일” 때문에 떠나려는 7번째 이야기입니다.");
-  eq("두 번째 키워드·지역 순번", strip(r.extra), "“주거” 1번째 · 아산에서 온 4번째 문장");
-  const none = rec("stay", "비공개", []);
-  eq("키워드 없는 문장", strip(liveInsight(none, [none], rowsOf).headline), "이 문장은 비공개에서 온 1번째 이야기입니다.");
 }
 
 ok("MIN_N 은 양수", MIN_N > 0);
