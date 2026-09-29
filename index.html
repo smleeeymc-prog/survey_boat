@@ -1412,7 +1412,8 @@ const TONES = {
 };
 // 표면 효과 기본 세기 (this.fx 유니폼, 0 = 끔). 광택 0.8·테두리 0.2는 사용자가 고른 값(09-27).
 // AO는 GLB에 같이 구워진 값이라 지도와 같아야 해서 statistics/shared/look-tokens.js 에서 온다.
-const FX_DEFAULT = { ao: AO.amount, sheen: 0.8, rim: 0.2, facet: 1, wood: 0, caustic: 0 };
+// 나무는 갑판에만 깐다(woodSide 0 = 옆면은 GLB 색 그대로) — 09-29 사용자: "벽면은 그대로, 갑판만 나무로".
+const FX_DEFAULT = { ao: AO.amount, sheen: 0.8, rim: 0.2, facet: 1, wood: 1, woodSide: 0, caustic: 0 };
 // 부드러운 그림자 기본값 — 켜져 있으면 매 프레임 그림자 맵을 그린다(헤드리스 +20%). 메뉴에서 끌 수 있다.
 const SOFT_SHADOWS_DEFAULT = true;
 // 09-27 사용자가 폰에서 고른 조합으로 고정: 필름 룩(톤 없음) + AO + 광택·테두리 빛 + 면 색 변주 +
@@ -1584,7 +1585,8 @@ class BottleScene {
     this.fx = {
       uFxTime: { value: 0 },
       uAOAmt: { value: FX_DEFAULT.ao },       // 구운 AO(구석 그늘)
-      uWoodAmt: { value: FX_DEFAULT.wood },       // 선체 카툰 나무 판자
+      uWoodAmt: { value: FX_DEFAULT.wood },       // 선체 카툰 나무 판자 (갑판)
+      uWoodSideAmt: { value: FX_DEFAULT.woodSide }, // 그중 옆면에도 깔 비율 (0 = 갑판만)
       uCausticAmt: { value: FX_DEFAULT.caustic }, // 수면 근처에 일렁이는 물빛
       uSheenAmt: { value: FX_DEFAULT.sheen }, // 하늘이 비치는 광택 (매끈한 면에만)
       uRimAmt: { value: FX_DEFAULT.rim },     // 테두리 빛 (실루엣 가장자리에만)
@@ -2948,28 +2950,33 @@ ${GERSTNER_GLSL}
    * 선체 나무 — 배 좌표로 계산하는 절차적 무늬라 UV도 텍스처도 필요 없다. 카툰 로우폴리 톤:
    * 옆면은 가로 판자, 윗면(갑판)은 길이 방향 꿀색 판자. 판자마다 평평한 색 3단계와 윗단 밝은 띠,
    * 굵은 이음매. 물 아래는 짙은 바닥 칠. (woodPerturb는 요철용으로 남겨 두었지만 지금은 안 쓴다)
+   * 지금은 갑판에만 깐다(uWoodSideAmt 0) — 어디가 갑판인지는 _markDeckFaces가 정점 속성 _deck으로 찍는다.
    */
   _installWood(hull) {
     hull.updateMatrix();
     const toShip = hull.matrix.clone();                         // 선체 로컬 → 배 로컬 (선체는 Ship의 자식)
     const toShipN = new THREE.Matrix3().getNormalMatrix(toShip);
+    this._markDeckFaces(hull, toShip);
     patchMaterial(hull.material, "wood", (shader) => {
       shader.uniforms.uHullToShip = { value: toShip };
       shader.uniforms.uHullToShipN = { value: toShipN };
       shader.uniforms.uWoodAmt = this.fx.uWoodAmt;
+      shader.uniforms.uWoodSideAmt = this.fx.uWoodSideAmt;
       shader.vertexShader = shader.vertexShader
         .replace("void main() {", `
           uniform mat4 uHullToShip; uniform mat3 uHullToShipN;
-          varying vec3 vWoodP; varying vec3 vWoodN;
+          attribute float _deck;
+          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck;
           void main() {`)
         .replace("#include <project_vertex>", `
           vWoodP = (uHullToShip * vec4(transformed, 1.0)).xyz;
           vWoodN = normalize(uHullToShipN * objectNormal);
+          vWoodDeck = _deck;
           #include <project_vertex>`);
       shader.fragmentShader = shader.fragmentShader
         .replace("void main() {", `
-          uniform float uWoodAmt;
-          varying vec3 vWoodP; varying vec3 vWoodN;
+          uniform float uWoodAmt, uWoodSideAmt;
+          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck;
           float woodHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
           // 판자 이음매: 판자 안쪽은 1, 이음매 선에서 0 (멀어서 선이 픽셀보다 가늘면 흐리게 — 반짝임 방지)
           float woodSeam(float v, float w) {
@@ -2991,7 +2998,8 @@ ${GERSTNER_GLSL}
             // (처음엔 결·홈 범프까지 넣었더니 너무 실사·모델링처럼 보였다 — 09-26 사용자)
             // 배 로컬 단위 (배 길이 약 0.85, 흘수선 y = -${SHIP_DRAFT.toFixed(3)})
             vec3 p = vWoodP;
-            float deck = step(0.65, vWoodN.y);
+            // 갑판 = 위를 보는 면 중 _markDeckFaces가 바닥으로 고른 것 (뱃전 윗단·계단·돛대는 빠진다)
+            float deck = step(0.65, vWoodN.y) * step(0.5, vWoodDeck);
             // 옆면: 높이 0.04마다 한 장 / 갑판: 폭 0.024마다 한 장
             float sv = p.y / 0.04, dv = p.z / 0.024;
             float v = mix(sv, dv, deck);
@@ -3008,9 +3016,88 @@ ${GERSTNER_GLSL}
             float below = (1.0 - deck) * (1.0 - smoothstep(-${SHIP_DRAFT.toFixed(3)} + 0.005, -${SHIP_DRAFT.toFixed(3)} + 0.008, p.y));
             wood = mix(wood, base * vec3(0.55, 0.40, 0.42), below);
             wood *= mix(0.6, 1.0, seam);
-            diffuseColor.rgb = mix(diffuseColor.rgb, wood, uWoodAmt);
+            diffuseColor.rgb = mix(diffuseColor.rgb, wood, uWoodAmt * mix(uWoodSideAmt, 1.0, deck));
           }`);
     });
+  }
+
+  /**
+   * 선체에서 '갑판 바닥'인 면을 골라 정점 속성 _deck(1 = 갑판)으로 찍는다. 나무 판자는 여기에만 깐다.
+   * 선체는 재질 하나(Kapal, 텍스처 없는 단색)라 색으로는 못 가르고, 모양으로 가른다:
+   * 위를 보는 면(법선 y > 0.65)을 모서리로 이어진 덩어리로 묶고, 두 조건이 맞는 덩어리만 갑판이다.
+   *   - 옆에 자기보다 높이 솟은 벽이 있다 → 바닥이다 (뱃전 안쪽 벽에 둘러싸인 면)
+   *   - 띠처럼 가늘지 않다: 평균 폭(2 × 위에서 본 넓이 ÷ 둘레) ≥ DECK_MIN_WIDTH
+   *     → 뱃전 윗단·계단 디딤판·돛대 가로대는 가는 띠라 빠진다 (09-29 기준 폭 0.007~0.023, 갑판 0.085~0.175)
+   * 이웃은 좌표로 찾는다 — 면마다 정점이 따로 있어서 인덱스로는 안 이어진다.
+   * 속성을 면 단위로 정확히 주려고 인덱스를 푼다(정점 3,846개 — 부담 없음).
+   */
+  _markDeckFaces(hull, toShip) {
+    const DECK_MIN_WIDTH = 0.04;   // 배 로컬 단위 (배 길이 약 0.85)
+    if (hull.geometry.index) {
+      const old = hull.geometry;
+      hull.geometry = old.toNonIndexed();
+      old.dispose();
+    }
+    const pos = hull.geometry.attributes.position;
+    const nTri = pos.count / 3;
+    const P = [];
+    for (let i = 0; i < pos.count; i++) P.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(toShip));
+    const key = (p) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+    const edgeKey = (a, b) => { const ka = key(P[a]), kb = key(P[b]); return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`; };
+    const edgesOf = (t) => [[t * 3, t * 3 + 1], [t * 3 + 1, t * 3 + 2], [t * 3 + 2, t * 3]];
+    const up = new Uint8Array(nTri), topY = new Float32Array(nTri), byEdge = new Map();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
+    for (let t = 0; t < nTri; t++) {
+      e1.subVectors(P[t * 3 + 1], P[t * 3]); e2.subVectors(P[t * 3 + 2], P[t * 3]);
+      up[t] = e1.cross(e2).normalize().y > 0.65 ? 1 : 0;
+      topY[t] = Math.max(P[t * 3].y, P[t * 3 + 1].y, P[t * 3 + 2].y);
+      for (const [a, b] of edgesOf(t)) {
+        const k = edgeKey(a, b);
+        if (!byEdge.has(k)) byEdge.set(k, []);
+        byEdge.get(k).push(t);
+      }
+    }
+    // 위를 보는 면끼리 모서리로 이어진 덩어리
+    const comp = new Int32Array(nTri).fill(-1);
+    let nComp = 0;
+    for (let s = 0; s < nTri; s++) {
+      if (!up[s] || comp[s] >= 0) continue;
+      const stack = [s];
+      comp[s] = nComp;
+      while (stack.length) {
+        const t = stack.pop();
+        for (const [a, b] of edgesOf(t)) for (const o of byEdge.get(edgeKey(a, b))) {
+          if (up[o] && comp[o] < 0) { comp[o] = nComp; stack.push(o); }
+        }
+      }
+      nComp++;
+    }
+    const area = new Float32Array(nComp), perim = new Float32Array(nComp), rises = new Uint8Array(nComp);
+    for (let t = 0; t < nTri; t++) {
+      if (!up[t]) continue;
+      const c = comp[t];
+      e1.subVectors(P[t * 3 + 1], P[t * 3]); e2.subVectors(P[t * 3 + 2], P[t * 3]);
+      area[c] += Math.abs(e1.x * e2.z - e1.z * e2.x) / 2;
+      for (const [a, b] of edgesOf(t)) {
+        const others = byEdge.get(edgeKey(a, b)).filter((o) => o !== t);
+        if (!others.some((o) => comp[o] === c)) perim[c] += Math.hypot(P[a].x - P[b].x, P[a].z - P[b].z);
+        if (others.some((o) => !up[o] && topY[o] > topY[t] + 0.008)) rises[c] = 1;
+      }
+    }
+    const isDeck = new Uint8Array(nComp);
+    let deckArea = 0, upArea = 0;
+    for (let c = 0; c < nComp; c++) {
+      isDeck[c] = rises[c] && (2 * area[c]) / Math.max(perim[c], 1e-9) >= DECK_MIN_WIDTH ? 1 : 0;
+      upArea += area[c];
+      if (isDeck[c]) deckArea += area[c];
+    }
+    const deck = new Float32Array(pos.count);
+    for (let t = 0; t < nTri; t++) if (up[t] && isDeck[comp[t]]) deck[t * 3] = deck[t * 3 + 1] = deck[t * 3 + 2] = 1;
+    hull.geometry.setAttribute("_deck", new THREE.BufferAttribute(deck, 1));
+    // 모델을 다시 뽑아 갑판을 못 찾으면 나무가 조용히 사라지거나 뱃전까지 번진다 — 비율로 잡는다 (09-29: 약 0.71)
+    const share = deckArea / Math.max(upArea, 1e-9);
+    console.assert(share > 0.5 && share < 0.95,
+      `[selfCheck] 갑판 판정이 이상하다 — 위를 보는 면 중 갑판 ${(share * 100).toFixed(0)}% (DECK_MIN_WIDTH 확인)`);
   }
 
   /**

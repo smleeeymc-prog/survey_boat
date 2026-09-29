@@ -494,7 +494,8 @@ splash → onboard → region → state → sentence → share → keywords → 
 | 무엇 | 어디 | 값 |
 |---|---|---|
 | 필름 룩 (반구광 + 채움광 25%·해 150% + 거칠기 0.68 상한), 톤 매핑 **없음** | `LOOK_DEFAULT = "film"`, `LOOKS.film.tone = "none"` | 톤은 `TONES`(AgX·ACES·Neutral·없음)에서 `setLook(name, tone)`으로 바꿀 수 있다 |
-| AO 0.85 · 광택 0.8 · 테두리 빛 0.2 · 면 색 변주 1 | `FX_DEFAULT` → `this.fx` 유니폼 | 나무 선체·물빛은 0(꺼짐). 셰이더는 남아 있다 |
+| AO 0.85 · 광택 0.8 · 테두리 빛 0.2 · 면 색 변주 1 | `FX_DEFAULT` → `this.fx` 유니폼 | 물빛은 0(꺼짐). 셰이더는 남아 있다 |
+| **갑판만 카툰 나무** (09-29) — 옆면·뱃전 윗단·계단은 GLB 색(적갈색) 그대로 | `FX_DEFAULT.wood 1`, `woodSide 0` · `_installWood` · `_markDeckFaces` | 선체 재질(Kapal)이 텍스처 없는 단색이라 모양으로 갑판을 가른다: 위를 보는 면 덩어리 중 옆에 솟은 벽이 있고 띠처럼 가늘지 않은 것(평균 폭 ≥ 0.04). 정점 속성 `_deck`. `woodSide 1`이면 예전처럼 옆면에도 판자 |
 | 부드러운 그림자 (PCFSoft, 매 프레임) | `SOFT_SHADOWS_DEFAULT = true`, `setSoftShadows()` | 헤드리스 +20%. **메뉴에서 끌 수 있게 남긴 유일한 항목** |
 | 색보정 | `#bottleCanvas` CSS `filter: var(--scene-grade)` (`shared/tokens.css`) | 대비·채도·따뜻함 |
 | 틸트시프트 · 비네트 | `#sceneStage` 안 `.tiltBlur` · `.sceneVignette` (CSS) | 무대 안이라 씬과 같이 나타나고 사라진다 |
