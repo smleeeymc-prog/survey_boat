@@ -369,11 +369,12 @@ function renderConsent(){
     sub: "익명으로 남겨도 되고, 별칭을 적어도 괜찮아요.",
     content: box, prev: "keywords", nextLabel: "제출하기",
     onNext: () => {
+      entries.forEach(e => { e._new = false; });   // "나의 기록" 표시는 방금 남긴 것 하나만
       entries.unshift({
         region: state.region, state: state.stateId, text: state.text,
         keywords: [...state.keywords],
         name: state.disclose === "익명" ? "익명" : state.name.trim(),
-        _new: true,
+        _new: true, id: Date.now(),
       });
       state.step = "result"; render();
     },
@@ -393,7 +394,29 @@ function stateLabel(id){ return (STATES.find(s => s.id === id) || {}).label || i
 
 /* ── 결과 (B′5) ────────────────────────────────────────────────────────────
    병이 풍경을 감싸며 떠오르고 배경이 흰색으로 페이드된 뒤(씬), 비네트가 바깥에서
-   들어오고(index.html CSS), 글자가 올라온다. */
+   들어오고(index.html CSS), 글자가 올라온다. 맨 아래 작은 줄에 이미지 저장 · 공유하기 ·
+   다시 쓰기 — 큰 버튼(지도 보러가기)을 가리지 않게 글자 버튼으로 (ui/share-card.js). */
+const ICON_SAVE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>`;
+const ICON_SHARE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></svg>`;
+const ICON_AGAIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></svg>`;
+
+/** 지금 기록의 병 스냅샷. 한 번 찍어 두고 카드와 아카이브가 같이 쓴다. */
+function mySnapshot(){
+  const e = entries[0];
+  if(!e || !e._new) return null;
+  if(!e.snapshot && window.BottleScene) e.snapshot = window.BottleScene.capture();
+  return e.snapshot || null;
+}
+function cardInfo(){
+  const e = entries[0] || {};
+  return {
+    key: e.id || 0,
+    snapshot: mySnapshot(),
+    sentence: state.text,
+    meta: [state.region, stateLabel(state.stateId), ...state.keywords].join(" · "),
+  };
+}
+
 function renderResult(){
   const d = h("div");
   const top = h("div", "res-top fade-stage");
@@ -408,18 +431,30 @@ function renderResult(){
   const btn = h("button", "cta");
   btn.type = "button";
   btn.innerHTML = `머무름의 지도 보러가기${ICON_NEXT}`;
-  btn.onclick = () => {
-    if(window.BottleScene && entries[0]) entries[0].snapshot = window.BottleScene.capture();
-    state.step = "archive"; render();
-  };
+  btn.onclick = () => { mySnapshot(); state.step = "archive"; render(); window.scrollTo(0, 0); };
   bottom.appendChild(btn);
-  const again = h("button", "res-again", "다시 한 문장 남기기");
-  again.type = "button";
-  again.onclick = restart;
-  bottom.appendChild(again);
+
+  const acts = h("div", "res-actions");
+  const act = (icon, label, fn) => {
+    const b = h("button", "res-act");
+    b.type = "button";
+    b.innerHTML = `${icon}<span>${label}</span>`;
+    b.onclick = fn;
+    return b;
+  };
+  acts.appendChild(act(ICON_SAVE, "이미지 저장", () => saveShareCard(cardInfo())));
+  acts.appendChild(h("span", "res-sep"));
+  acts.appendChild(act(ICON_SHARE, "공유하기", () => shareShareCard(cardInfo())));
+  acts.appendChild(h("span", "res-sep"));
+  acts.appendChild(act(ICON_AGAIN, "다시 쓰기", restart));
+  bottom.appendChild(acts);
   d.appendChild(bottom);
 
-  const show = () => requestAnimationFrame(() => { top.classList.add("show"); bottom.classList.add("show"); });
+  const show = () => {
+    requestAnimationFrame(() => { top.classList.add("show"); bottom.classList.add("show"); });
+    // 병이 다 떠오른 뒤에 카드를 미리 그려 둔다 — 공유는 누른 순간에만 허락되는 브라우저가 있다
+    setTimeout(() => { if(state.step === "result") prepareShareCard(cardInfo()); }, 1200);
+  };
   if(window.BottleScene) window.BottleScene.revealBottle(show);
   else show();
   return d;
@@ -430,56 +465,72 @@ function restart(){
   render();
 }
 
+/* ── 다른 사람들의 기록 (머무름의 지도 보러가기) ──────────────────────────────
+   결과 화면과 같은 톤 — 크림 바탕, 명조 문장, 갈색·금색. 한 줄에 두 개씩 정사각형 카드.
+   문장이 길면 다섯 줄에서 자르고, 누르면 그 카드만 두 칸을 차지하며 전부 펼친다.
+   병 스냅샷은 작게(카드 오른쪽 위) — 문장이 주인공이다. */
 function renderArchive(){
   const d = h("div", "archive-screen");
-  d.innerHTML = `<div class="archive-header">
-      <h2>머무름의 지도</h2>
-      <p>지금까지 ${entries.length}개의 문장이 쌓였습니다</p>
-    </div>`;
+  d.innerHTML = `<header class="ar-head">
+      <p class="ar-eyebrow">그래도, 여기 살고 있습니다</p>
+      <h2 class="ar-title">머무름의 지도</h2>
+      <p class="ar-sub">지금까지 ${entries.length}개의 문장이 쌓였습니다</p>
+    </header>`;
 
-  const filterRow = h("div", "filter-row");
-  const filters = [{ id: "all", label: "전체" }, ...STATES.map(s => ({ id: s.id, label: s.label }))];
-  filters.forEach(f => {
-    const chip = h("div", "filter-chip" + (state.filterState === f.id ? " active" : ""), f.label);
-    chip.onclick = () => { state.filterState = f.id; render(); };
-    filterRow.appendChild(chip);
+  const tabs = h("div", "ar-tabs");
+  tabs.setAttribute("role", "tablist");
+  [{ id: "all", label: "전체" }, ...STATES.map(s0 => ({ id: s0.id, label: s0.label }))].forEach(f => {
+    const t = h("button", "ar-tab" + (state.filterState === f.id ? " on" : ""), f.label);
+    t.type = "button";
+    t.setAttribute("role", "tab");
+    t.setAttribute("aria-selected", state.filterState === f.id ? "true" : "false");
+    t.onclick = () => { state.filterState = f.id; render(); };
+    tabs.appendChild(t);
   });
-  d.appendChild(filterRow);
+  d.appendChild(tabs);
 
-  const regionWrap = h("div", "region-select");
+  const regionRow = h("div", "ar-region");
   const sel = document.createElement("select");
-  sel.innerHTML = `<option value="all">전체 지역</option>` + REGIONS.map(r => `<option value="${r}" ${state.filterRegion === r ? "selected" : ""}>${r}</option>`).join("");
+  sel.setAttribute("aria-label", "지역");
+  sel.innerHTML = `<option value="all">전체 지역</option>` + REGIONS.map(r => `<option value="${r}">${r}</option>`).join("");
   sel.value = state.filterRegion;
   sel.onchange = () => { state.filterRegion = sel.value; render(); };
-  regionWrap.appendChild(sel);
-  d.appendChild(regionWrap);
+  regionRow.appendChild(sel);
+  d.appendChild(regionRow);
 
   const filtered = entries.filter(e =>
     (state.filterState === "all" || e.state === state.filterState) &&
     (state.filterRegion === "all" || e.region === state.filterRegion)
   );
 
-  const wall = h("div", "wall");
+  const grid = h("div", "ar-grid");
   if(filtered.length === 0){
-    wall.appendChild(h("div", "empty-note", "아직 이 조건에 맞는 기록이 없습니다."));
+    grid.appendChild(h("p", "ar-empty", "아직 이 조건에 맞는 기록이 없습니다."));
   } else {
     filtered.forEach((e, i) => {
-      const c = h("div", "wall-card" + (e._new ? " new-card" : ""));
-      c.style.animationDelay = (i * 0.05) + "s";
+      const c = h("button", "ar-card" + (e._new ? " mine" : "") + (e.snapshot ? " has-snap" : ""));
+      c.type = "button";
+      c.setAttribute("aria-expanded", "false");
+      c.style.animationDelay = (i * 0.04) + "s";
+      const named = e.name && e.name !== "익명";
       c.innerHTML = `
-        ${e.snapshot ? `<img class="snap-thumb" src="${e.snapshot}" alt="내가 만든 병 속 풍경">` : ""}
-        <div class="top-meta"><span>${e.region}</span><span class="state-tag">${stateLabel(e.state)}</span></div>
-        <div class="txt">"${e.text}"</div>
-        <div class="kw-row">${e.keywords.map(k => `<span class="kw">${k}</span>`).join("")}</div>
-        <div class="by${(e.name && e.name !== "익명") ? " named" : ""}">— ${e.name || "익명"}</div>
-      `;
-      wall.appendChild(c);
+        <span class="ar-meta">${e._new ? `<b>나의 기록</b> · ` : ""}${e.region} · ${stateLabel(e.state)}</span>
+        ${e.snapshot ? `<img class="ar-snap" src="${e.snapshot}" alt="">` : ""}
+        <span class="ar-text">“${e.text}”</span>
+        <span class="ar-foot"><span class="ar-kw">${e.keywords.join(" · ")}</span><span class="ar-by${named ? " named" : ""}">— ${e.name || "익명"}</span></span>`;
+      c.onclick = () => {
+        const open = c.classList.toggle("open");
+        c.setAttribute("aria-expanded", open ? "true" : "false");
+      };
+      grid.appendChild(c);
     });
   }
-  d.appendChild(wall);
+  d.appendChild(grid);
 
-  const again = h("button", "restart-btn", "다시 한 문장 남기기");
-  again.onclick = restart;
+  const again = h("button", "cta ar-again");
+  again.type = "button";
+  again.innerHTML = `다시 한 문장 남기기${ICON_NEXT}`;
+  again.onclick = () => { restart(); window.scrollTo(0, 0); };
   d.appendChild(again);
   return d;
 }
