@@ -80,6 +80,20 @@ export function runSelfChecks(scene) {
     `[selfCheck] 배 몸체 그룹이 ${fleet.body.length}개 — GLB 재질이 쪼개졌는지 확인`
   );
 
+  // 5.5) 배 칠 판정(HANDOFF-map 18.8). 모양으로 부품을 가르므로 GLB를 다시 뽑거나 굽는 배율이
+  //      바뀌면 조용히 틀린다 — 마스트·계단이 선체색으로 돌아가거나 뱃전 윗단까지 판자가 깔린다.
+  const L = fleet.look;
+  if (L) {
+    console.assert(L.mast >= 1 && L.rails === 2 && L.treads >= 2,
+      `[selfCheck] 선체 부품 판정이 어긋남 — 마스트 ${L.mast}(≥1) · 계단 옆판 ${L.rails}(2) · 디딤판 ${L.treads}(≥2). ` +
+      `GLB 선체 모양이나 굽는 배율(1)이 바뀌었는지 확인 (shared/boat-look.js markHullParts)`);
+    console.assert(L.deckShare >= 0.5 && L.deckShare <= 0.95,
+      `[selfCheck] 갑판 넓이 비율 ${L.deckShare.toFixed(2)} — 0.5~0.95 밖. 판자가 뱃전 윗단까지 깔렸거나 갑판이 빠졌다 ` +
+      `(boat-paint.js markDeckFaces)`);
+    console.assert(L.lampTwin !== false,
+      `[selfCheck] 램프 한 쌍의 반대쪽 자리를 못 찾아 기본값을 씀 — 마스트 가로대 모양 확인 (shared/boat-look.js lampTwinZ)`);
+  }
+
   // 6) 자리 풀이 정원을 감당하는가. 못 하면 뒤에 온 기록이 조용히 안 그려진다.
   const pool = new SlotPool();
   console.assert(

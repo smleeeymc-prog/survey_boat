@@ -7,11 +7,12 @@
  * ── 배 몸체: 메쉬 조각마다 InstancedMesh 하나 ────────────────────────────────
  * GLB의 메쉬 조각(재질 하나 = 조각 하나)마다 InstancedMesh를 하나씩 만들고 전부 같은
  * 인스턴스 행렬을 공유한다. draw call은 조각 수(선체·캐빈·굴뚝·굴뚝 받침 = 4)로 고정 —
- * 배가 80척이든 800척이든 늘지 않는다. 재질은 GLB 원본 그대로 두고, 선체에만
- * instanceColor를 걸어 배마다 색조를 조금씩 다르게 한다.
+ * 배가 80척이든 800척이든 늘지 않는다. 재질은 GLB 원본을 복제해 설문 배와 같은 칠
+ * (boat-paint.js)만 얹고, 선체에만 instanceColor를 걸어 배마다 색조를 조금씩 다르게 한다.
  *
- * 캐빈은 색을 바꾸지 않는다. 키워드는 배에 나타나는 요소로만 표현한다(사용자 결정,
- * 설문 화면과 같은 규칙). 캐빈은 GLB에 칠해 둔 크림색 재질을 그대로 쓴다.
+ * 캐빈 색은 키워드에 따라 바뀌지 않는다. 키워드는 배에 나타나는 요소로만 표현한다(사용자 결정,
+ * 설문 화면과 같은 규칙). 캐빈·갑판·마스트·계단은 설문 배와 같은 칠(모든 배 공통)을 입는다 —
+ * boat-paint.js, HANDOFF-map 18장.
  *
  * ── 키워드 요소: 그 요소를 단 배에만 인스턴스를 둔다 ─────────────────────────
  * 키워드마다 배에 붙는 요소(공구함·램프·튜브·고양이…)가 있다(shared/glb-nodes.js
@@ -42,6 +43,8 @@ import {
   GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, SCENE_LOOK, AO,
 } from "./config.js";
 import { buildCloverGeometry, makeCloverMaterial } from "./clover.js";
+import { patchMaterial } from "./material-patch.js";
+import { prepareBoatGeometry, applyBoatPaint } from "./boat-paint.js";
 
 // GLB 노드 이름은 shared/glb-nodes.js 한 곳에서 온다 — 설문 화면도 같은 값을 읽는다.
 // 이름이 바뀌면 조용히 역할이 사라지므로 selfCheck가 존재를 확인한다.
@@ -154,11 +157,11 @@ function cloneMaterial(src) {
  *
  * 정점 속성은 인스턴스가 공유하므로 InstancedMesh에서도 그대로 된다.
  * _ao 가 없는 지오메트리에 이 재질을 쓰면 셰이더가 깨지므로, 부르는 쪽이 속성을 확인한다.
- * onBeforeCompile은 한 재질에 하나뿐이다 — 두 번째 패치가 생기면 합치는 함수부터 둘 것
- * (대입하면 앞의 것이 사라진다).
+ * 같은 재질에 배 칠(boat-paint.js)도 걸리므로 onBeforeCompile 을 직접 대입하지 않고
+ * patchMaterial 로 겹쳐 건다 — 대입하면 뒤에 건 것이 앞의 것을 지운다(HANDOFF-map 18.3).
  */
 function patchBakedAO(mat) {
-  mat.onBeforeCompile = (shader) => {
+  patchMaterial(mat, "bakedAO", (shader) => {
     shader.uniforms.uAOAmt = { value: AO.amount };
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float _ao;\nvarying float vAO;")
@@ -171,9 +174,7 @@ function patchBakedAO(mat) {
         reflectedLight.directDiffuse *= mix(1.0, ao, ${AO.direct.toFixed(3)});
         reflectedLight.directSpecular *= ao;
         #include <aomap_fragment>`);
-  };
-  // 같은 종류의 재질끼리 셰이더 프로그램을 나눠 쓰는데, 패치한 것과 안 한 것이 섞이지 않게.
-  mat.customProgramCacheKey = () => "bakedAO";
+  });
 }
 
 export class ShipFleet {
@@ -245,10 +246,15 @@ export class ShipFleet {
       }
     }
 
+    // 2.5) 설문 배와 같은 칠을 할 준비 — 선체 부품·갑판 판정, 램프 한 쌍(boat-paint.js).
+    //      선체 지오메트리가 인덱스를 푼 것으로 바뀌므로, 아래(색조 속성·클로버 투영)는 바뀐 것을 쓴다.
+    this.look = prepareBoatGeometry(baked, ship);
+
     // 3) InstancedMesh를 만든다.
     for (const b of baked) {
       const mat = cloneMaterial(b.child.material);
       if (b.geo.attributes._ao) patchBakedAO(mat);
+      applyBoatPaint(b, mat);
       const inst = makeInstanced(b.geo, mat, this.capacity, `fleet:${b.kw || b.role}:${b.child.name}`);
 
       if (b.role === "prop") {
@@ -287,7 +293,7 @@ export class ShipFleet {
     // 4) '우연' 클로버 — GLB에 없는 요소라 선체 표면에 투영해서 만든다(clover.js).
     //    늘 카메라 쪽 뱃전에 만든다 — 설문이 둘러볼 때 옮겨 주는 것과 같은 결과다.
     if (CLOVER_KEYWORD) {
-      const cg = hull ? buildCloverGeometry(hull.geo, FACE_SIGN) : null;
+      const cg = hull ? buildCloverGeometry(hull.geo, FACE_SIGN) : null;   // hull.geo = 2.5)에서 바뀐 것
       if (!cg) {
         this.missing.push(`${CLOVER_NODE}(선체 투영 실패 — CLOVER.along/height 확인)`);
       } else {

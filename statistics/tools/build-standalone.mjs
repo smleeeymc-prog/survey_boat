@@ -41,12 +41,14 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 // shared/ 가 먼저다 — config.js가 그 값들을 다시 내보내기 때문에 앞에 평가돼 있어야 한다.
 // db-config.js → record-store.js 순서 (record-store 가 db-config 를 읽는다). 시안은 목업으로 돌지만
 // store.js 가 이 둘을 import 하므로 빠지면 이름이 없어 죽는다. SDK는 동적 import라 굽지 않는다.
+// boat-look.js 는 배 칠 값·판정(설문과 같이 씀) — boat-paint.js 가 읽는다.
 const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js", "look-tokens.js",
-  "db-config.js", "record-store.js"];
+  "boat-look.js", "db-config.js", "record-store.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
-  // clover.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만든다.
-  "clover.js", "fleet.js", "camera.js", "store.js",
+  // clover.js·boat-paint.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만들고 배를 칠한다.
+  // material-patch.js 는 boat-paint.js·fleet.js 둘 다 쓰므로 그 앞.
+  "clover.js", "material-patch.js", "boat-paint.js", "fleet.js", "camera.js", "store.js",
   // 통계 모듈은 panel.js 보다 먼저다 — Panel 생성자가 StatDeck 을 만들고, StatDeck 은
   // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
   // text.js 는 셋 모두가 쓰는 글자 도구, insights.js 는 metrics 의 MOTIVE_OF 를 쓴다.

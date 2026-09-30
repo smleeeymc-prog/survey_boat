@@ -33,6 +33,8 @@ statistics/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
    ├─ ocean.js       파도 셰이더 + waveHeightAt  ← 온보딩 씬에서 그대로 확장
    ├─ fleet.js       배 몸체 + 키워드 요소를 InstancedMesh로
+   ├─ boat-paint.js  설문 배와 같은 칠 — 갑판 판자·마스트·계단·캐빈·굴뚝 받침·튜브 톤·램프 한 쌍
+   ├─ material-patch.js  한 재질에 셰이더 패치 여럿 겹쳐 걸기 (구운 AO + 배 칠)
    ├─ clover.js      '우연' 클로버 데칼 (GLB에 없어서 선체에 투영해 만든다)
    ├─ style.js       "답변 → 배의 모습" 매핑이 있는 유일한 곳
    ├─ motion.js      푸아송 디스크 배치 + 흐름
@@ -163,6 +165,7 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
 | `ship-tokens.js` | `SHIP_FORWARD_OFFSET`, `SHIP_DRAFT` | 루트 모듈 / `js/fleet.js` |
 | `glb-nodes.js` | GLB 노드 이름, `KEYWORD_NODES`(키워드 → 요소), `SIDE_PROPS`, `CLOVER` | 루트 모듈 / `js/fleet.js`·`js/clover.js` |
 | `look-tokens.js` | `SCENE_LOOK`(조명 비율·거칠기 상한), `HEMI`(반구광), `AO` | 루트 모듈 / `js/main.js`·`js/fleet.js` |
+| `boat-look.js` | `BOAT_PAINT`(배 칠 색), `TUBE_TINT`, `LAMP`, 부품 판정 `markHullParts`·`lampTwinZ` | 루트 모듈 / `js/boat-paint.js` |
 | `tokens.css` | UI 색, `--scene-grade`, `--scene-vignette` | 두 `index.html` |
 | `deps.js` | three 버전 | 루트 모듈 / `js/selfcheck.js` |
 | `survey-taxonomy.js` | `REGIONS`, `STATES`, `KEYWORDS` — **바꾸면 보안 규칙 재생성·배포** | 루트 설문 UI / `js/config.js` |
@@ -368,7 +371,8 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 | 선체 색조 | `instanceColor` (GLB 원본 색에 흰색 근처 색조를 곱함 — 원본 색을 안 버림) — **미확정, 지금 난수** | 공짜 |
 
 **캐빈 색은 채널이 아닙니다.** 키워드는 배에 나타나는 요소로만 표현한다는 것이 사용자
-결정이고(설문과 같은 규칙), 캐빈은 GLB에 칠해 둔 크림색 재질을 그대로 씁니다.
+결정이고(설문과 같은 규칙), 캐빈은 모든 배가 설문 배와 같은 크림 페인트를 입습니다
+(`boat-paint.js` — 아래 "설문 배 모습").
 
 매핑을 바꾸거나 채널을 늘릴 때 손대는 파일은 **`style.js` 하나**입니다. 새 채널에
 인스턴스 컬러를 걸려면 `fleet.js`의 `TINT_ROLES`에 한 줄만 더하면 됩니다.
@@ -428,7 +432,7 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 > `CLOVER.size`에 배수를 곱하면 된다.
 
 **캐빈 색은 없앴다.** 사용자 결정 — 키워드는 요소로만 나타낸다. 캐빈은 GLB의 크림색
-재질 그대로다. 지도만 쓰던 `KEYWORD_COLOR`·`KEYWORD_PROP`·`CABIN_BASE_COLOR`는
+재질 그대로다(09-30부터는 설문과 같은 페인트 — 아래 "설문 배 모습"). 지도만 쓰던 `KEYWORD_COLOR`·`KEYWORD_PROP`·`CABIN_BASE_COLOR`는
 `shared/`에서 지웠다(설문은 셋 다 안 읽는다 — 지우기 전에 확인했다).
 
 ### 룩 — 조명·거칠기·색보정
@@ -444,6 +448,10 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 **조명은 설문과 숫자까지 같다.** 같은 시간대(`day`)에서 두 화면의 조명을 읽어 대조했다 —
 주변광 0.22 `#ffffff`, 해 1.7325 `#fff7e2`, 테두리광 0.33 `#bfe7ef`, 반구광 0.792
 하늘 `#b0d1da`·바닥 `#2083a9`. 설문에만 있는 Spot은 등대 불빛이라 가져오지 않았다.
+**자리는 z만 거울상이다**(09-30~). 설문 카메라는 배의 +Z 쪽, 지도 카메라는 −Z 쪽에서 봐서, 팔레트
+`sunPos`를 그대로 쓰면 지도에서만 해가 배 뒤로 가 카메라 쪽 옆면이 전부 그늘이었다(선체·마스트·캐빈이
+설문 실측의 0.6~0.7배). 해·테두리광의 z를 뒤집어 두 화면이 배를 같은 쪽 빛으로 찍는다(`main.js`).
+물은 이 조명을 안 받고 반짝임 방향을 따로 가져서(`ocean.js` `uSunDirection`) 그대로다.
 
 **구운 AO도 넣었다** (`look-tokens.js` `AO`, 설문과 같은 식·같은 세기). 인수인계에서는
 "멀리서는 효과가 작으니 선택"이었는데, 켜고 끈 근접 장면을 나란히 비교해 보니 고물 쪽
@@ -454,6 +462,30 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 
 **가져오지 않은 것** — 광택·테두리 빛·면 색 변주·부드러운 그림자·틸트시프트는 "가까이서
 한 척" 전용이라 멀리서 수십 척을 보는 지도에는 안 보이거나 비싸다(인수인계 5.4).
+
+### 설문 배 모습 — 칠·램프 한 쌍 (2026-09-30, `../HANDOFF-map.md` 18장)
+
+설문에서 사용자가 고른 배 모습을 지도 80척에 옮겼다. 값과 모양 판정은 `shared/boat-look.js`(설문과 같이 봄),
+three에 기대는 부분은 `js/boat-paint.js`.
+
+| 무엇 | 어떻게 | 비용 |
+|---|---|---|
+| 갑판 — 붉은 갈색 판자, 판자 끝 이음매 | 선체 셰이더 패치. 갑판 면은 모양으로 고른다(`markDeckFaces`) | 없음 |
+| 마스트·계단 옆판·디딤판 단색 | 같은 패치. 부품은 `markHullParts`(마스트 3 · 옆판 2 · 디딤판 6) | 없음 |
+| 캐빈 크림 페인트·짙은 판자 지붕·창·문 | 캐빈 재질 패치(`config.js` `CABIN_DECOR`로 창·문 끄기) | 없음 |
+| 굴뚝 받침 회색빛 크림 | 같은 패치, 결만 | 없음 |
+| 튜브 톤 낮춤 | 재질 색 배수 `TUBE_TINT` | 없음 |
+| 램프 한 쌍 | 가로대 반대쪽 끝에 같은 램프를 굽을 때 합친다(`lampTwinZ`) | 없음 (draw call 그대로) |
+
+- **패치는 `material-patch.js`로 겹쳐 건다.** `onBeforeCompile`은 재질에 하나뿐이라 구운 AO와 칠을 차례로 돈다.
+- **칠은 인스턴스 색조보다 먼저 들어간다**(`map_fragment` 뒤). 배마다 다른 선체 색조가 갑판·마스트에도 옅게 남아
+  한 배의 선체와 갑판이 서로 다른 배처럼 보이지 않는다.
+- **좌표 부호.** 지도는 뱃머리 보정 회전까지 구워서 뱃머리가 +X다(설문 코드는 −X). 캐빈 뱃머리 쪽 창 넷은
+  +X 면, 옆면은 창이 뱃머리 쪽·문이 선미 쪽이 되게 가로를 뒤집었다.
+- **색은 `BOAT_PAINT`를 그대로 쓰고, 지도에서 다르게 찍히는 것만 `config.js` `MAP_PAINT_GAIN`으로 맞춘다.**
+  지금은 갑판 하나(레퍼런스 `#845044`에 맞춤). `BOAT_PAINT`를 고치면 설문 배가 바뀐다.
+- **뺀 것:** 램프 흔들림과 밤 램프 불빛(사용자 결정), 램프 조명·수면 반사(80척이면 조명 80개).
+- `selfcheck.js`가 부품 개수·갑판 비율·램프 자리를 확인한다 — GLB를 다시 뽑으면 조용히 틀어지는 종류다.
 
 ## 화면 톤 — 설문(시안 B′)과 같다
 

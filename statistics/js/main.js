@@ -120,11 +120,16 @@ class MapScene {
     // 물은 커스텀 셰이더라 이 조명들을 안 받는다(설문도 같다).
     const B = C.SCENE_BRIGHTNESS, L = C.SCENE_LOOK;
     this.scene.add(new THREE.AmbientLight(P.amb, P.ambI * B * L.ambScale));
+    // 해·테두리광 자리는 팔레트 값의 z를 뒤집어 쓴다. 설문 카메라는 배의 +Z 쪽(좌현)에서, 지도 카메라는
+    // −Z 쪽(우현)에서 본다 — 지도 화면은 설문 화면을 배 중심선에 대해 거울에 비춘 것이다. 팔레트 값을
+    // 그대로 쓰면 해가 배 뒤로 가서 카메라 쪽 옆면이 전부 그늘이 됐다(선체·마스트·캐빈이 설문 실측의
+    // 0.6~0.7배 — HANDOFF-map 18.9). 조명도 같이 비춰야 두 화면의 배가 같은 색으로 찍힌다.
+    // 물은 이 조명을 안 받고 반짝임 방향을 따로 가진다(ocean.js uSunDirection) — 그대로 둔다.
     const sun = new THREE.DirectionalLight(P.sun, P.sunI * B * L.sunScale);
-    sun.position.set(P.sunPos[0], P.sunPos[1], P.sunPos[2]).multiplyScalar(6);
+    sun.position.set(P.sunPos[0], P.sunPos[1], -P.sunPos[2]).multiplyScalar(6);
     this.scene.add(sun);
     const rim = new THREE.DirectionalLight(P.rim, P.rimI * B);   // 테두리광은 설문도 배수 없이 팔레트 값
-    rim.position.set(-3, 1, -2).multiplyScalar(6);
+    rim.position.set(-3, 1, 2).multiplyScalar(6);                // 설문 (-3, 1, -2)의 z 거울상 (위 참고)
     this.scene.add(rim);
     // 반구광 — 하늘 쪽은 팔레트 하늘 띠 하나를 회색 쪽으로 조금 뺀 색(원색 그대로면 배가
     // 하늘색으로 물든다), 바닥 쪽은 바닷색을 어둡게 한 색.
