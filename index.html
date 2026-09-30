@@ -1602,9 +1602,76 @@ ${GERSTNER_GLSL}
       this._installSurfaceFx(this.islandGroup);
       if (this._softShadows) this.setSoftShadows(true);   // 메뉴가 모델보다 먼저 켰으면 지금 붙인다
       this._measureIslandRest(ship, beachhouse);
+      this._prewarm();
     } catch (err) {
       console.error("모델(GLB) 로드 실패:", err);
     }
+  }
+
+  /**
+   * 셰이더·버퍼를 로드 직후에 미리 올린다 — 첫 화면에서 하늘을 내려올 때의 렉(09-30 사용자).
+   *
+   * three.js는 물체가 처음 그려지는 순간에 그 재질의 셰이더를 컴파일하고 지오메트리를 GPU에 올린다.
+   * 배는 인트로 내내 숨어 있다가 "뽁" 나타나므로, 그 한 프레임에 선체(나무)·캐빈(페인트)·굴뚝 받침·굴뚝
+   * 셰이더 4개가 한꺼번에 컴파일됐다(헤드리스 실측 한 프레임 236~309ms, 평소 2ms). 섬 바위도 내려오는
+   * 도중 화면에 처음 들어올 때 2개가 컴파일됐다(107ms). 폰은 몇 배 더 걸린다.
+   *
+   * 그래서 첫 화면(글을 읽는 동안)에 한 번:
+   *   1) 숨은 것을 전부 잠깐 보이게 하고 compileAsync — 병렬 컴파일 확장이 있으면 메인 스레드를 덜 막는다.
+   *      병·키워드 소품·램프 번짐 같은 나중에 나오는 것도 같이 된다.
+   *   2) 준비되면 1×1 픽셀 뷰포트로 한 번 그린다 — 지오메트리·텍스처 업로드와 그림자 패스(배만 그림자를
+   *      드리우므로 그림자 셰이더도 배가 처음 보일 때 생긴다)까지. 화면에는 1픽셀뿐이고 다음 프레임이 덮는다.
+   *   3) 배 둘레 물결 거리장을 쉬는 자세로 미리 굽는다(내려앉는 순간 굽던 10~40ms를 없앤다, 6.19).
+   * 조명은 건드리지 않는다 — 조명 개수가 달라지면 다른 셰이더가 컴파일돼 헛일이 된다(6.11).
+   */
+  _prewarm() {
+    const r = this.renderer;
+    // 조명이 숨은 가지 안에 있으면 그 가지를 보이게 할 때 조명도 켜진다 → 그 조명만 잠깐 끈다
+    const forceShow = () => {
+      const shown = [], culled = [], lights = [];
+      const hiddenAncestor = (o) => { for (let q = o.parent; q; q = q.parent) if (!q.visible) return true; return false; };
+      this.scene.traverse((o) => { if (o.isLight && o.visible && hiddenAncestor(o)) lights.push(o); });
+      this.scene.traverse((o) => {
+        if (o.isLight) return;
+        if (!o.visible) { shown.push(o); o.visible = true; }
+        if (o.frustumCulled && (o.isMesh || o.isSprite || o.isPoints || o.isLine)) { culled.push(o); o.frustumCulled = false; }
+      });
+      lights.forEach((l) => { l.visible = false; });
+      return () => {
+        shown.forEach((o) => { o.visible = false; });
+        culled.forEach((o) => { o.frustumCulled = true; });
+        lights.forEach((l) => { l.visible = true; });
+      };
+    };
+
+    // 3) 배 거리장 — 소품은 아직 숨은 채(키워드 전이라 내려앉을 때 굽던 것과 같다), 배만 잠깐 보이게
+    if (!this._sdfBoat && this._dropT >= 1) {
+      const v = this.boat.visible;
+      this.boat.visible = true;
+      this._sdfBoat = this._bakeContactSDF(this.boat, -this.boat.position.y);
+      this.boat.visible = v;
+      if (this._sdfBoat) this.waterMesh.material.uniforms.uSdfBoat.value = this._sdfBoat.tex;
+    }
+
+    const drawOnePixel = () => {
+      const restore = forceShow();
+      const vp = r.getViewport(new THREE.Vector4()), sc = r.getScissor(new THREE.Vector4()), st = r.getScissorTest();
+      try {
+        r.setViewport(0, 0, 1, 1); r.setScissor(0, 0, 1, 1); r.setScissorTest(true);
+        r.render(this.scene, this.camera);
+      } finally {
+        r.setViewport(vp); r.setScissor(sc); r.setScissorTest(st);
+        restore();
+        // 이 한 번의 무거운 프레임이 다음 dt·저사양 판정(_perfSamples)에 들어가지 않게 시계를 비운다
+        this.clock.getDelta();
+      }
+    };
+
+    const restore = forceShow();
+    let pending = null;
+    try { pending = r.compileAsync ? r.compileAsync(this.scene, this.camera) : (r.compile(this.scene, this.camera), null); }
+    finally { restore(); }   // 컴파일할 재질은 위에서 이미 모았다 — 기다리는 동안 화면엔 원래대로
+    Promise.resolve(pending).then(drawOnePixel, (e) => { console.warn("[prewarm] 컴파일 실패 — 처음 보일 때 컴파일된다", e); });
   }
 
   /**
