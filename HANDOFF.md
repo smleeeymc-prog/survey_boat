@@ -35,6 +35,7 @@
 | 설문 페이지 | `index.html`, `ui/`, `assets/`, `tools/`, `dev/`, 이 문서 | "survey_boat HANDOFF 작업" |
 | 머무름의 지도 | `statistics/` 전체 | "머무름의 지도 화면 작업" |
 | 공유 | `statistics/shared/` | **양쪽 다** — 고치면 두 화면이 같이 바뀐다 |
+| DB 연동 (Firebase) | 새 파일: `statistics/shared/db-config.js` · `record-schema.js` · `record-store.js`, `ui/record-sync.js`, `firebase/` 전체 · 연결에 필요한 줄만: `ui/survey.js`(제출·아카이브·스냅샷), `index.html`(스크립트 태그), `statistics/js/store.js`(FirestoreStore), `statistics/js/main.js`(저장소 선택), `statistics/index.html`(스크립트 태그), `statistics/tools/build-standalone.mjs`(새 shared 파일) · 문서: 이 문서 13장, `HANDOFF-map.md` 새 장, `statistics/README.md` 백엔드 항목 | "DB 연동" (09-30~) — 디자인·연출·카메라·씬은 건드리지 않는다 |
 
 `statistics/shared/`는 두 화면이 같이 읽는 원본이다 (파도 · 팔레트 · 배 토큰 · 설문 분류값).
 여기 있는 값을 자기 파일에 다시 옮겨 적지 말 것 — 예전에 그렇게 갈라져서 한 번 합친 자리다.
