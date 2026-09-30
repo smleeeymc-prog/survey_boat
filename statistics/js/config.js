@@ -102,8 +102,17 @@ export const FLOW_DIR = -1;            // 화면에서 왼→오른쪽으로 흐
 // 배가 사는 띠. 폭을 다 지나면 반대쪽 끝으로 감긴다(토러스).
 // 모두 같은 속도라 상대 위치가 절대 안 변하고, 감기는 것도 정확히 폭만큼이라
 // 처음 한 번 겹치지 않게 놓으면 영원히 안 겹친다.
-// 폭(80)은 가장 먼 배(깊이 48)가 가로 화면(비율 1.6)에서도 화면 밖에서 감기도록 잡았다.
-export const FLOW_CORRIDOR_W = 80;
+// 폭은 상수로 박지 않고 FLOW_ASPECT_MAX에서 역산한다(카메라 절 아래 FLOW_CORRIDOR_W).
+// [변경] 예전엔 80으로 박고 "가로 화면(비율 1.6)"을 기준으로 삼았는데, 전시장 가로 화면은
+//   16:9(1.78)라 가장 먼 배 깊이에서 화면 반폭이 40.3 — 띠 반폭 40보다 넓어서 배가 화면
+//   안에서 감겼다(selfcheck 7). 기준 화면비만 적어 두면 카메라를 고쳐도 폭이 따라온다.
+// 지원하는 가장 넓은 화면비. 이보다 넓은 화면에서 띄우면 selfcheck 7이 알려 준다.
+// 더 넓게 잡으면 같은 80척이 더 긴 띠에 퍼져 화면에 보이는 배가 그만큼 준다 —
+// 21:9(2.33)면 띠가 112로 길어져 화면 속 배가 3/4 남짓이 된다. 쓸 화면에 맞춰 올릴 것.
+export const FLOW_ASPECT_MAX = 16 / 9;
+// 화면 가장자리 너머로 이만큼 더 가서 감긴다. 좌우 시선 흔들림(CAM_SWAY 0.035rad)이
+// 깊이 48에서 1.7, 배 반 길이가 1 남짓 — 합쳐도 3이면 감기는 배가 화면에 걸리지 않는다.
+export const FLOW_WRAP_MARGIN = 3;
 export const FLOW_DEPTH_MIN = 10;      // 이보다 가까우면 화면 아래로 잘려 나간다
 export const FLOW_DEPTH_MAX = 48;      // 이보다 멀면 안개에 잠긴다
 // 배끼리 최소 이 만큼 떨어뜨린다 (푸아송 디스크). 배 길이 약 1.5의 3배 가까이라
@@ -160,6 +169,17 @@ export const CAM_BOB = 0.30;           // 위아래 진폭 (월드 단위)
 export const CAM_BOB_SEC = 23;
 export const CAM_SWAY = 0.035;         // 좌우 시선 흔들림 (라디안, 약 2도)
 export const CAM_SWAY_SEC = 71;
+
+// 배가 사는 띠의 폭(흐름 절 참고). 카메라 값을 읽어야 해서 여기 둔다 — const는 호이스팅되지
+// 않으므로 CAM_* 보다 위에 두면 모듈 로드 때 터진다(standalone 빌드도 같은 순서로 이어붙인다).
+// 가장 먼 배(FLOW_DEPTH_MAX)의 화면 반폭 — camera.js frameHalfWidthAt과 같은 식 — 을
+// FLOW_ASPECT_MAX 화면에서 재고, 여유를 더해 정수로 올린다. 16:9면 반폭 40.3 + 3 → 44, 폭 88.
+// 폭이 넓어져도 흐름 속도는 그대로다(속도는 화면 폭에서 역산하지 띠 폭과 무관, main.js
+// flowSpeed). 푸아송 자리는 폭에 비례해 늘 뿐이라 정원 검사(selfcheck 6)는 더 넉넉해진다.
+export const FLOW_CORRIDOR_W = 2 * Math.ceil(
+  Math.hypot(FLOW_DEPTH_MAX, CAM_HEIGHT) * Math.tan((CAM_FOV * Math.PI) / 360) * FLOW_ASPECT_MAX
+  + FLOW_WRAP_MARGIN
+);
 
 // ── 새 기록 연출 ────────────────────────────────────────────────────────────
 // [재설계] 예전에는 카메라를 세워 두고 배를 화면 한가운데로 끌어와 2.6배로 부풀린 뒤,

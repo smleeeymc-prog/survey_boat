@@ -104,11 +104,13 @@ export function runSelfChecks(scene) {
 
   // 7) 띠 폭이 화면보다 넓은가. 좁으면 배가 화면 안에서 순간이동하듯 감긴다.
   //    가장 먼 배(FLOW_DEPTH_MAX)의 화면 가로 절반보다 띠의 절반이 커야 한다.
+  //    폭은 FLOW_ASPECT_MAX에서 역산하므로(config.js), 이게 걸리면 그보다 넓은 화면에서 띄운 것이다.
   const halfFrame = scene.cam.frameHalfWidthAt(C.FLOW_DEPTH_MAX);
   console.assert(
     C.FLOW_CORRIDOR_W / 2 > halfFrame + 2,
     `[selfCheck] 띠 폭 ${C.FLOW_CORRIDOR_W}의 절반이 화면 가로 절반 ${halfFrame.toFixed(1)}보다 ` +
-    `충분히 크지 않다 — 배가 화면 안에서 감긴다. FLOW_CORRIDOR_W를 키울 것`
+    `충분히 크지 않다 — 배가 화면 안에서 감긴다. 화면비 ${scene.cam.aspect.toFixed(2)}가 ` +
+    `FLOW_ASPECT_MAX(${C.FLOW_ASPECT_MAX.toFixed(2)})보다 넓으면 그걸 올릴 것`
   );
 
   // 8) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
