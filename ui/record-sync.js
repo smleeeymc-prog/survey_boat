@@ -327,6 +327,7 @@ var RecordSync = (function () {
 
   return {
     submit, attachThumb, archiveView, lazyThumb, newId: S.newId, safeImage: S.safeImage,
+    ready,   // → "mock" | "emu" | "live" — 목업일 때만 배지를 띄우는 데 쓴다(survey.js)
     // 검증·콘솔용
     get mode() { return mode; }, readQueue, flush, toRecord, toEntry,
   };

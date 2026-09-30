@@ -31,6 +31,7 @@ body{
   justify-content:flex-start; overflow-x:hidden;
 }
 /* 프로토타입 표시 — 위쪽은 단계 표시줄이 쓰므로 맨 아래에 작게 */
+#proto-badge[hidden]{ display:none; }
 #proto-badge{
   position:fixed; left:50%; bottom:calc(6px + var(--safe-b)); transform:translateX(-50%); z-index:999;
   background:rgba(22,22,30,.72); color:var(--gold2); font-size:10px; white-space:nowrap;

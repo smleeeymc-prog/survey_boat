@@ -74,7 +74,8 @@
 </head>
 <body>
 
-<div id="proto-badge">PROTOTYPE · 목업 데이터</div>
+<!-- 목업(?mock=1 또는 DB 설정 없음)으로 돌 때만 보인다 — 실DB 전시 화면엔 없다(09-30 사용자). survey.js가 켠다 -->
+<div id="proto-badge" hidden>PROTOTYPE · 목업 데이터</div>
 <div id="bgFallback"></div>
 <div id="sceneStage"><canvas id="bottleCanvas"></canvas></div>
 <div id="app"></div>

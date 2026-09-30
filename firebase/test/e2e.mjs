@@ -14,7 +14,7 @@
  * 확인하는 것 (HANDOFF.md 13장 "테스트")
  *   1 설문을 끝까지 → records·thumbs 문서      5 오프라인 제출 → 결과 화면 + 대기열 1건 → 복구 후 1건(중복 없음)
  *   2 지도를 열어 둔 채 제출 → onInsert         6 지도 콜드부팅 실패 → 캐시로 onReady → 붙으면 차이만
- *   3 운영자 숨김 → onRemove                    7 설정이 빈 상태(목업) — 두 화면·세 화면 크기, 콘솔 에러 0
+ *   3 운영자 숨김 → onRemove                    7 목업(?mock=1) — 두 화면·세 화면 크기, 배지, 콘솔 에러 0
  *   4 아카이브: 새 기록·썸네일, <img onerror>·<script> 문장은 글자 그대로
  * ========================================================================== */
 
@@ -182,6 +182,7 @@ try {
   const myText = "지도가 이 문장을 받아야 한다 — 😀 이모지도";
   await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다" });
   check("설문: 결과 화면이 뜬다", await survey.locator(".res-sentence").isVisible());
+  check("설문: DB로 돌 땐 목업 배지가 없다", await survey.evaluate(() => document.getElementById("proto-badge").hidden));
 
   const mine = await waitFor(async () => (await adminDocs("records", where("text", "==", myText)))[0], { label: "records 문서" });
   check("records 문서가 생긴다 (스키마 필드 전부·서버 시각)",
@@ -329,14 +330,16 @@ try {
   await ctxC.close();
   await ctxB.close();
 
-  // ═══ 7 — 설정이 빈 상태(목업) ═════════════════════════════════════════════
-  console.log("\n[7] DB 설정이 빈 상태 — 목업");
+  // ═══ 7 — 목업 ═════════════════════════════════════════════════════════════
+  // 원래 "설정이 빈 상태"를 봤는데, 09-30 실제 웹 설정값(ibda-2026-exhibition)이 들어간 뒤로는 주소만 열면 실DB로 간다.
+  // dbMode()는 설정이 비었을 때와 ?mock=1 일 때 같은 "mock"을 돌려주므로(db-config.js) ?mock=1 로 같은 길을 본다.
+  console.log("\n[7] 목업(?mock=1 — 설정이 빈 상태와 같은 길)");
   external.length = 0;
   for (const vp of [{ width: 390, height: 844 }, { width: 360, height: 740 }, { width: 430, height: 932 }]) {
     const ctx = await newContext(vp);
     const p = await ctx.newPage();
     const logs = watch(p);
-    await runSurvey(p, { url: `${BASE}/`, text: "목업에서도 그대로" });
+    await runSurvey(p, { url: `${BASE}/?mock=1`, text: "목업에서도 그대로" });
     await p.locator(".res-bottom .cta").click();
     await p.locator(".ar-card").first().waitFor();
     const info = await p.evaluate(() => ({
@@ -344,10 +347,11 @@ try {
       mine: document.querySelector(".ar-card").classList.contains("mine"), mode: RecordSync.mode,
       queue: localStorage.getItem("yeogi.queue.v1"),
       overflow: document.documentElement.scrollWidth > window.innerWidth,
+      badge: !document.getElementById("proto-badge").hidden,   // 목업 배지는 목업일 때만 보인다(설문 survey.js)
     }));
     const errs = errorsIn(logs);
-    check(`목업 ${vp.width}×${vp.height}: 설문 끝까지 → 아카이브 11장(목업 10 + 나), 대기열 없음, 가로 넘침 없음, 콘솔 에러 0`,
-      info.mode === "mock" && info.n === 11 && info.sub.includes("11개") && info.mine && info.queue === null && !info.overflow && errs.length === 0,
+    check(`목업 ${vp.width}×${vp.height}: 설문 끝까지 → 아카이브 11장(목업 10 + 나), 대기열 없음, 가로 넘침 없음, 목업 배지 보임, 콘솔 에러 0`,
+      info.mode === "mock" && info.n === 11 && info.sub.includes("11개") && info.mine && info.queue === null && !info.overflow && info.badge && errs.length === 0,
       JSON.stringify(info) + (errs.length ? " / " + errs.map((l) => l.text).join(" | ").slice(0, 300) : ""));
     await p.screenshot({ path: path.join(process.env.E2E_SHOTS || HERE, `mock-archive-${vp.width}.png`) }).catch(() => {});
     await ctx.close();
@@ -355,7 +359,7 @@ try {
   const ctxM = await newContext({ width: 540, height: 960 });
   const mm = await ctxM.newPage();
   const mmLogs = watch(mm);
-  await mm.goto(`${BASE}/statistics/`);
+  await mm.goto(`${BASE}/statistics/?mock=1`);
   await waitFor(() => mm.evaluate(() => window.__map && window.__map.records.length === 46 && window.__map.fleet), { label: "목업 지도 46건", timeout: 60000 });
   const mockOk = await mm.evaluate(() => window.__map.records.every((r) => RECORD_SCHEMA.checkRecord(r).length === 0));
   const mmErr = errorsIn(mmLogs);

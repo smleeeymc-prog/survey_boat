@@ -554,4 +554,11 @@ function renderArchive(){
   return d;
 }
 
+// "PROTOTYPE · 목업 데이터" 배지는 목업으로 돌 때만 — 실DB로 도는 전시 화면에서 '목업'이라 쓰면 거짓말이 된다.
+// 테스트 화면(?mock=1)과 실제 화면을 헷갈리지 않게 목업에선 남긴다.
+if (window.RecordSync) RecordSync.ready().then((mode) => {
+  const badge = document.getElementById("proto-badge");
+  if (badge) badge.hidden = mode !== "mock";
+});
+
 render();
