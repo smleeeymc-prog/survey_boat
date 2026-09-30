@@ -35,7 +35,7 @@
 | 설문 페이지 | `index.html`, `ui/`, `assets/`, `tools/`, `dev/`, 이 문서 | "survey_boat HANDOFF 작업" |
 | 머무름의 지도 | `statistics/` 전체 | "머무름의 지도 화면 작업" |
 | 공유 | `statistics/shared/` | **양쪽 다** — 고치면 두 화면이 같이 바뀐다 |
-| DB 연동 (Firebase) | 새 파일: `statistics/shared/db-config.js` · `record-schema.js` · `record-store.js`, `ui/record-sync.js`, `firebase/` 전체 · 연결에 필요한 줄만: `ui/survey.js`(제출·아카이브·스냅샷), `index.html`(스크립트 태그), `statistics/js/store.js`(FirestoreStore), `statistics/js/main.js`(저장소 선택), `statistics/index.html`(스크립트 태그), `statistics/tools/build-standalone.mjs`(새 shared 파일) · 문서: 이 문서 13장, `HANDOFF-map.md` 새 장, `statistics/README.md` 백엔드 항목 | "DB 연동" (09-30~) — 디자인·연출·카메라·씬은 건드리지 않는다 |
+| DB 연동 (Firebase) | 새 파일: `statistics/shared/db-config.js` · `record-schema.js` · `record-store.js`, `ui/record-sync.js`, `firebase/` 전체 · 연결에 필요한 줄만: `ui/survey.js`(제출·아카이브·스냅샷), `index.html`(스크립트 태그), `statistics/js/store.js`(FirestoreStore), `statistics/js/main.js`(저장소 선택), `statistics/index.html`(스크립트 태그), `statistics/tools/build-standalone.mjs`(새 shared 파일) · 문서: 이 문서 13장, `HANDOFF-map.md` 새 장, `statistics/README.md` 백엔드 항목 | "DB 연동" — **09-30 구현 끝**, 남은 건 사용자의 콘솔 작업(13.0). 디자인·연출·카메라·씬은 건드리지 않았다. 이후 DB 쪽 수정은 이 표의 파일 소유 세션이 13장을 보고 한다 |
 
 `statistics/shared/`는 두 화면이 같이 읽는 원본이다 (파도 · 팔레트 · 배 토큰 · 설문 분류값).
 여기 있는 값을 자기 파일에 다시 옮겨 적지 말 것 — 예전에 그렇게 갈라져서 한 번 합친 자리다.
@@ -70,7 +70,10 @@ node statistics/tools/sync-model.mjs
 | `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES` + `SIDE_PROPS`·`CLOVER`(09-27 새로, `GLB_PROPS`는 삭제) | ✓ | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |
 | `look-tokens.js` 조명 비율·톤·거칠기 상한·구운 AO 세기 (09-27 새로) | ✓ | ✓ (조명·거칠기·AO 전부) |
-| `survey-taxonomy.js` 지역·상태·키워드·질문 문구 | ✓ 전역 | ✓ 전역 |
+| `survey-taxonomy.js` 지역·상태·키워드·질문 문구 (**바꾸면 규칙 재생성·배포** — 13.3) | ✓ 전역 | ✓ 전역 |
+| `record-schema.js` 기록 한 건의 모양·검사 (09-30, 보안 규칙도 여기서 생성) | ✓ 전역 | ✓ 전역 |
+| `db-config.js` Firebase 웹 설정값·SDK 버전·`dbMode()` (09-30, 비어 있으면 목업) | ✓ (record-sync 가 동적 import) | ✓ |
+| `record-store.js` Firestore 어댑터 (09-30) | ✓ (동적 import) | ✓ (`store.js`) |
 
 **09-27 지도 세션 답신 → `HANDOFF-map.md` 10장.** 인수인계 체크리스트를 다 반영했고, 설문
 쪽에 부탁할 것 세 가지(`SIDE_SWAP`·`CLOVER`를 shared에서 읽기, `GLB_PROPS` 정리)를 적어 뒀다.
@@ -175,9 +178,8 @@ three 리비전 대조가 붙었다. `build-standalone.mjs`는 `statistics/asset
 `shared/`가 `statistics/` 안에 있는 건 Vercel 제약 때문이고, 이유는
 `statistics/README.md`의 "왜 `shared/`가 `statistics/` 안에 있나"에 적혀 있다.
 
-**지금 두 담당에 걸쳐 있어 사용자 결정이 필요한 것: 13.13 스키마 충돌.**
-설문 페이지 설계와 `statistics/js/store.js`가 같은 DB를 다르게 부르고 있다.
-Firebase를 붙이기 전에 한쪽으로 정해야 한다.
+**13.13 스키마 충돌은 09-30에 해결했다** — 지도(`store.js`) 이름을 정본으로, Firebase 연동까지 구현(13장).
+남은 건 사용자의 Firebase 콘솔 작업(13.0)뿐이다.
 
 ### 브랜치는 `main` 하나뿐이다
 
@@ -312,6 +314,7 @@ survey_boat/
 │   ├─ snap-picker.js   세로 스냅 선택지 (지역·상태)
 │   ├─ share-dial.js    나눔 바늘 다이얼
 │   ├─ share-card.js    결과 화면 이미지 저장·공유하기 (병 스냅샷 + 문장 카드 1080×1350)
+│   ├─ record-sync.js   DB 연결: 제출·대기열·썸네일·아카이브 목록 (09-30, 13장)
 │   └─ survey.js        설문 흐름: state · render() · 단계별 화면
 ├─ dev/look-lab.js     임시 테스트 메뉴 (그림자 토글·FPS)
 ├─ HANDOFF.md          이 문서
@@ -321,6 +324,11 @@ survey_boat/
 │   └─ Scene.glb        구운 결과 (아틀라스 한 장) → sync-model 로 statistics/ 에 복사
 ├─ tools/
 │   └─ build_scene_glb.py  블렌더 GLB → 아틀라스 한 장짜리 웹용 GLB (14장)
+├─ firebase/           Firestore 규칙·색인·배포 설정·테스트 (13장). 앱은 여전히 빌드 없음
+│   ├─ build-rules.mjs     survey-taxonomy + record-schema → firestore.rules (--check)
+│   ├─ firestore.rules     생성 파일 — 손으로 고치지 말 것
+│   ├─ firestore.indexes.json · firebase.json · package.json(테스트 도구만)
+│   └─ test/               규칙 단위 · 어댑터 · 헤드리스 끝-끝
 └─ statistics/
     ├─ assets/Scene.glb   ★ 두 화면이 실제로 읽는 모델
     └─ shared/            ★ 두 화면이 같이 읽는 것 — 여기만 고치면 양쪽이 따라온다
@@ -330,13 +338,16 @@ survey_boat/
         ├─ ship-tokens.js      뱃머리 보정 · 흘수 · 캐빈 기본색
         ├─ glb-nodes.js        GLB 노드 이름 전부 · 키워드 → 요소 매핑
         ├─ deps.js             three 버전 (양쪽 selfCheck가 대조)
-        └─ survey-taxonomy.js  지역 · 상태 · 키워드 · 질문 문구
+        ├─ survey-taxonomy.js  지역 · 상태 · 키워드 · 질문 문구
+        ├─ record-schema.js    기록 한 건의 모양·검사 (보안 규칙도 여기서 생성)
+        ├─ db-config.js        Firebase 웹 설정값 — 비어 있으면 두 화면 모두 목업
+        └─ record-store.js     Firestore 어댑터 (SDK는 동적 import)
 ```
 
 | 어디 | 내용 |
 |---|---|
 | `index.html` `<style>` | 3D 무대만 (배경·캔버스·색보정·결과 전용 비네트·오류 안내) |
-| `ui/*.js` (모듈 아님) | 설문 흐름. `render()`가 단계마다 화면을 통째로 다시 그린다. `state`·`render`는 전역(검증 스크립트가 씀) |
+| `ui/*.js` (모듈 아님) | 설문 흐름. `render()`가 단계마다 화면을 통째로 다시 그린다. `state`·`render`는 전역(검증 스크립트가 씀). DB는 `record-sync.js`만 안다 |
 | `index.html` `<script type="module">` | Three.js 씬 전부. `BottleScene` 클래스 하나 |
 
 ### 설문 흐름
@@ -377,7 +388,8 @@ onboard → prompt → region → state → sentence → share → keywords → 
 - 다른 사람들의 기록(`archive`, "머무름의 지도 보러가기"): 결과와 같은 톤(크림·명조·갈색). 상태는 글자 탭,
   지역은 작은 선택. **한 줄에 두 개씩 정사각형 카드** — 문장은 다섯 줄에서 자르고, 누르면 그 카드만 두 칸으로
   펼친다. 병 스냅샷은 카드 오른쪽 위에 작게, 방금 남긴 기록은 "나의 기록" + 금색 테두리.
-  (이 화면은 설문 안의 목업 목록이다. 실제 3D 지도는 `statistics/` — 따로 배포된다.)
+  (DB가 붙으면 서버의 최신 공개 기록 100건 + 내 것, 설정이 비었으면 목업 목록 — 13.4. 실제 3D 지도는 `statistics/` — 따로 배포된다.)
+  카드는 남이 쓴 글이 들어오므로 `innerHTML`이 아니라 `textContent`로 만들고, 그림은 안전한 data URL만 넣는다(09-30).
 
 - `render()`가 `app.innerHTML=""` 후 전체를 다시 만든다.
   그래서 **입력 중에는 `render()`를 부르면 안 된다** — 포커스와 스크롤 위치가 날아간다.
@@ -988,198 +1000,223 @@ GLB 로드 직후 지오메트리에서 직접 재도록 바꿨다. 모델을 �
 
 ---
 
-## 13. Firebase 연동 설계 (대기 목록 — 설계만 끝, 구현 보류)
+## 13. Firebase 연동 — **구현됨 (2026-09-30)**
 
-**"내가 할 일 뭐 있었지?" 하면 12·14장과 함께 이 장도 읽어 나열할 것.**
-사용자가 "페이지 다듬기를 먼저 하고 DB는 나중에"로 정했다(2026-09-05).
+**"내가 할 일 뭐 있었지?" 하면 12·14장과 함께 이 장의 13.0을 읽어 나열할 것.**
 
-목업 배열(`entries`)을 실제 DB로 바꾸는 설계. **아직 아무것도 구현하지 않았다.**
-사용자가 "스토리지에 WebP" 방식으로 가기로 했다.
+두 화면이 같은 Firestore를 본다. 설문은 쓰고(익명 로그인), 지도는 공개 기록 전부를 한 번에 받은 뒤
+새 기록을 실시간으로 받는다. **DB 설정값이 비어 있는 동안은 두 화면 모두 예전 목업 그대로 돈다**
+(설정 파일에 값만 넣으면 붙는다). 코드·규칙·테스트는 끝났고, 남은 건 아래 13.0의 콘솔 작업뿐이다.
 
-### 13.1 자동화가 되는 것과 안 되는 것
+### 13.0 사용자가 할 일 (Firebase 콘솔 — 자동화 불가, 13.10)
 
-컨테이너에서 확인한 사실:
+1. **프로젝트 생성** — https://console.firebase.google.com → 프로젝트 추가. Google 애널리틱스는 꺼도 된다.
+2. **웹 앱 등록** — 프로젝트 설정 → 내 앱 → 웹(`</>`). 호스팅 체크는 필요 없다. 나오는 `firebaseConfig`의
+   값(apiKey·authDomain·projectId·storageBucket·messagingSenderId·appId)을 `statistics/shared/db-config.js`의
+   `FIREBASE_CONFIG`에 붙여넣고 커밋한다(또는 대화창에 붙여넣으면 세션이 넣는다).
+   **웹 설정값은 공개 식별자라 레포에 있어도 된다** — 브라우저가 어차피 받아 가는 값이고, 누가 무엇을 쓰고
+   읽을지는 보안 규칙이 정한다. 서비스 계정 JSON·`login:ci` 토큰·비밀번호는 절대 레포나 대화창에 넣지 않는다.
+3. **Firestore 생성** — 빌드 → Firestore Database → 데이터베이스 만들기. 위치 **`asia-northeast3`(서울)**,
+   **나중에 바꿀 수 없다.** **프로덕션 모드**로 시작(모두 거부) — 규칙은 6번에서 올린다.
+4. **익명 로그인 켜기** — 빌드 → Authentication → 시작하기 → 로그인 방법 → **익명** 사용 설정.
+   꺼져 있으면 설문 콘솔에 `auth/operation-not-allowed` 안내가 뜨고 기록은 참여자 브라우저 대기열에만 쌓인다.
+5. **승인된 도메인** — Authentication → 설정 → 승인된 도메인에 설문 주소(`survey-test-tau.vercel.app`)와
+   지도 주소(지도 Vercel 프로젝트의 도메인)를 추가한다. (`localhost`는 기본으로 들어 있다)
+6. **규칙·인덱스 배포** — 둘 중 하나.
+   - 콘솔: Firestore → **규칙** 탭에 `firebase/firestore.rules` 전체를 붙여넣고 게시.
+     **색인** 탭 → 복합 → `records` 컬렉션, `moderation_status` 오름차순 + `created_at` 내림차순, 범위 컬렉션.
+     (아카이브를 한 번 열면 브라우저 콘솔 경고에 이 색인을 만드는 링크가 찍힌다 — 그걸 눌러도 된다)
+     단일 필드 색인 예외로 `thumbs`의 `data` 필드 색인을 끄면 저장 공간이 준다(선택).
+   - 로컬: `cd firebase && npx firebase-tools login && npx firebase-tools deploy --only firestore --project <프로젝트ID>`
+     (규칙·복합 색인·색인 예외가 한 번에 올라간다)
+7. **운영자 숨김** — Firestore → 데이터 → `records` → 해당 문서 → `moderation_status`를 `"hidden"`으로.
+   지도에서는 즉시 사라지고(onRemove), 설문 아카이브에서는 1분 안에, 그 썸네일도 같이 안 읽힌다.
+   되살리려면 `"public"`으로. 문서를 지우지 말 것(지워도 되지만 기록이 영영 사라진다). 콘솔은 규칙을 우회한다.
 
-| | 상태 |
+마친 뒤 확인: 설문을 한 번 끝까지 내고 → 콘솔 `records`·`thumbs`에 문서 1개씩 → 지도 화면에 배가 들어오는지.
+설문 첫 화면 위의 `PROTOTYPE · 목업 데이터` 배지는 설문 세션 몫이라 그대로 두었다 — 실DB가 붙으면 문구를 볼 것.
+
+### 13.1 파일
+
+| 파일 | 하는 일 |
 |---|---|
-| `firebase` / `gcloud` CLI | 설치 안 됨 (단 `registry.npmjs.org` 열려 있어 설치는 가능) |
-| Google API 도달 | 가능 (`firebase.googleapis.com`, `accounts.google.com` 응답) |
-| 로그인 자격증명 | 없음 |
+| `statistics/shared/db-config.js` | 웹 설정값 · SDK 버전(12.19.0, gstatic) · 컬렉션 이름 · 에뮬레이터 포트 · `dbMode()` |
+| `statistics/shared/record-schema.js` | 기록 한 건의 모양 — 필드·80자·키워드 2개·id 모양·썸네일 규격, `checkNew`/`checkRecord`/`makeRecord`/`safeImage`/`newId`. 클래식 전역 `RECORD_SCHEMA` (설문·지도·node 규칙 생성기가 다 읽는다) |
+| `statistics/shared/record-store.js` | Firestore 어댑터(ES 모듈): 연결·익명 로그인·`dbListenPublic`·`dbFetchRecent`·`dbCountPublic`·`dbSubmitRecord`·`dbSubmitThumb`·`dbGetThumb` |
+| `statistics/js/store.js` | `FirestoreStore`(위 어댑터 → onReady/onInsert/onRemove 계약) · `pickStore()` |
+| `ui/record-sync.js` | 설문 쪽 연결 — 설문 기록 ↔ DB 기록 변환(여기서만), 대기열, 썸네일 인코딩, 아카이브 목록 합치기 |
+| `firebase/` | `firebase.json` · `firestore.rules`(생성본) · `firestore.indexes.json` · `build-rules.mjs` · `test/` · `package.json`(테스트 도구만) |
 
-**프로젝트 생성은 자동화 불가.** `firebase login`이 브라우저 OAuth 대화형 흐름이라 이
-컨테이너에서 완료할 수 없다. `login:ci` 토큰도 발급 자체가 대화형이다.
-**토큰을 대화창에 붙여넣게 하지 말 것** — 자격증명 노출이다. 배포는 사용자가 로컬에서
-`firebase deploy`로 실행하거나, 환경 설정에 토큰을 넣어두는 쪽이 맞다.
+두 화면이 같이 쓰는 코드는 `statistics/shared/`에 있다 — 지도가 Vercel에서 Root Directory `statistics`로
+따로 배포되기 때문이다(0장). 설문 `ui/survey.js`·`index.html`에는 연결 몇 줄만 들어갔다.
 
-**대신 자동화되는 것:** `firebase.json`, `firestore.rules`, `storage.rules`,
-`firestore.indexes.json`, 앱 코드 전부. 사용자가 로그인만 하면 한 줄로 배포된다.
+**어느 저장소를 쓰나** (`db-config.js` `dbMode()`): `?mock=1` → 목업 / `?emu=1`이고 localhost → 에뮬레이터 /
+설정값이 채워져 있으면 → 실DB / 그 밖 → 목업. `?emu=1`을 localhost로 묶은 건, 배포 주소에서 누가 붙여도
+참여자 브라우저가 제 기기의 127.0.0.1로 기록을 보내지 않게 하려는 것이다. 시안 파일(`build-standalone.mjs`)은 늘 목업.
 
-**사용자가 콘솔에서 해야 할 일:** 프로젝트 생성 → 웹 앱 등록 → 설정값(apiKey 등) 전달
-→ Firestore·Storage·익명 인증 켜기.
+SDK는 gstatic CDN의 ES 모듈을 **동적 `import()`**로 받는다. 빌드 도구가 없고, 시안 빌드가 정적 import 줄을
+지우고 이어붙여도 살아남고, 목업일 땐 아예 받지 않기 위해서다. 지도는 읽기만 해서 auth 모듈을 받지 않는다.
 
-> **확인 필요:** 최근 Firebase는 신규 프로젝트에서 Cloud Storage를 쓰려면 종량제(Blaze)
-> 전환을 요구하는 경우가 있다. 가입 시점에 직접 확인할 것. 만약 그렇다면 13.6의
-> "스냅샷 없이 값만 저장" 대안이 무료 티어로 갈 수 있는 길이다.
+### 13.2 스키마 — `records/{record_id}` (문서 id = record_id)
 
-### 13.2 무엇을 어디에 두나
+13.13의 충돌은 **지도(`store.js`) 이름을 정본으로** 정리했다. 예전 설계(`entries`·`createdAt`·`name`·`status`)는 폐기.
 
-측정값 (스냅샷 373x199 기준):
+```
+record_id          string     문서 id와 같다. 영숫자 20자. 설문이 제출 순간 미리 정한다(재전송해도 같은 문서)
+created_at         timestamp  serverTimestamp(). 지도·아카이브로 넘길 땐 ISO 문자열
+region             string     REGIONS 중 하나
+state              string     STATES의 id 중 하나
+share              string     SHARES의 id 중 하나 (시간대 재현용 — 지도는 안 써도 된다)
+text               string     trim 후 1~80자
+keywords           array      KEYWORDS 중 0~2개, 중복 없음
+display_name       string     "익명" 또는 1~12자
+consent_public     bool       true   ┐ 설문의 동의 체크 하나가 둘 다 켠다(체크해야 제출되므로 항상 true)
+consent_archive    bool       true   ┘
+moderation_status  string     생성 시 "public" 고정. "hidden"은 운영자만(콘솔)
+schema_version     number     1
+```
 
-| | 크기 |
+`thumbs/{record_id}` = `{ record_id, data: "data:image/webp;base64,…", created_at }` — 병 스냅샷(아카이브 카드 그림).
+`capture()` PNG를 긴 변 360px WebP q0.8로(실측 약 14KB). WebP 인코딩을 못 하는 브라우저(iOS 사파리 일부)는 JPEG로,
+투명 부분은 카드 바탕색(`#FFFDF9`)을 깐다. **레코드와 따로 두는 이유:** 지도는 레코드 전부를 받는다 — 이미지를
+넣으면 지도 로딩이 수 MB가 된다. Storage 대신 Firestore에 둬서 **Blaze(종량제) 전환 없이** 무료 요금제로 간다.
+
+**글자 수는 UTF-16 단위로 센다.** 에뮬레이터 실측으로 규칙의 `size()`가 "가나다"=3, "😀"=2를 준다 — JS `.length`,
+textarea `maxLength`와 같은 단위라 설문 입력칸의 80자 제한과 서버 판정이 정확히 같다.
+규칙의 `trim()`은 ASCII 공백만 깎으므로 설문이 JS `trim()`으로 먼저 깎아 보낸다.
+
+### 13.3 보안 규칙 요지 (`firebase/firestore.rules` — 생성 파일, 손으로 고치지 말 것)
+
+- **records 읽기:** `moderation_status == "public"`인 문서만 누구나. 규칙은 필터가 아니다 — 쿼리에 같은
+  `where`가 없으면 쿼리 전체가 거절된다. 없는 문서의 `get`은 허용한다(재전송 전 확인에서 "없음"과 "숨김"을 구별하려고).
+- **records 생성:** 로그인(익명 포함) + 키 화이트리스트(`hasOnly`+`hasAll`) + 타입·값 범위 전부 + `record_id == 문서 id`
+  + id가 영숫자 20자 + `created_at == request.time` + 공개 상태·동의·버전 고정. 공백뿐인 글(전각 공백 포함)도 거절.
+- **records 수정·삭제:** 전부 금지. 운영자는 콘솔에서(콘솔은 규칙을 우회한다).
+- **thumbs 생성:** 로그인 + 기록이 먼저 있어야 함(`exists`) + 키 화이트리스트 + `data`가 `data:image/(webp|jpeg);base64,`
+  + base64 글자만 + 150,000자 이하. 수정·삭제·목록 금지. **읽기:** 짝이 되는 기록이 공개일 때만.
+- **그 밖의 경로:** 전부 거부.
+
+**분류값을 바꾸면** (`survey-taxonomy.js`에 지역·키워드 추가 등):
+```
+node firebase/build-rules.mjs        # firestore.rules 다시 생성
+node firebase/build-rules.mjs --check   # 어긋나면 exit 1 (테스트 첫 항목도 같은 걸 본다)
+```
+→ 커밋 → **배포(13.0의 6번)**. 배포를 빠뜨리면 새 값으로 낸 제출이 전부 조용히 거절된다(참여자 대기열에만 쌓임).
+값을 지우면 그 값을 가진 옛 기록은 지도에서 빠진다(`checkRecord`에서 걸러지고 콘솔에 경고). 규칙이 JS를
+읽지 못해 손으로 적으면 분류값의 세 번째 사본이 되기 때문에 생성으로 묶었다.
+
+### 13.4 읽기
+
+- **지도:** `onSnapshot(where(moderation_status == "public"))` — 등호 하나라 색인이 필요 없고, 정렬은 받아서 한다.
+  첫 **서버** 스냅샷 → `onReady` 한 번(Firestore의 첫 스냅샷은 기존 문서 전부를 "added"로 준다 — 그대로 `onInsert`로
+  보내면 시작하자마자 수십 척이 한 척씩 등장한다). 그 뒤로는 화면에 준 id 집합과 비교해 차이만 `onInsert`/`onRemove`.
+  캐시 스냅샷(`fromCache`)은 버린다. 서버 시각은 `serverTimestamps: "estimate"`로 읽는다(로컬 스냅샷에선 null).
+- **설문 아카이브:** `where(status) + orderBy(created_at desc) + limit(100)` — 복합 색인 1개(`firestore.indexes.json`).
+  색인이 아직 없으면(`failed-precondition`) 색인 없는 쿼리로 전부 받아 정렬·자르고 콘솔에 색인 링크를 남긴다
+  (읽기가 전체 건수만큼 드니 배포 전까지만). "지금까지 N개"는 `getCountFromServer`. 다시 열면 1분 지난 것만 새로 받는다.
+  남의 카드 썸네일은 **카드가 화면에 들어올 때만** 받는다. 방금 쓴 내 기록은 전송 여부와 상관없이 맨 앞(id로 중복 제거).
+- **아카이브에서 전부 받지 말 것** — 13.7의 계산.
+
+### 13.5 전시장 와이파이 — 오프라인 동작
+
+**설문**
+- 제출은 결과 화면을 기다리게 하지 않는다. 보내기 **전에** localStorage 대기열(`yeogi.queue.v1`)에 먼저 적는다 —
+  SDK 로드·익명 로그인·쓰기 어디서 끊겨도 문장이 남는다. 다음 로드와 `online` 이벤트 때 다시 보낸다.
+- 썸네일은 기록이 서버에 들어간 **뒤에** 올린다(규칙이 기록의 존재를 본다). 대기열이 넘치면 썸네일부터 버린다.
+- **재전송이 중복을 안 만드는 이유:** id가 고정이라 같은 문서를 향한다. 이미 들어간 문서면 규칙이 덮어쓰기를
+  거절(permission-denied) → 문서가 있는지 물어 보고(숨김이면 get도 거절 → 역시 "있음") 성공으로 친다.
+  없는데도 거절됐다면 규칙 위반이라 대기열에 남기고 콘솔에 오류(분류값을 바꾸고 규칙을 배포 안 한 경우).
+- 오프라인이면 SDK는 쓰기를 붙든 채 끝내지 않는다. 15초 기다린 뒤 대기열에 둔 채 넘어가고, 나중에 SDK가 끝내면 그때 지운다.
+- **[함정] 한 번 실패한 `import()`는 그 페이지에서 다시 성공하지 않는다** — 크로미움은 실패한 모듈 주소를 문서가
+  살아 있는 동안 기억한다(실측: 차단을 풀고 다시 import 해도 같은 실패, fetch는 200). 그래서 설문은 **페이지를 열 때 SDK를
+  미리 받아 둔다.** 그 뒤에 끊기면 SDK가 스스로 다시 붙는다. 처음부터 SDK를 못 받은 페이지는 다음 방문 때 대기열을 보낸다.
+- 익명 로그인이 콘솔에서 꺼져 있으면 `auth/operation-not-allowed` — 기록은 대기열로, 원인은 콘솔에 분명히 찍힌다.
+
+**지도**
+- 마지막으로 받은 공개 목록을 localStorage(`yeogi.map.cache.v1`)에 둔다. 서버가 8초 안에 답하지 않으면 그걸로
+  `onReady`, 나중에 붙으면 차이만 보낸다. 캐시도 없으면(첫 부팅) 서버를 계속 기다린다 — 빈 바다로 먼저 띄우면
+  붙는 순간 전부가 새 기록으로 쏟아진다. 차이가 많으면 3척만 연출하고 나머지는 조용히 놓인다(`ARRIVAL_QUEUE_MAX`).
+- 구독 오류(`onSnapshot` error 콜백)는 2·4·8…60초 백오프로 다시 붙는다. error 콜백이 없으면 끊긴 구독이 조용히 멈춘다.
+- SDK 자체를 못 받았으면(부팅 때 와이파이 없음) 위 함정 때문에 다시 import 해도 안 된다. 같은 백오프로 SDK 주소에
+  `fetch`로 닿는지만 보고, **닿으면 새로고침한다**(2분에 한 번까지, 그 사이는 캐시로 돈다).
+
+### 13.6 검토 정책
+
+**즉시 공개 + 운영자 숨김**(13.0의 7번). 승인제로 바꾸려면 `record-schema.js`의 `CREATE_STATUS`를 `"pending"`으로
+바꾸고 규칙을 다시 생성·배포한다(운영자가 콘솔에서 `"public"`으로 바꿔야 뜬다 — 전시 중 사람이 붙어 있어야 한다).
+관리자 페이지는 두지 않았다 — 콘솔만 쓴다.
+
+### 13.7 비용 — 무료 요금제(Spark) 안에서
+
+한도(하루): 읽기 5만 · 쓰기 2만 · 저장 1GiB. **규칙의 `get()`/`exists()`도 읽기 1회로 센다.**
+
+| 누가 | 한 번에 드는 것 |
 |---|---|
-| 문장·지역·키워드·이름 (JSON) | 187 bytes |
-| 스냅샷 PNG (지금) | 82 KB — 문장의 440배 |
-| WebP q0.8 | 16 KB |
-| WebP q0.8 + 절반 해상도 | 8 KB |
+| 참여자 제출 | 쓰기 2(기록·썸네일) + 읽기 1(썸네일 규칙의 `exists`) |
+| 아카이브 한 번 열기 | 읽기 100(최신 100건) + 1(count, 1,000건당 1) + 썸네일 카드당 2(문서 + 규칙의 `get`) → 첫 화면만 보면 약 115, 끝까지 내리면 약 300 |
+| 지도 부팅 | 읽기 = 그때까지의 공개 기록 수(한 번) + 이후 새 기록마다 1 |
 
-PNG 하나가 Firestore 문서 한도(1 MiB)의 8%를 쓴다. 그래서 **텍스트는 Firestore,
-이미지는 Storage**로 나눈다. 1,000명 기준 스냅샷 총량이 PNG 80MB에서 WebP 절반 8MB로 준다.
+- 쓰기는 하루 1만 명까지 여유. 저장은 1,000명에 약 15MB(썸네일 14KB + 기록 0.5KB).
+- **읽기가 한도를 정한다:** 아카이브 한 번에 약 120이면 하루 **약 400번** 열 수 있다. 참여자마다 전부 받게 두면
+  (기록 2,000건일 때 한 번에 2,000+) 하루 25번에 한도가 찬다 — 그래서 100건으로 잘랐다.
+- 하루 참여가 수백 명을 넘길 것 같으면 `ui/record-sync.js`의 `ARCHIVE_LIMIT`를 30~50으로 줄이거나 Blaze(종량제)로
+  올린다(한도를 넘긴 만큼만 과금 — 가격은 콘솔 요금표 확인). 한도를 넘기면 그날은 읽기가 거절돼 아카이브가
+  "불러오지 못했어요"로 뜨고, 제출(쓰기)은 계속된다.
 
-### 13.3 Firestore 문서 구조
-
-컬렉션 `entries`, 문서 하나가 참여 한 건:
-
-```
-entries/{autoId}
-  region     string   REGIONS 중 하나 ("아산" "천안" "기타 충남" "충남 밖" "비공개")
-  state      string   STATES 중 하나 (stay leaving between returned unsure)
-  text       string   한 문장 (상한 200자)
-  keywords   array    KEYWORDS 중 최대 3개
-  share      string   SHARES 중 하나 (시간대 재현용)
-  name       string   "익명" 또는 표시명
-  thumbPath  string   Storage 경로. 없으면 빈 문자열
-  createdAt  timestamp  serverTimestamp()
-  status     string   "published" | "hidden"   (신고·검토용)
-```
-
-`share`를 같이 넣는 이유: 시간대가 이 답에서 나오므로, 나중에 스냅샷 없이 병을 다시
-그리고 싶어질 때 필요하다(13.6 대안).
-
-### 13.4 Storage 배치
+### 13.8 테스트 (`firebase/`)
 
 ```
-snapshots/{entryId}.webp      WebP q0.8, 긴 변 400px 상한
+cd firebase
+npm install              # firebase-tools · rules-unit-testing · firebase · playwright · three (node_modules 는 커밋 안 함)
+npm run rules:check      # 규칙–분류값 일치만 (에뮬레이터·Java 불필요)
+npm run test:rules       # 규칙 단위 16개 + 어댑터 8개 — Firestore·Auth 에뮬레이터 (Java 11+)
+npm run test:e2e         # 헤드리스 끝-끝 35개 — 크로미움 필요 (CHROMIUM=경로, 없으면 /opt/pw-browsers/chromium)
+npm run emu              # 에뮬레이터만 — 레포 루트에서 python3 -m http.server 5173 을 따로 띄우고
+                         #   http://127.0.0.1:5173/?emu=1 (설문) · /statistics/?emu=1 (지도) 로 손으로 확인
 ```
+프로젝트 id가 `demo-yeogi`라 로그인·실제 프로젝트 없이 돈다. 포트: Firestore 8080 · Auth 9099 · 테스트 정적 서버 5173.
+E2E는 gstatic·unpkg를 **테스트에서만** npm 사본으로 바꿔 끼운다(`firebase` npm 패키지에 CDN 빌드가 그대로 들어 있다).
+SDK 버전을 올리면 `db-config.js`와 `firebase/package.json`을 같이 올린다(E2E가 둘이 다르면 멈춘다).
 
-문서를 먼저 만들어 id를 얻고 → 그 id로 업로드 → `thumbPath` 갱신.
-업로드가 실패해도 문장은 남는다(썸네일만 없는 카드).
+09-30 결과: 규칙 16 + 어댑터 8 = 24/24, E2E 35/35, 목업 화면은 변경 전과 아카이브 픽셀·지도 목업 기록까지 같음,
+`build-standalone.mjs` 통과(시안 파일은 목업, 네트워크 요청 없음). **실제 Firebase 프로젝트에는 아직 붙여 보지 않았다**
+(설정값 없음) — 13.0을 마친 뒤 한 번 확인할 것.
 
-### 13.5 읽기 전략 — 복합 인덱스 없이
+### 13.9 남은 위험
 
-지금 아카이브는 상태·지역으로 거르고 최신순으로 본다. 전시 규모(수백~수천 건)에서는
-**최신 200건을 `createdAt desc`로 받아 클라이언트에서 거르는 쪽이 낫다.**
-복합 인덱스가 필요 없고 읽기 횟수도 적다. 지금 코드가 배열을 거르는 방식 그대로라
-`entries` 배열만 갈아끼우면 필터 로직은 손대지 않아도 된다.
+- **익명 인증만으로는 스팸 쓰기를 못 막는다.** 규칙은 모양만 본다 — 스크립트로 익명 로그인을 반복하며 규칙에 맞는
+  기록을 쏟을 수 있다. 다음 단계는 **App Check**(reCAPTCHA Enterprise)로 "우리 페이지에서 온 요청"만 받게 하는 것.
+  그 전까지는 콘솔에서 숨김으로 대응한다.
+- **썸네일 선점:** 규칙은 썸네일을 올린 사람이 그 기록을 쓴 사람인지 모른다(기록에 uid를 두지 않았다 — 개인정보 최소).
+  누군가 남의 기록에 먼저 썸네일을 올리면 원래 주인의 썸네일은 거절된다. 콘솔에서 `thumbs` 문서를 지우면 된다.
+  막으려면 기록에 비밀값의 해시를 두고 썸네일에 비밀값을 싣는 식(규칙의 `hashing.sha256`)이 있다 — 스키마가 바뀌는 일이라 보류.
+- **서버 시각:** 참여자 기기 시계를 믿지 않는다(`request.time`). 대신 오프라인으로 늦게 보낸 기록은 보낸 시각으로 찍힌다.
+- **실기기:** iOS 사파리의 WebP 인코딩 폴백(JPEG)은 헤드리스 크로미움에선 타지 않는 길이라 실기기에서 한 번 볼 것.
 
-건수가 수천을 넘어가면 그때 `(state, createdAt)` `(region, createdAt)` 복합 인덱스를
-`firestore.indexes.json`에 추가하고 서버 필터로 옮긴다.
+### 13.10 자동화가 되는 것과 안 되는 것 (09-05 확인, 그대로)
 
-썸네일은 **스크롤에 들어올 때 지연 로딩**(`loading="lazy"` + `IntersectionObserver`).
-목록 200건을 한 번에 받아도 이미지는 보이는 것만 내려온다.
+`firebase login`이 브라우저 OAuth라 **프로젝트 생성·배포 로그인은 컨테이너에서 못 한다.** `login:ci` 토큰도 발급이
+대화형이고, 토큰을 대화창에 붙여넣게 하지 말 것(자격증명 노출). 배포는 사용자가 콘솔이나 로컬에서 한다.
 
-### 13.6 대안 — 스냅샷을 저장하지 않는 길
+### 13.13 `statistics/` 화면과 스키마 충돌 — **해결 (09-30)**
 
-지역·상태·키워드·`share`만 있으면 **그 병을 다시 그릴 수 있다.** 이미지를 아예 저장하지
-않으면 한 건이 200바이트로 끝나고 Storage도 필요 없다(= 무료 티어 안전). 대신 아카이브
-카드마다 3D를 다시 그려야 해서 카드가 많으면 무겁다.
+| | 예전 설계 (설문) | `store.js` | **확정** |
+|---|---|---|---|
+| 컬렉션 | `entries` | `records` | `records` |
+| id | 자동 id | `record_id` | `record_id` = 문서 id (클라이언트가 미리 발급) |
+| 시각 | `createdAt` | `created_at` (ISO) | `created_at` (서버 timestamp, 화면엔 ISO) |
+| 문장 상한 | 200자 | 80자 | **80자** (설문 입력칸도 80) |
+| 키워드 | 최대 3 | 최대 2 | **최대 2** |
+| 이름 | `name` | `display_name` | `display_name` |
+| 공개 여부 | `status` | `moderation_status` | `moderation_status` (public/hidden) |
+| 동의 | 없음 | `consent_public`·`consent_archive` | 둘 다 — 설문 체크 하나가 둘 다 true |
+| 시간대 | `share` | 없음 | `share` 추가 (지도는 무시해도 됨) |
+| 썸네일 | `thumbPath`(Storage) | 없음 | 별도 컬렉션 `thumbs` (Firestore, WebP) |
+| 읽기 | 최신 200건 + 클라이언트 필터 | `onSnapshot` + 서버 필터 | 지도 `onSnapshot`, 아카이브 최신 100건 — 둘 다 **서버 필터** |
 
-지금은 "Storage에 WebP"로 가기로 했으나, Blaze 전환이 걸리면 이 길이 대안이다.
-
-### 13.7 보안 규칙
-
-공개 API 키만으로 아무나 쓰기가 가능하면 안 된다. **익명 인증**을 켜고 규칙으로 막는다.
-
-`firestore.rules` 요지:
-- 읽기: `status == "published"` 인 문서만 누구나
-- 생성: 로그인(익명 포함)한 사용자만. 필드 화이트리스트, 타입 검사,
-  `text` 200자 이하, `keywords` 3개 이하, `region`/`state`/`share`는 정해진 값만,
-  `createdAt`은 `request.time`과 일치, `status`는 `"published"` 고정
-- 수정·삭제: 전부 금지 (운영자는 콘솔에서)
-
-`storage.rules` 요지:
-- 읽기: 누구나
-- 쓰기: 로그인한 사용자, `snapshots/` 경로, `image/webp`, 512KB 이하, 덮어쓰기 금지
-
-### 13.8 전시장에서 깨지는 경우
-
-**와이파이가 끊긴다.** 전시장에서 흔하다. 제출이 실패하면 참여자의 문장이 사라진다.
-
-- 제출 실패 시 `localStorage` 큐에 넣고, 다음 로드나 온라인 복귀 시 재전송
-- 결과 화면은 **전송 성공을 기다리지 않고** 바로 보여준다 (병은 로컬 데이터로 그린다)
-- 아카이브는 서버 목록 + 로컬 큐를 합쳐 보여준다 — 방금 쓴 내 문장이 안 보이면 불안하다
-
-### 13.9 검토·신고
-
-전시장 공개 벽이라 부적절한 문장이 바로 뜬다. 정해야 할 것:
-- 전부 즉시 공개하고 신고 버튼만 둘지
-- `status: "pending"`으로 받아 운영자가 승인해야 뜨게 할지 (전시 중 사람이 붙어야 함)
-
-지금 설계는 `status` 필드를 두고 기본 `"published"`로 시작한다 — 나중에 정책을 바꿔도
-스키마를 안 건드린다.
-
-### 13.10 비용
-
-무료 티어(Spark) 기준: Firestore 하루 읽기 5만·쓰기 2만, Storage 5GB.
-1,000명 참여 + 스냅샷 8KB면 총 8MB — 여유롭다. 읽기는 아카이브 열 때 200건씩이라
-하루 250번 열어야 한도에 닿는다. **비용보다 Blaze 전환 요구 여부가 변수다(13.1).**
-
-### 13.11 추가될 파일
-
-```
-firebase.json              배포 설정
-firestore.rules            위 규칙
-firestore.indexes.json     지금은 비어 있음 (13.5)
-storage.rules              위 규칙
-```
-
-앱 코드는 `index.html` 안에 남는다. Firebase JS SDK는 three.js처럼 CDN ESM 빌드를
-importmap에 한 줄 추가해 쓴다 — 빌드 도구는 계속 필요 없다.
-
-### 13.12 진행 전 사용자에게 확인할 것
-
-1. Firebase 프로젝트가 이미 있는지 (없으면 콘솔 절차 안내 필요)
-2. Storage가 Blaze를 요구하는지 확인 결과 — 요구하면 13.6으로 갈지
-3. 검토 정책 (즉시 공개 + 신고 / 승인 후 공개)
-4. 아래 13.13의 스키마 충돌을 어느 쪽으로 맞출지
-
-### 13.13 `statistics/` 화면과 스키마가 어긋난다 — 구현 전에 반드시 합칠 것
-
-13.1~13.12를 쓴 뒤에 `statistics/` 전시용 화면이 main에 들어왔다(다른 세션 작업).
-그 화면의 `statistics/js/store.js`는 **이미 저장소 계약과 레코드 스키마를 못박아 뒀다.**
-두 화면이 같은 DB를 봐야 하므로 **하나로 맞추지 않으면 컬렉션이 두 개가 된다.**
-
-| | 13장 설계 (설문 페이지) | `statistics/js/store.js` |
-|---|---|---|
-| 컬렉션 | `entries` | `records` |
-| id | 자동 id | `record_id` |
-| 시각 | `createdAt` (Timestamp) | `created_at` (ISO 문자열) |
-| 문장 상한 | 200자 | **80자** |
-| 키워드 | 최대 3 | **최대 2** |
-| 이름 | `name` | `display_name` |
-| 공개 여부 | `status: published/hidden` | `moderation_status: public` |
-| 동의 | 없음 | `consent_public`, `consent_archive` |
-| 시간대 | `share` 있음 | 없음 |
-| 썸네일 | `thumbPath` 있음 | 없음 (통계 화면은 이미지를 안 쓴다) |
-| 읽기 | 최신 200건 1회 + 클라이언트 필터 | `onSnapshot` 실시간 + **서버 필터** |
-
-**필드 이름은 사소하다. 진짜 쟁점은 세 가지다.**
-
-1. **공개 판정을 어디서 하나.** `store.js`의 판단이 맞다 — 비공개 문장이 브라우저까지
-   내려온 뒤 JS가 거르는 구조면 개발자도구만 열면 다 보인다. 서버에서 걸어야 한다.
-   그러면 13.5의 "복합 인덱스 없이"는 성립하지 않는다:
-   `where(moderation_status=="public") + orderBy(created_at)` 는 Firestore에서
-   **복합 인덱스가 필요하다.** 13.5를 고쳐야 한다 (인덱스 하나 추가하면 끝나는 일이다).
-2. **동의 필드(`consent_public` / `consent_archive`)가 설문 페이지에 아예 없다.**
-   전시 벽에 띄우는 것과 아카이브에 남기는 것은 다른 동의다. 설문 UI에 동의 단계를
-   넣을지 사용자에게 물어야 한다. 이건 스키마가 아니라 **기획 결정**이다.
-3. **문장 상한 80자 vs 200자.** 통계 화면은 배 옆에 문장을 띄우므로 80자가 상한이다.
-   설문 입력칸도 80자로 맞추는 게 맞아 보이나 확인 필요.
-
-**추가:** `statistics/README.md`와 `store.js` 주석은 **Supabase를 추천**하고 있다
-(실시간 구독과 서버측 공개 필터가 RLS로 더 단순하다는 이유). 사용자는 Firebase로
-정했으므로 그대로 가되, `store.js`에 Firestore 배선 예시가 이미 주석으로 적혀 있으니
-그걸 채우는 것으로 시작하면 된다. 첫 스냅샷이 기존 문서 전부를 `added`로 주는 함정도
-그 주석에 적혀 있다.
+세 쟁점: ① 공개 판정은 서버(쿼리 + 규칙) — 비공개 문장은 브라우저까지 오지 않는다. ② 동의는 지금 체크박스 하나가
+둘 다 켠다(나누려면 설문 UI 수정 필요 — 사용자 결정으로 보류). ③ 80자로 통일. `store.js`·`statistics/README.md`의
+Supabase 추천은 "Firebase로 확정"으로 고쳤다.
 
 ---
 

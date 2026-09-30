@@ -16,7 +16,10 @@ statistics/
 │  ├─ look-tokens.js     조명 비율 · 거칠기 상한 · 구운 AO 세기 (두 화면 톤 맞추기)
 │  ├─ tokens.css         UI 색 · 화면 색보정(--scene-grade) · 비네트
 │  ├─ deps.js            three 버전 (두 importmap 과 대조)
-│  └─ survey-taxonomy.js 지역 · 상태 · 키워드 (클래식 스크립트)
+│  ├─ survey-taxonomy.js 지역 · 상태 · 키워드 (클래식 스크립트)
+│  ├─ record-schema.js   기록 한 건의 모양·검사 (클래식 스크립트 — 보안 규칙도 여기서 생성)
+│  ├─ db-config.js       Firebase 웹 설정값 · SDK 버전 — 비어 있으면 목업
+│  └─ record-store.js    Firestore 어댑터 (설문과 같이 쓴다, SDK는 동적 import)
 ├─ assets/
 │  └─ Scene.glb      루트 assets/ 의 사본 — sync-model.mjs 로 맞춘다
 ├─ tools/
@@ -41,7 +44,7 @@ statistics/
    │  ├─ views.js       어떻게 그리는가
    │  ├─ index.js       무엇을 어떻게, 어떤 순서로 (장 목록)
    │  └─ text.js        조사(은/는·이/가…) · 퍼센트 · 날짜 글자 도구
-   ├─ store.js       기록 저장소 (지금은 목업, 백엔드 어댑터 자리 있음)
+   ├─ store.js       기록 저장소 — FirestoreStore(실DB) / MockStore(설정이 비었을 때), pickStore
    ├─ selfcheck.js   조용히 깨지는 것들 자동 점검
    └─ main.js        조립 + 프레임 루프
 ```
@@ -81,6 +84,8 @@ GitHub Pages에 올라가 있으면 `/statistics/` 경로로 바로 열립니다
 | `glass` | (자동) | 유리 단계 고정 (`lens` / `blur` / `flat`). 안 주면 워치독이 판단 |
 | `debug` | – | `1`이면 fps·draw call·인스턴스 수 오버레이 |
 | `interactive` | – | `1`이면 드래그로 시점 조작 (리허설용, 전시 기본값은 무조작) |
+| `mock` | – | `1`이면 DB 설정이 있어도 목업으로 (리허설·시안용) |
+| `emu` | – | `1`이면 로컬 Firestore 에뮬레이터 (localhost에서만 켜진다 — `HANDOFF.md` 13.8) |
 | `seed` | `46` | 목업: 시작할 때 이미 쌓여 있는 기록 수 |
 | `interval` | `14` | 목업: 새 기록이 들어오는 평균 간격(초). `0`이면 안 들어옴 |
 | `depths` | – | `1`이면 등장 깊이 보정 화면. 아래 "새 기록 등장" 참고 |
@@ -160,7 +165,10 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
 | `look-tokens.js` | `SCENE_LOOK`(조명 비율·거칠기 상한), `HEMI`(반구광), `AO` | 루트 모듈 / `js/main.js`·`js/fleet.js` |
 | `tokens.css` | UI 색, `--scene-grade`, `--scene-vignette` | 두 `index.html` |
 | `deps.js` | three 버전 | 루트 모듈 / `js/selfcheck.js` |
-| `survey-taxonomy.js` | `REGIONS`, `STATES`, `KEYWORDS` | 루트 설문 UI / `js/config.js` |
+| `survey-taxonomy.js` | `REGIONS`, `STATES`, `KEYWORDS` — **바꾸면 보안 규칙 재생성·배포** | 루트 설문 UI / `js/config.js` |
+| `record-schema.js` | `RECORD_SCHEMA` — 필드·80자·키워드 2개·검사·`safeImage` | 루트 설문 UI(`ui/record-sync.js`) / `js/store.js` / `../firebase/build-rules.mjs` |
+| `db-config.js` | Firebase 웹 설정값 · SDK 버전 · 컬렉션 이름 · `dbMode()` | `ui/record-sync.js` / `record-store.js` / `js/store.js` |
+| `record-store.js` | Firestore 어댑터 (구독 · 최신 n건 · 개수 · 쓰기 · 썸네일) | `ui/record-sync.js` / `js/store.js` |
 
 **파도는 표 하나에서 GLSL과 JS가 같이 생성됩니다.** 정점 셰이더의 `gerstnerSum`은
 `GERSTNER_WAVES` 표에서 문자열로 만들어지고, 배가 들썩일 높이를 재는 `waveHeightAt`도
@@ -223,7 +231,7 @@ sed -n '985,995p' ../index.html                # 앞뒤 맥락만
 | 배 배치 | **푸아송 디스크(Bridson) + 토러스 감김** | 최소 간격 보장. 속도가 하나라 상대 위치가 안 변하고, 감김도 정확히 띠 폭만큼이라 한 번 안 겹치게 놓으면 영원히 안 겹침 |
 | 표현 채널 | **지금은 난수 (시안 단계)** | 아래 "표현 채널" 참고 |
 | 문장 표시 | **UI 레이어(유리 카드)** | 문서 6장에서 이미 확정된 것을 그대로 구현 |
-| 백엔드 | **아직 안 정함** | 아래 "남은 일" 참고 — 계정·비용이 걸린 결정이라 코드로 앞서가지 않았음 |
+| 백엔드 | **Firebase(Firestore + 익명 인증)로 확정 — 구현됨 (09-30)** | `js/store.js` `FirestoreStore`. 설정값이 비어 있으면 목업. 전체는 `HANDOFF.md` 13장, 지도에 바뀐 것은 `HANDOFF-map.md` 16장 |
 | `age_bracket` | **안 건드림** | 미확정. 화면 쪽은 필드가 생기면 `js/stats/metrics.js`에 한 줄 더하면 끝나는 구조 |
 
 ### 흐름 — 배는 어떻게 움직이나
@@ -777,18 +785,15 @@ three.js도, 패널의 DOM 구조도, 어떤 지표였는지도 모릅니다. �
 
 ## 남은 일
 
-1. **백엔드 (제일 큰 덩어리).** 지금은 `MockStore`가 가짜 기록을 만들어 냅니다.
-   화면이 저장소에 요구하는 건 세 가지뿐입니다 — `onReady(records)` / `onInsert(record)` /
-   `onRemove(recordId)`. `store.js`에 Supabase·Firestore 두 경우의 배선이 주석으로 적혀 있고,
-   정해지면 `main.js`의 저장소 한 줄만 갈아끼우면 씬 쪽은 손댈 게 없습니다.
-   - 어느 쪽이든 **공개 조건(`consent_public` && `moderation_status === "public"`)은
-     서버에서 걸어야 합니다.** 비공개 문장이 브라우저까지 내려온 뒤 JS가 거르는 구조면
-     개발자도구만 열면 다 보입니다.
-   - Firestore를 쓴다면: 첫 스냅샷이 기존 문서 전부를 `added`로 줍니다. 그대로 두면
-     시작할 때 수십 척이 한 척씩 등장 연출을 하며 쏟아집니다. 첫 스냅샷만 모아서
-     `onReady`로 넘겨야 합니다.
-2. **관리자 화면** (문장 숨김·금칙어 확인). 화면 쪽은 `onRemove`만 받으면 즉시 반영됩니다.
-3. **인터넷 장애 대비** 임시 로컬 저장·재전송. 제출 쪽(온보딩) 몫입니다.
+1. ~~백엔드~~ **→ Firebase로 확정·구현 (09-30).** 코드는 끝났고 사용자의 Firebase 콘솔 작업만 남았다
+   (`HANDOFF.md` 13.0 — 프로젝트·웹 앱·Firestore 서울·익명 로그인·승인된 도메인·규칙 배포).
+   설정값을 `shared/db-config.js`에 넣기 전까지 이 화면은 `MockStore`로 돈다.
+   - 공개 조건은 서버(쿼리 + 보안 규칙)에서 건다 — 비공개 문장은 브라우저까지 오지 않는다.
+   - 첫 스냅샷의 "added" 전부는 `onReady` 한 번으로 모은다(`FirestoreStore`).
+2. **관리자 화면** — 두지 않는다. 운영자는 Firebase 콘솔에서 `moderation_status`를 `"hidden"`으로 바꾼다.
+   이 화면은 `onRemove`로 즉시 반영한다.
+3. ~~인터넷 장애 대비~~ **→ 구현 (09-30).** 제출 쪽은 localStorage 대기열·재전송(`ui/record-sync.js`),
+   이 화면은 마지막 공개 목록 캐시 + 백오프 재연결 + SDK를 못 받았을 때 새로고침(`HANDOFF-map.md` 16장).
 4. **실기기 프레임 측정.** 전시장에서 쓸 TV/태블릿에서 `?debug=1`로 한 번 재보고
    `?glass=`를 고정할 것. Chromium 계열이 아니면 굴절은 자동으로 꺼집니다.
 5. **표현 채널 확정.** `STYLE_SOURCE`를 `"record"`로 바꾸고 `style.js`의 `fromRecord`

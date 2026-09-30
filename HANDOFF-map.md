@@ -424,3 +424,55 @@ mat.onBeforeCompile = (shader) => {      // 이미 다른 패치가 있으면 �
 
 값은 설문 HANDOFF 6.15(튜브) · 6.16(램프).
 
+---
+
+## 16. DB 연결 — 지도에 바뀐 것 (2026-09-30, DB 연동 세션)
+
+백엔드는 **Firebase(Firestore + 익명 인증)로 확정**됐다. 지도는 공개 기록 전부를 한 번에 받고 새 기록을 실시간으로 받는다.
+**DB 설정값(`shared/db-config.js`)이 비어 있는 동안은 예전과 똑같이 `MockStore`로 돈다** — 목업 46건이 변경 전과 같은 것을 확인했다.
+전체 설계·사용자 할 일·비용은 `HANDOFF.md` 13장.
+
+### 바뀐 줄
+
+| 파일 | 바뀐 것 |
+|---|---|
+| `js/main.js` | `import { MockStore }` → `import { pickStore }`, 부팅부의 `new MockStore(...)` 두 곳 → `pickStore(qs, seed, interval)`. 그 밖은 그대로 |
+| `js/store.js` | `FirestoreStore`·`pickStore` 추가. 머리말의 Supabase 추천을 "Firebase로 확정"으로. `MockStore` 기록에 `share`·`schema_version`을 붙였다(스키마 검사 통과용 — `share`는 순번에서 뽑아 난수 순서가 그대로다) |
+| `index.html` | `survey-taxonomy.js` 다음에 `<script src="./shared/record-schema.js">` 한 줄 |
+| `tools/build-standalone.mjs` | `SHARED_ORDER`에 `db-config.js`·`record-store.js`, `record-schema.js` 인라인, 시안은 늘 `mock=1` |
+| `shared/` 새 파일 | `record-schema.js`(클래식 전역 `RECORD_SCHEMA`) · `db-config.js` · `record-store.js` — 설문과 같이 쓴다 |
+
+쿼리 파라미터: `?mock=1`(설정이 있어도 목업), `?emu=1`(localhost에서만 — 로컬 에뮬레이터). `seed`·`interval`은 목업일 때만 쓴다.
+
+### 레코드에 추가된 것
+
+`share`(나눔 → 시간대, `SHARES`의 id)와 `schema_version`(1). 지도는 안 써도 된다. 나머지 필드는 `store.js` 머리말 그대로다
+(설문 쪽 옛 설계를 버리고 지도 이름을 정본으로 했다). `created_at`은 계약대로 ISO 문자열로 온다.
+
+### 오프라인 동작
+
+- 마지막으로 받은 공개 목록을 localStorage(`yeogi.map.cache.v1`)에 둔다. 서버가 8초 안에 답하지 않으면 캐시로 `onReady`,
+  붙으면 차이만 `onInsert`/`onRemove`. 캐시도 없으면(첫 부팅) 서버를 기다린다.
+- 구독 오류는 백오프(2·4·8…60초)로 다시 붙는다.
+- **SDK 자체를 못 받았으면 새로고침한다.** 크로미움은 한 번 실패한 `import()` 주소를 문서가 살아 있는 동안 기억해서, 다시
+  import 해도 같은 실패가 돌아온다(실측). SDK 주소에 `fetch`로 닿으면 새로고침(2분에 한 번까지, 그 사이는 캐시로 돈다).
+- 차이가 많이 밀려 들어오면 기존 규칙대로 3척만 연출하고 나머지는 조용히 놓인다(`ARRIVAL_QUEUE_MAX`).
+
+### standalone 빌드
+
+통과한다(씬 2.28MB). 새 shared 파일이 이어붙고, SDK는 동적 import라 굽지 않는다. 시안은 `mock=1`을 넘겨 늘 목업 —
+DB 설정을 채워도 시안 파일은 네트워크 요청 없이 목업으로 도는 것을 확인했다.
+
+### 지도 세션이 앞으로 지킬 것
+
+1. **저장소 계약은 그대로다.** `onReady`는 한 번(첫 **서버** 스냅샷), 그 뒤로는 `onInsert`/`onRemove`만. Firestore를 직접 부르지 말고
+   `shared/record-store.js`를 거칠 것 — 첫 스냅샷의 "added" 전부, `fromCache` 빈 목록, `serverTimestamps: "estimate"` 같은
+   함정이 거기와 `FirestoreStore`에 모여 있다. `onSnapshot`을 새로 쓰면 **error 콜백을 반드시** 단다(없으면 조용히 멈춘다).
+2. **화면에 넘기는 기록은 `RECORD_SCHEMA.checkRecord`를 통과한 것만.** 두 저장소가 다 그렇게 한다. 분류값에서 빠진 값을 가진
+   옛 기록은 여기서 걸러진다(콘솔 경고) — `style.js`가 모르는 키워드로 배를 만들지 않게.
+3. **공개 판정은 서버에서.** 쿼리에 `where(moderation_status == "public")`이 없으면 규칙이 쿼리 전체를 거절한다.
+4. **참여자 글을 `innerHTML`에 넣을 땐 `esc`.** 지금은 `insights.js`·`views.js`가 다 거치고 `panel.js`의 도착 카드는
+   `textContent`다(09-30 확인, `<img onerror>`·`<script>` 문장으로 E2E 검증).
+5. `survey-taxonomy.js`를 바꾸면 **보안 규칙을 다시 생성·배포**해야 한다(`node firebase/build-rules.mjs` — `HANDOFF.md` 13.3).
+6. `shared/`에 새 모듈을 더하면 `build-standalone.mjs`의 `SHARED_ORDER`에도 넣는다. 최상위 이름은 지도 코드와 한 스코프라
+   `record-store.js`는 이름을 전부 `db`로 시작하게 했다.
