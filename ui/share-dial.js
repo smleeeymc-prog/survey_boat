@@ -9,10 +9,19 @@
  * 고르는 법: 칸을 누르거나, 바늘을 돌리듯 끌거나, 방향키(라디오 묶음이라 기본 동작).
  * 고른 것이 바뀔 때만 onPick(id)를 부른다.
  *
+ * 끌기가 "물처럼" 흘러 딱 잡기 어렵다는 사용자 보고(09-30)로 세 가지를 넣었다.
+ *   · 축 가까이(반지름의 55% 안)에서는 끌어도 바뀌지 않는다 — 중심 근처는 손가락이 조금만
+ *     움직여도 각도가 크게 튀어서 칸이 확확 바뀌었다
+ *   · 칸 경계를 지나도 바로 넘어가지 않고 조금 더 가야 넘어간다(히스테리시스) — 딸깍 걸리는 느낌
+ *   · 바늘이 튕기며 넘치던 곡선을 멈추는 곡선으로 바꿨다(CSS .dial-needle)
+ * 누르기는 예전 그대로 — 누른 칸으로 바로 간다.
+ *
  * items  : [{id, label}] — 왼쪽(많이 나눔)부터 오른쪽(나눈 적 없음) 순서
  * ========================================================================== */
 
-const DIAL = { w: 338, h: 92, cx: 169, cy: 74, r: 70, needle: 52 };
+const DIAL = { w: 338, h: 92, cx: 169, cy: 74, r: 70, needle: 52,
+  dead: 0.55,        // 축 둘레 무시 반경 (반지름 대비)
+  sticky: 0.2 };     // 칸 경계를 넘어 더 가야 하는 거리 (칸 폭 대비)
 
 function shareDial(items, value, onPick){
   const n = items.length;
@@ -65,7 +74,7 @@ function shareDial(items, value, onPick){
   label.className = "dial-label";
   const box = document.createElement("div");
   box.style.display = "flex"; box.style.flexDirection = "column"; box.style.alignItems = "stretch";
-  box.appendChild(wrap); box.appendChild(label);
+  box.appendChild(label); box.appendChild(wrap);   // 고른 답은 다이얼 위에 (09-30 사용자)
 
   const needle = wrap.querySelector(".dial-needle");
   let cur = -1;
@@ -77,25 +86,37 @@ function shareDial(items, value, onPick){
     needle.style.transform = `rotate(${90 - angle(i)}deg)`;   // 위(90°)를 기준으로 시계 방향
     radios[i].checked = true;
     label.textContent = items[i].label;
-    if (!silent && items[i].id !== value) { value = items[i].id; onPick(value); }
+    if (!silent && items[i].id !== value) {
+      value = items[i].id; onPick(value);
+      if (dragging && navigator.vibrate) navigator.vibrate(6);   // 끌 때 칸을 넘으면 살짝 딸깍
+    }
   }
 
-  // 끌기 — 다이얼 중심에서 손가락까지의 각도로 가장 가까운 칸을 고른다
-  const pick = (e) => {
+  // 다이얼 중심에서 손가락까지의 각도 → 칸 위치(실수, 0 = 첫 칸 가운데). 축 가까이면 null
+  const position = (e) => {
     const rect = wrap.getBoundingClientRect();
     const s = rect.width / DIAL.w;
     const dx = e.clientX - (rect.left + DIAL.cx * s);
     const dy = (rect.top + DIAL.cy * s) - e.clientY;
+    if (Math.hypot(dx, dy) < DIAL.r * DIAL.dead * s) return null;
     let deg = Math.atan2(dy, dx) * 180 / Math.PI;
     if (deg < 0) deg = dx < 0 ? 180 : 0;                        // 중심보다 아래면 가까운 끝으로
-    select(Math.round((180 - deg) / (180 / n) - 0.5));
+    return (180 - deg) / (180 / n) - 0.5;
   };
   let dragging = false;
   wrap.addEventListener("pointerdown", (e) => {
-    dragging = true; pick(e);
+    // 누른 자리로 바로 간다(누르기는 예전 그대로). 축 근처를 누르면 아무것도 안 바뀐다.
+    const u = position(e);
+    if (u !== null) select(Math.round(u));
+    dragging = true;
     try { wrap.setPointerCapture(e.pointerId); } catch (_e) {}
   });
-  wrap.addEventListener("pointermove", (e) => { if (dragging) pick(e); });
+  wrap.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const u = position(e);
+    // 지금 칸에서 경계(0.5)보다 sticky만큼 더 가야 다음 칸으로 넘어간다
+    if (u !== null && Math.abs(u - cur) > 0.5 + DIAL.sticky) select(Math.round(u));
+  });
   const end = () => { dragging = false; };
   wrap.addEventListener("pointerup", end);
   wrap.addEventListener("pointercancel", end);

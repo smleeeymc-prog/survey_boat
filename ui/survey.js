@@ -46,6 +46,7 @@ function render(){
   el.className = "screen";
 
   if(state.step==="onboard") el.appendChild(renderOnboard());
+  else if(state.step==="prompt") el.appendChild(renderPrompt());
   else if(state.step==="region") el.appendChild(renderRegion());
   else if(state.step==="state") el.appendChild(renderState());
   else if(state.step==="sentence") el.appendChild(renderSentence());
@@ -135,12 +136,19 @@ function whenScene(cb, timeout = 4000){
   }, 80);
 }
 
-/* ── 첫 화면 (B′1) ─────────────────────────────────────────────────────────
-   하늘 위에 제목, 아래 어둠 위에 질문·소개·시작 버튼. 제목은 씬이 뜨기 전부터 보인다
-   (크림 배경 위에서도 읽히는 짙은 남색) — 하늘이 그 뒤로 페이드되어 들어온다. */
+/** 첫 화면 두 장은 하늘에서 본다. 처음이면 인트로(처음부터 하늘), 되돌아왔으면 하늘로 되짚어 오른다. */
+function skyUp(scene, done){
+  if(!scene.introDone) scene.playIntro(done);
+  else scene.introRise(done);
+}
+
+/* ── 첫 화면 1장 (B′1) ─────────────────────────────────────────────────────
+   하늘 위에 제목, 아래 어둠 위에 소개·시작 버튼. 아래 정보가 적어 어둠은 최대한 낮게 깐다.
+   제목은 씬이 뜨기 전부터 보인다(크림 배경 위에서도 읽히는 짙은 남색) — 하늘이 그 뒤로 들어온다. */
 function renderOnboard(){
   const d = h("div");
-  d.appendChild(h("p", "ob-label", "입다 · 2026 다원예술 프로젝트"));
+  const label = h("p", "ob-label", "입다 · 2026 다원예술 프로젝트");
+  d.appendChild(label);
   const title = h("h1", "ob-title");
   title.innerHTML = "그래도,<br>여기 살고 있습니다";
   d.appendChild(title);
@@ -148,14 +156,10 @@ function renderOnboard(){
   d.appendChild(scrim);
 
   const bottom = h("div", "ob-bottom fade-stage");
-  const q = h("p", "ob-q");
-  q.innerHTML = "지금, 당신은 이곳에 머물고 있나요,<br>지나가고 있나요?";
-  bottom.appendChild(q);
-  bottom.appendChild(h("div", "ob-rule"));
   bottom.appendChild(h("p", "ob-desc", "충남·아산에 남아 살아가는 청년의 이야기를 한 문장으로 남겨주세요. 당신의 문장은 다른 사람들의 기록과 함께 전시장 안에 쌓입니다."));
   const btn = h("button", "cta");
   btn.type = "button";
-  btn.innerHTML = `한 문장 남기러 가기${ICON_NEXT}`;
+  btn.innerHTML = `시작하기${ICON_NEXT}`;
   bottom.appendChild(btn);
   bottom.appendChild(h("p", "ob-caption", "질문 6개 · 약 2분 · 익명으로 남길 수 있어요"));
   d.appendChild(bottom);
@@ -164,9 +168,43 @@ function renderOnboard(){
   btn.onclick = () => {
     if(btn.disabled) return;
     btn.disabled = true;
-    // 글자와 어둠을 먼저 걷어내고, 카메라가 내려앉는 동안 화면을 비워 둔다.
+    // 1장을 걷어내고 하늘만 남긴 채 2장(질문 한 줄)으로 넘어간다
     scrim.classList.remove("show"); bottom.classList.remove("show");
-    title.style.transition = "opacity .6s ease"; title.style.opacity = "0";
+    for(const el of [title, label]){ el.style.transition = "opacity .6s ease"; el.style.opacity = "0"; }
+    setTimeout(() => { state.step = "prompt"; render(); }, 650);
+  };
+
+  whenScene((scene) => {
+    if(state.step !== "onboard") return;
+    if(!scene){ reveal(); return; }
+    scene.show("onboard", state);
+    skyUp(scene, reveal);
+  });
+  return d;
+}
+
+/* ── 첫 화면 2장 — 질문 한 줄이 하늘 가운데에 혼자 떠오른다(개편 전의 온보딩처럼).
+   '다음'을 누르면 글자를 걷고 카메라가 바다로 내려앉은 뒤 첫 질문이 올라온다.
+   첫 질문에서 '이전'을 누르면 여기로 돌아오며 하늘로 되짚어 오른다(skyUp). */
+function renderPrompt(){
+  const d = h("div");
+  const q = h("p", "pr-q fade-stage");
+  q.innerHTML = "지금, 당신은<br>이곳에 머물고 있나요,<br>지나가고 있나요?";
+  d.appendChild(q);
+  const next = h("button", "pr-next fade-stage");
+  next.type = "button";
+  next.innerHTML = `다음${ICON_NEXT}`;
+  d.appendChild(next);
+
+  const reveal = () => {
+    requestAnimationFrame(() => q.classList.add("show"));
+    setTimeout(() => next.classList.add("show"), 650);
+  };
+  next.onclick = () => {
+    if(next.disabled) return;
+    next.disabled = true;
+    // 글자를 먼저 걷어내고, 카메라가 내려앉는 동안 화면을 비워 둔다.
+    q.classList.remove("show"); next.classList.remove("show");
     if(window.BottleScene){
       window.BottleScene.introDescend(() => {
         // 배가 자리를 잡고 0.5초 머문 뒤에 첫 질문이 페이드로 올라온다.
@@ -180,12 +218,10 @@ function renderOnboard(){
     } else { state.step = "region"; render(); }
   };
 
-  // 시점이 하늘에 올라가 있는 것을 확인한 뒤에 아래 글자를 올린다
   whenScene((scene) => {
-    if(state.step !== "onboard") return;
+    if(state.step !== "prompt") return;
     if(!scene){ reveal(); return; }
-    scene.show("onboard", state);
-    scene.playIntro(reveal);
+    skyUp(scene, reveal);
   });
   return d;
 }
@@ -201,7 +237,7 @@ function renderRegion(){
   return questionStep({
     title: "지금 활동하는 지역은 어디인가요?",
     sub: "넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.",
-    content: picker, prev: "onboard",
+    content: picker, prev: "prompt",
     onNext: () => { state.step = "state"; render(); },
   }).el;
 }

@@ -29,6 +29,9 @@
 
 *,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
 html,body{ height:100%; }
+/* 두 번 탭 확대를 끈다(스크롤·핀치는 그대로). touch-action은 조상과의 교집합이라 여기 걸면 모든 요소에 적용된다.
+   예전엔 이전·다음을 빠르게 두 번 누르면 화면이 확대돼 빠져나올 수 없었다. */
+html, body, button, label, input, textarea{ touch-action:manipulation; }
 /* 가로로 넘치는 요소가 있어도 페이지가 옆으로 밀리지 않게 */
 body{
   font-family:var(--ui); background:transparent; color:var(--ink);
@@ -90,12 +93,16 @@ h2.q{ font-family:var(--serif); font-size:27px; line-height:1.45; font-weight:70
 p.sub{ font-size:13px; line-height:1.5; color:var(--b-text3); }
 .qcontent{ flex:1 1 auto; display:flex; flex-direction:column; justify-content:center; padding:10px 0 14px; min-height:0; }
 .qnav{ display:flex; align-items:center; justify-content:space-between; }
-.qback{ height:48px; padding:0 6px 0 0; border:0; background:transparent; color:rgba(246,242,234,.78);
-  font-size:15px; font-weight:500; display:flex; align-items:center; gap:4px; }
-.qnext{ height:50px; padding:0 26px; border:0; border-radius:25px; background:var(--b-text); color:var(--b-ink);
-  font-size:15.5px; font-weight:600; display:flex; align-items:center; gap:8px; transition:opacity .15s ease; }
+/* 이전·다음은 예전 크기의 70% (09-30 사용자). 보이는 크기만 줄이고 누르는 자리는 ::after로 넓혀 둔다 */
+.qback, .qnext{ position:relative; }
+.qback::after, .qnext::after{ content:""; position:absolute; inset:-6px -4px; }
+.qback{ height:34px; padding:0 4px 0 0; border:0; background:transparent; color:rgba(246,242,234,.78);
+  font-size:11px; font-weight:500; display:flex; align-items:center; gap:3px; }
+.qnext{ height:35px; padding:0 18px; border:0; border-radius:18px; background:var(--b-text); color:var(--b-ink);
+  font-size:11px; font-weight:600; display:flex; align-items:center; gap:5px; transition:opacity .15s ease; }
 .qnext:disabled{ opacity:.35; cursor:not-allowed; }
-.qback svg, .qnext svg, .cta svg{ width:18px; height:18px; flex:0 0 auto; }
+.qback svg, .qnext svg{ width:13px; height:13px; flex:0 0 auto; }
+.cta svg{ width:18px; height:18px; flex:0 0 auto; }
 
 /* ── 세로 선택지 (지역·상태·공개 방식 아님) — 가운데 줄이 고른 것, 위아래는 흐리게 ── */
 .picker{ position:relative; }
@@ -166,26 +173,34 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .dial-dot.on{ fill:var(--b-gold); }
 .dial-halo{ fill:rgba(230,199,154,.22); opacity:0; transition:opacity .3s ease; }
 .dial-halo.on{ opacity:1; }
-.dial-needle{ transform-box:view-box; transition:transform .45s cubic-bezier(.3,1.3,.5,1); }
-.dial-label{ text-align:center; font-family:var(--serif); font-size:22px; font-weight:700; color:var(--b-text); margin-top:4px; }
+/* 넘치지 않고 멈추는 곡선 — 예전(튕기며 넘침)은 물처럼 출렁여 칸에 딱 서는 느낌이 없었다 */
+.dial-needle{ transform-box:view-box; transition:transform .3s cubic-bezier(.25,.8,.25,1); }
+.dial-label{ text-align:center; font-family:var(--serif); font-size:22px; font-weight:700; color:var(--b-text); margin-bottom:6px; }
 
-/* ── 첫 화면 (B′1) — 밝은 하늘 위엔 짙은 명조, 아래 어둠 위엔 밝은 글자 ── */
+/* ── 첫 화면 1장 (B′1) — 밝은 하늘 위엔 짙은 명조, 아래 어둠 위엔 밝은 글자 ── */
 .ob-label{ position:fixed; left:0; right:0; top:calc(26px + var(--safe-t)); text-align:center;
   font-size:12px; font-weight:600; letter-spacing:.22em; color:var(--b-navy); }
-.ob-title{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); top:calc(21vh + var(--safe-t));
+/* 제목은 21vh에서 한 줄(36px × 1.32)만큼 내려 둔다(09-30 사용자) */
+.ob-title{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); top:calc(21vh + 48px + var(--safe-t));
   text-align:center; font-family:var(--serif); font-size:36px; line-height:1.32; font-weight:700; color:var(--b-navy); }
-/* 아래 어둠 — 예전(B1)보다 약 100px 낮게 시작하고 가장 짙은 곳도 96%→88% */
-.ob-scrim{ position:fixed; left:0; right:0; bottom:0; height:calc(444px + var(--safe-b)); pointer-events:none;
-  background:linear-gradient(180deg, rgba(7,9,14,0) 0%, rgba(7,9,14,.72) 27%, rgba(7,9,14,.84) 50%, rgba(7,9,14,.88) 100%); }
+/* 아래 어둠 — 소개 문장·버튼 뒤만 덮도록 최대한 낮게. 소개 문장이 시작되는 선에서 75% */
+.ob-scrim{ position:fixed; left:0; right:0; bottom:0; height:calc(330px + var(--safe-b)); pointer-events:none;
+  background:linear-gradient(180deg, rgba(7,9,14,0) 0%, rgba(7,9,14,.75) 33%, rgba(7,9,14,.86) 60%, rgba(7,9,14,.88) 100%); }
 .ob-bottom{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); bottom:calc(34px + var(--safe-b));
   display:flex; flex-direction:column; align-items:center; text-align:center; color:var(--b-text); }
-.ob-q{ font-family:var(--serif); font-size:21px; line-height:1.6; font-weight:700; text-shadow:0 2px 16px rgba(0,0,0,.4); word-break:keep-all; }
-.ob-rule{ width:28px; height:1.5px; background:var(--b-gold); margin:18px 0; }
-.ob-desc{ font-size:14.5px; line-height:1.7; color:rgba(246,242,234,.84); word-break:keep-all; }
+.ob-desc{ font-size:14.5px; line-height:1.7; color:rgba(246,242,234,.86); word-break:keep-all; }
 .cta{ width:100%; height:54px; border:0; border-radius:27px; background:var(--b-text); color:var(--b-ink);
   font-size:16px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:26px; }
 .cta:disabled{ opacity:.5; }
 .ob-caption{ font-size:12.5px; color:rgba(246,242,234,.64); margin-top:14px; }
+
+/* ── 첫 화면 2장 — 질문 한 줄만 하늘 가운데에. 하늘이 밝아 짙은 남색 명조 ── */
+.pr-q{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); top:50%; margin-top:-60px;
+  text-align:center; font-family:var(--serif); font-size:25px; line-height:1.6; font-weight:700; color:var(--b-navy); word-break:keep-all; }
+.pr-next{ position:fixed; left:50%; bottom:calc(40px + var(--safe-b)); margin-left:-46px; width:92px;
+  height:35px; border:0; border-radius:18px; background:var(--b-navy); color:var(--b-text);
+  font-size:12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:5px; }
+.pr-next svg{ width:13px; height:13px; }
 
 /* ── 결과 (B′5) — 배경이 흰색으로 바뀐 뒤라 짙은 글자. 비네트는 index.html에서 바깥에서 들어온다 ── */
 .res-top{ position:fixed; left:0; right:0; top:calc(30px + var(--safe-t)); display:flex; flex-direction:column; align-items:center; gap:10px; }
