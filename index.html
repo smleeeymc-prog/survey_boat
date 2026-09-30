@@ -6,275 +6,13 @@
 <title>그래도, 여기 살고 있습니다 — 참여형 아카이브 (프로토타입)</title>
 <!-- UI 색·서체 토큰. 지도 화면(statistics/)과 같은 파일을 읽는다 — 한쪽만 바뀌지 않게. -->
 <link rel="stylesheet" href="./statistics/shared/tokens.css" />
+<!-- 설문 UI 서체: 질문·선택지는 고운바탕(명조), 나머지는 IBM Plex Sans KR -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" />
+<!-- 설문 화면의 UI (시안 B′). 아래 <style>에는 3D 무대에 관한 것만 남겼다. -->
+<link rel="stylesheet" href="./ui/survey.css" />
 <style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;}
-  /* 가로 피커가 100vw로 화면 끝까지 나가므로, 그 때문에 페이지가 옆으로 밀리지 않게 막는다. */
-  body{overflow-x:hidden;}
-  body{
-    font-family:var(--font); background:transparent; color:var(--ink);
-    min-height:100vh; display:flex; flex-direction:column; align-items:center;
-    justify-content:flex-start; overflow-x:hidden;
-  }
-  #proto-badge{
-    position:fixed; top:10px; right:10px; z-index:999;
-    background:var(--dark); color:var(--gold2); font-size:11px;
-    padding:5px 10px; border-radius:20px; letter-spacing:.02em; opacity:.85;
-  }
-  #app{ width:100%; max-width:520px; min-height:100vh; padding:32px 20px 60px;
-    display:flex; flex-direction:column; position:relative; z-index:2;
-    pointer-events:none; user-select:none; -webkit-user-select:none; }
-
-  /* 실제 조작이 필요한 요소들만 포인터 이벤트를 되살림 (그 외 빈 공간은 드래그가 캔버스로 통과) */
-  #app button,
-  #app .option-card,
-  #app .tag,
-  #app .filter-chip,
-  #app select,
-  #app textarea,
-  #app .consent-box label,
-  #app .picker-track,
-  #app .archive-screen,
-  #app input{
-    pointer-events:auto;
-  }
-  #app textarea, #app input{ user-select:text; -webkit-user-select:text; }
-  /* 선택지를 고를 때마다 render()가 화면을 통째로 다시 만드는 구조라, 여기에 등장 애니메이션을
-     걸어두면 클릭할 때마다 UI 전체가 사라졌다 나타난다. 그래서 뺐다. */
-  .screen{ display:flex; flex-direction:column; flex:1; }
-  /* 질문 화면: 위쪽은 비워 배를 보여주고, 입력과 버튼은 아래로 모은다 */
-  .step{ display:flex; flex-direction:column; flex:1; }
-  .step .grow{ flex:1 1 auto; min-height:10px; }
-
-  /* 하단 바 — 원형 뒤로가기 + 확인 버튼 */
-  .bottom-bar{ display:flex; gap:10px; align-items:stretch; margin-top:14px; }
-  .bottom-bar .next-btn{ margin-top:0; flex:1 1 auto; width:auto; }
-  .circle-btn{
-    flex:0 0 auto; width:54px; border-radius:50%;
-    background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    font-size:19px; line-height:1; cursor:pointer; font-family:var(--font);
-    display:flex; align-items:center; justify-content:center;
-  }
-
-  /* progress */
-  .progress-row{ display:flex; align-items:center; gap:10px; margin-bottom:28px; }
-  .progress-bar{ flex:1; height:3px; background:rgba(227,221,208,.55); border-radius:2px; overflow:hidden; }
-  .progress-fill{ height:100%; background:var(--gold); transition:width .4s ease; }
-  .progress-label{ font-size:12px; color:var(--ink3); white-space:nowrap; }
-
-  /* splash */
-  .splash{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:18px; }
-  .splash h1{ font-size:26px; line-height:1.4; font-weight:700; }
-  .splash h1 span{ display:block; color:var(--gold); font-size:14px; letter-spacing:.15em; margin-bottom:10px; font-weight:500; }
-  .splash p{ color:var(--ink3); font-size:14px; line-height:1.7; max-width:340px; }
-
-  .chat-btn{
-    margin-top:18px; width:100%; max-width:320px; background:rgba(22,22,30,.72); color:var(--white);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    border:1px solid rgba(255,255,255,.12); border-radius:30px; padding:16px 22px; font-size:15px; cursor:pointer;
-    display:flex; justify-content:space-between; align-items:center; font-family:var(--font);
-    transition:transform .15s ease;
-  }
-  .chat-btn:hover{ transform:translateY(-2px); }
-  .chat-btn span.arrow{ color:var(--gold2); font-size:18px; }
-
-  /* 인트로에서 배경이 빈 하늘뿐이라 흰 글자로 띄운다. */
-  .onboard-line{ font-size:16px; line-height:1.8; text-align:center; padding:40px 10px; color:#FFFFFF; flex:1; display:flex; align-items:center; justify-content:center; }
-
-  .fade-stage{ opacity:0; transform:translateY(8px); transition:opacity .8s ease, transform .8s ease; }
-  .fade-stage.show{ opacity:1; transform:translateY(0); }
-  /* 인트로에서 배가 자리를 잡은 뒤 첫 질문이 떠오를 때 쓴다. 그냥 나타나면 툭 걸린다. */
-  .step.step-fade{ opacity:0; transition:opacity .7s ease; }
-  .step.step-fade.show{ opacity:1; }
-
-  h2.q{ font-size:19px; font-weight:700; margin-bottom:6px; }
-  p.sub{ font-size:13px; color:var(--ink3); margin-bottom:24px; line-height:1.6; }
-
-  .option-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:24px; }
-  .option-card{
-    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.5);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    border-radius:14px; padding:16px 18px;
-    cursor:pointer; font-size:14px; display:flex; justify-content:space-between; align-items:center;
-    transition:all .15s ease;
-  }
-  .option-card:hover{ border-color:var(--gold2); }
-  .option-card.selected{ border-color:var(--gold); background:rgba(251,247,239,.68); font-weight:700; }
-  .option-card .desc{ font-weight:400; font-size:12px; color:var(--ink3); margin-top:3px; }
-
-  /* 이름 입력은 문장 입력과 같은 인터페이스를 쓴다 — 한 줄이라 min-height/resize만 빠진다 */
-  textarea.sentence, input.name-input{
-    width:100%; border:1.5px solid rgba(255,255,255,.55); border-radius:14px; padding:16px; font-size:15px;
-    font-family:var(--font); background:rgba(255,255,255,.5);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); line-height:1.6;
-  }
-  textarea.sentence{ resize:none; min-height:110px; }
-  textarea.sentence:focus, input.name-input:focus{ outline:none; border-color:var(--gold); }
-  .char-count{ text-align:right; font-size:12px; color:var(--ink3); margin-top:6px; }
-
-  /* ── 스냅 피커 ─────────────────────────────────────────────────────────────
-     선택지를 한 번에 하나만 보여주고 굴려서 고른다. 배가 목록에 가리지 않게 하려는 것.
-
-     스크롤·관성·스냅은 전부 네이티브에 맡긴다. 직접 구현하면 모바일 관성이 죽는다.
-     앞서 났던 문제들은 네이티브 탓이 아니라 네이티브와 싸우게 짜서 생긴 것이었다.
-       · scroll-snap-type을 both로 줘서 축이 섞였다 → 축을 명시한다
-       · 놓는 순간 브라우저 스냅과 우리 보정이 동시에 당겼다 → 보정을 없앤다
-       · 빠르게 밀면 여러 칸을 건너뛰었다 → scroll-snap-stop:always 로 한 칸씩 멈춘다 */
-  .picker{ position:relative; margin-bottom:20px; }
-  .picker-track{
-    position:relative; overflow:auto; z-index:1; cursor:grab;
-    scrollbar-width:none; -ms-overflow-style:none;
-    overscroll-behavior:contain;              /* 끝에서 페이지가 같이 밀리지 않게 */
-    -webkit-overflow-scrolling:touch;
-  }
-  .picker-track::-webkit-scrollbar{ display:none; }
-  /* 마우스 드래그 중에만 스냅을 끈다. 놓으면 클래스를 떼는 것으로 끝 —
-     여기서 scrollTo를 또 부르면 브라우저 스냅과 겹쳐서 두 칸씩 튄다. */
-  .picker-track.dragging{ cursor:grabbing; scroll-snap-type:none; }
-  .picker.v .picker-track{ height:77px; touch-action:pan-y; scroll-snap-type:y mandatory; }
-  .picker.h .picker-track{ touch-action:pan-x; scroll-snap-type:x mandatory; }
-  /* 가로 피커만 #app의 좌우 여백을 뚫고 화면 끝까지 나간다.
-     예전엔 앱 폭(최대 520px) 안에 갇혀 양끝 선택지가 잘린 채로 끝났다. */
-  .picker.h{ width:100vw; margin-left:calc(50% - 50vw); margin-right:calc(50% - 50vw); }
-
-  .picker-list{ display:flex; position:relative; }
-  /* 눈금자. 선택지와 함께 스크롤해야 눈금과 선택지가 어긋나지 않으므로 list 안에 둔다.
-     굵은 눈금이 선택지 한가운데, 그 사이를 5등분해 가는 눈금 4개가 들어간다. */
-  .picker-ruler{
-    position:absolute; left:0; bottom:0; height:20px; pointer-events:none;
-    background-repeat:repeat-x; background-position:0 bottom, 0 bottom;
-  }
-  /* 눈금자 뒤에 옅게 깔아 3D 위에서도 눈금이 읽히게 한다. */
-  .picker.h .picker-fade{
-    position:absolute; left:0; right:0; bottom:0; height:64px; pointer-events:none; z-index:0;
-    background:linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,.42) 55%, rgba(255,255,255,.66) 100%);
-  }
-  .picker.v .picker-list{ flex-direction:column; }
-  .picker.h .picker-list{ flex-direction:row; }
-
-  .picker-item{
-    flex:0 0 auto;
-    scroll-snap-align:center;
-    scroll-snap-stop:always;                  /* 한 번의 제스처로 한 칸만 넘어간다 */
-    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-    transition:opacity .25s ease, transform .25s ease, filter .3s ease;
-  }
-  .picker.v .picker-item{ height:77px; padding:0 18px; }
-  /* 눈금자 자리를 아래에 비워 둔다 */
-  .picker.h .picker-item{ padding:26px 6px 34px; position:relative; z-index:1; }   /* 폭은 layout()이 픽셀로 넣는다 */
-  /* 양끝 여백용 빈 항목. 스냅 대상이 아니어야 해서 snap-align을 주지 않는다. */
-  .picker-pad{ flex:0 0 auto; align-self:stretch; pointer-events:none; }
-
-  /* 가운데가 아닌 항목은 물러나게 */
-  .picker-item{ opacity:.25; transform:scale(.86); }
-  .picker-item.active{ opacity:1; transform:scale(1); }
-  /* 가로 피커는 틀 대신 블러로 선택을 표시한다 */
-  .picker.h .picker-item{ opacity:.55; filter:blur(3px); transform:scale(.8); }
-  .picker.h .picker-item.active{ opacity:1; filter:none; transform:scale(1); }
-
-  .picker-item .lab{ font-size:19px; font-weight:700; line-height:1.35; }
-  .picker-item .desc{ font-size:12.5px; color:var(--ink3); margin-top:5px; line-height:1.5; }
-  .picker.h .picker-item .lab{ font-size:22px; }
-
-  /* 선택된 항목이 어디인지 알려주는 틀 (세로 전용) */
-  .picker-frame{
-    position:absolute; left:0; right:0; top:0; height:77px; pointer-events:none;
-    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.42);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:14px;
-  }
-  .picker.h .picker-frame{ display:none; }
-
-  .picker-hint{ text-align:center; font-size:11.5px; color:var(--ink3); margin-top:8px; letter-spacing:.02em; }
-
-
-  .tag-wrap{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
-  .tag{
-    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.5);
-    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
-    border-radius:20px; padding:9px 16px;
-    font-size:13px; cursor:pointer; transition:all .15s ease;
-  }
-  .tag.selected{ background:rgba(22,22,30,.72); color:var(--white); border-color:rgba(22,22,30,.72); }
-  .tag.disabled{ opacity:.35; pointer-events:none; }
-
-  .consent-box{ border:1.5px solid rgba(255,255,255,.55); border-radius:14px; padding:16px; margin-bottom:16px;
-    background:rgba(255,255,255,.5); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
-  .consent-box label{ display:flex; align-items:flex-start; gap:10px; font-size:13px; line-height:1.6; cursor:pointer; }
-  .consent-box input[type=checkbox]{ margin-top:3px; accent-color:var(--gold); width:16px; height:16px; flex-shrink:0; }
-  .privacy-note{ font-size:11.5px; color:var(--ink3); line-height:1.7; margin-top:14px; padding-top:14px; border-top:1px dashed #e3ddd0; }
-
-  .next-btn{
-    margin-top:auto; width:100%; background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
-    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    border-radius:30px; padding:16px; font-size:15px; cursor:pointer; font-family:var(--font);
-    transition:opacity .15s ease;
-  }
-  .next-btn:disabled{ opacity:.35; cursor:not-allowed; }
-
-  /* 결과 카드 */
-  .result-wrap{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:6px; gap:22px; text-align:center; }
-  .my-card{
-    background:rgba(22,22,30,.72); color:var(--white); border:1px solid rgba(255,255,255,.12);
-    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-    border-radius:20px; padding:34px 26px; width:100%;
-    max-width:340px; position:relative; animation:cardPop .6s cubic-bezier(.2,.9,.3,1.3);
-  }
-  @keyframes cardPop{ from{opacity:0; transform:scale(.85) translateY(14px);} to{opacity:1; transform:scale(1) translateY(0);} }
-  .my-card .tagline{ color:var(--gold2); font-size:11px; letter-spacing:.12em; margin-bottom:14px; }
-  .my-card .sentence-txt{ font-size:18px; line-height:1.6; font-weight:700; margin-bottom:18px; }
-  .my-card .meta-row{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; font-size:11px; color:#c9c5bc; }
-  .my-card .meta-row span{ border:1px solid #454555; border-radius:20px; padding:3px 10px; }
-  .result-wrap p.note{ color:var(--ink3); font-size:13px; }
-
-  /* 아카이브 화면 */
-  .archive-screen{ width:100%; max-width:960px; padding:24px 16px 60px; }
-  .archive-header{ text-align:center; margin-bottom:22px; }
-  .archive-header h2{ font-size:22px; margin-bottom:6px; }
-  .archive-header p{ color:var(--ink3); font-size:13px; }
-  .filter-row{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:10px; }
-  .filter-chip{
-    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.55);
-    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
-    border-radius:20px; padding:7px 14px;
-    font-size:12.5px; cursor:pointer;
-  }
-  .filter-chip.active{ background:rgba(22,22,30,.78); color:var(--white); border-color:rgba(22,22,30,.78); }
-  .region-select{ text-align:center; margin-bottom:22px; }
-  .region-select select{ font-family:var(--font); font-size:12.5px; padding:6px 10px; border-radius:20px;
-    border:1.5px solid rgba(255,255,255,.55); background:rgba(255,255,255,.55);
-    backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
-
-  .wall{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
-  .wall-card{
-    background:rgba(255,255,255,.7); border:1px solid rgba(236,231,220,.8); border-radius:16px; padding:18px;
-    font-size:13.5px; line-height:1.6; animation:cardIn .5s ease backwards;
-    display:flex; flex-direction:column; gap:10px;
-  }
-  @keyframes cardIn{ from{opacity:0; transform:translateY(10px) scale(.97);} to{opacity:1; transform:translateY(0) scale(1);} }
-  .wall-card.new-card{ border-color:var(--gold); box-shadow:0 0 0 2px rgba(184,154,106,.25); animation:cardIn .5s ease, pulse 1.8s ease 2; }
-  @keyframes pulse{ 0%,100%{ box-shadow:0 0 0 2px rgba(184,154,106,.25);} 50%{ box-shadow:0 0 0 5px rgba(184,154,106,.12);} }
-  .wall-card .top-meta{ display:flex; justify-content:space-between; font-size:11px; color:var(--ink3); }
-  .wall-card .state-tag{ color:var(--gold); font-weight:700; }
-  .wall-card .txt{ font-weight:600; }
-  .wall-card .kw-row{ display:flex; gap:6px; flex-wrap:wrap; }
-  .wall-card .kw{ font-size:10.5px; color:var(--ink3); border:1px solid #e3ddd0; border-radius:10px; padding:2px 8px; }
-  /* 서명처럼 카드 맨 아래 오른쪽에 붙인다. 문장이 주인공이므로 이름은 뒤로 물러나게 */
-  .wall-card .by{
-    margin-top:2px; padding-top:8px; border-top:1px solid rgba(236,231,220,.9);
-    text-align:right; font-size:11px; color:var(--ink3); letter-spacing:.02em;
-  }
-  /* 실명·별칭을 남긴 사람은 조금 더 또렷하게 — 이름을 밝힌 선택이 드러나도록 */
-  .wall-card .by.named{ color:var(--ink2); font-weight:600; }
-  .empty-note{ text-align:center; color:var(--ink3); font-size:13px; padding:40px 0; }
-
-  .restart-btn{
-    display:block; margin:30px auto 0; background:none; border:1.5px solid var(--ink3); color:var(--ink2);
-    border-radius:30px; padding:10px 22px; font-size:13px; cursor:pointer; font-family:var(--font);
-  }
-
-  @media (max-width:480px){ .my-card .sentence-txt{ font-size:16px; } }
-
   /* 병 속 풍경 3D 씬 — 전체화면 배경으로 표시 (onboard~result 단계)
      일부 모바일 브라우저(특히 인앱 웹뷰)는 negative z-index + position:fixed 조합에서
      합성(compositing) 오류로 요소가 아예 안 보이는 경우가 있어, z-index는 0 이상만 사용 */
@@ -292,16 +30,14 @@
   /* 색보정 — 대비·채도·따뜻함. 캔버스에 CSS 필터라 GPU 합성 단계에서 거의 공짜 (09-27 고정).
      값은 지도와 같이 쓰는 statistics/shared/tokens.css 의 --scene-grade */
   #bottleCanvas{ width:100%; height:100%; display:block; filter:var(--scene-grade); }
-  /* 틸트시프트 — 화면 위아래를 흐리게 해 병 속 미니어처처럼. 무대 안에 있어 씬과 같이 나타나고 사라진다 */
-  .tiltBlur{ position:absolute; left:0; right:0; height:34%; pointer-events:none;
-    -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
-  .tiltBlur.top{ top:0; -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
-    mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
-  .tiltBlur.bottom{ bottom:0; -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
-    mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
-  /* 비네트 — 가장자리를 살짝 어둡게 */
-  .sceneVignette{ position:absolute; inset:0; pointer-events:none;
-    background:var(--scene-vignette); }
+  /* 비네트 — 결과 화면에서만, 바깥에서 안으로 들어온다(크게 → 제자리, 투명 → 진하게).
+     병이 떠오르고 배경이 흰색으로 바뀐 뒤에 들어오도록 늦게 시작한다. 다른 단계엔 없다(09-30 사용자).
+     (예전의 틸트시프트 흐림은 뺐다 — 배를 화면 위쪽으로 올린 구도에선 위쪽 흐림이 섬·배를 덮고,
+      아래쪽은 질문 판의 어둠·흐림이 대신한다) */
+  .sceneVignette{ position:absolute; inset:0; pointer-events:none; background:var(--scene-vignette);
+    opacity:0; transform:scale(1.7); transition:opacity .6s ease, transform .6s ease; }
+  body[data-step="result"] .sceneVignette{ opacity:1; transform:scale(1);
+    transition:opacity 1.4s ease 1.2s, transform 1.9s cubic-bezier(.2,.7,.2,1) 1.2s; }
 
   /* 3D 초기화 실패 시 안내 (파일을 로컬로 직접 열었거나 인앱 브라우저인 경우 등) */
   #sceneError{
@@ -320,13 +56,6 @@
   }
   #camDebug.show{ display:block; }
 
-  /* 아카이브 카드 썸네일 */
-  /* 스냅샷은 병만 남기고 잘라 오므로 정사각형으로 강제하지 않는다.
-     비율을 그림에 맡겨야 카드마다 차지하는 높이가 줄어든다. */
-  .wall-card img.snap-thumb{
-    width:100%; height:auto; border-radius:10px;
-    background:transparent; display:block;
-  }
 </style>
 </head>
 <body>
@@ -341,8 +70,8 @@
 <!--
   설문 분류값(지역·상태·키워드). 머무름의 지도(statistics/)와 같은 파일을 읽는다.
   두 벌로 두면 지역이나 키워드를 하나 추가했을 때 지도의 통계 집계가 조용히 어긋난다.
-  클래식 스크립트인 이유는 그 파일 머리말 참고 — 아래 설문 UI가 인라인 핸들러 때문에
-  모듈로 못 바뀌고, 클래식 스크립트는 import를 못 쓴다.
+  클래식 스크립트인 이유는 그 파일 머리말 참고 — 아래 설문 UI(ui/*.js)가 클래식 스크립트라
+  import를 못 쓴다.
 -->
 <script src="./statistics/shared/survey-taxonomy.js"></script>
 
@@ -356,611 +85,10 @@
   }, 4000);
 </script>
 
-<script>
-/* ===========================================================
-   그래도, 여기 살고 있습니다 — 참여형 아카이브 프로토타입
-   ※ 실제 서버/DB 없음. 브라우저 메모리에만 데이터가 존재하며
-     새로고침 시 초기화됩니다. (실서비스는 Supabase 등 연동 필요)
-=========================================================== */
-
-// 지역·상태·키워드는 statistics/shared/survey-taxonomy.js 하나에서 온다.
-// 머무름의 지도의 통계 집계가 같은 값을 읽는다 — 여기에 다시 적어 두면 갈라진다.
-const REGIONS = SURVEY_TAXONOMY.REGIONS;
-const STATES = SURVEY_TAXONOMY.STATES;
-const SHARES = SURVEY_TAXONOMY.SHARES;
-const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
-const SENTENCE_Q = SURVEY_TAXONOMY.SENTENCE_Q;
-
-// 시연용 목업 시드 데이터
-let entries = [
-  {region:"아산", state:"stay", text:"여기서 나고 자란 친구들이 아직 다 있어서, 떠날 이유를 못 찾겠어요.", keywords:["관계","익숙함"], name:"익명"},
-  {region:"천안", state:"leaving", text:"괜찮은 일자리가 여기엔 없어서, 결국 서울로 가게 될 것 같아요.", keywords:["일","불안"], name:"익명"},
-  {region:"기타 충남", state:"returned", text:"서울 살아보니 알겠더라고요, 제가 있을 곳은 여기였다는 걸.", keywords:["소속감","익숙함"], name:"바다"},
-  {region:"아산", state:"between", text:"평일엔 일 때문에 나가지만 주말엔 항상 이곳으로 돌아와요.", keywords:["일","가족"], name:"익명"},
-  {region:"충남 밖", state:"unsure", text:"고향이 그립긴 한데, 지금 자리 잡은 곳을 버리기도 애매해요.", keywords:["불안","우연"], name:"익명"},
-  {region:"천안", state:"stay", text:"작업실 월세가 여기서만 가능해서 계속 남아있어요.", keywords:["창작","주거"], name:"단단"},
-  {region:"아산", state:"leaving", text:"부모님이 여기 계시지만, 제 커리어는 다른 도시에 있는 것 같아요.", keywords:["가족","일"], name:"익명"},
-  {region:"기타 충남", state:"stay", text:"딱히 이유는 없지만 여길 떠난다는 상상이 잘 안 돼요.", keywords:["익숙함"], name:"익명"},
-  {region:"천안", state:"unsure", text:"매년 떠난다고 말만 하고 벌써 5년째 여기 살고 있네요.", keywords:["우연","익숙함"], name:"익명"},
-  {region:"충남 밖", state:"returned", text:"타지에서 지치고 나서야 이 동네의 조용함이 그리웠다는 걸 알았어요.", keywords:["소속감","불안"], name:"강"},
-];
-
-let state = {
-  step: "splash",
-  region: null,
-  stateId: null,
-  text: "",
-  share: null,
-  keywords: [],
-  disclose: "익명",
-  name: "",
-  consent: false,
-  filterState: "all",
-  filterRegion: "all",
-};
-
-const app = document.getElementById("app");
-
-function render(){
-  app.innerHTML = "";
-  const el = document.createElement("div");
-  el.className = "screen";
-
-  if(state.step==="splash") el.appendChild(renderSplash());
-  else if(state.step==="onboard") el.appendChild(renderOnboard());
-  else if(state.step==="region") el.appendChild(renderRegion());
-  else if(state.step==="state") el.appendChild(renderState());
-  else if(state.step==="sentence") el.appendChild(renderSentence());
-  else if(state.step==="share") el.appendChild(renderShare());
-  else if(state.step==="keywords") el.appendChild(renderKeywords());
-  else if(state.step==="consent") el.appendChild(renderConsent());
-  else if(state.step==="result") el.appendChild(renderResult());
-  else if(state.step==="archive") el.appendChild(renderArchive());
-
-  app.appendChild(el);
-
-  // 3D 병 속 풍경 씬 동기화 (onboard ~ result 단계까지 배경으로 노출)
-  if(window.BottleScene) window.BottleScene.show(state.step, state);
-}
-
-function progress(stepNum, total, label){
-  const wrap = document.createElement("div");
-  wrap.className = "progress-row";
-  wrap.innerHTML = `<div class="progress-bar"><div class="progress-fill" style="width:${(stepNum/total)*100}%"></div></div>
-    <div class="progress-label">${stepNum}/${total}</div>`;
-  return wrap;
-}
-
-/**
- * 화면 하단 바. 원형 뒤로가기 버튼과 확인 버튼을 한 줄에 둔다.
- * 상단의 "← 이전으로"를 여기로 옮긴 것 — 손가락이 닿는 자리에 모아두려는 것.
- * 반환값의 next로 disabled를 조작한다.
- */
-function bottomBar(prevStep, label, onNext){
-  const row=document.createElement("div"); row.className="bottom-bar";
-  const back=document.createElement("button");
-  back.className="circle-btn"; back.type="button";
-  back.setAttribute("aria-label","이전으로");
-  back.textContent="←";
-  back.onclick=()=>{ state.step=prevStep; render(); };
-  const next=document.createElement("button");
-  next.className="next-btn"; next.textContent=label;
-  next.onclick=onNext;
-  row.appendChild(back); row.appendChild(next);
-  return { row, next, back };
-}
-
-/** 위쪽을 비워 배를 보여주고 아래 내용을 바닥으로 미는 여백 */
-function grow(){ const g=document.createElement("div"); g.className="grow"; return g; }
-
-function renderSplash(){
-  const d = document.createElement("div");
-  d.className = "splash";
-  d.innerHTML = `
-    <h1><span>입다 · 2026 다원예술 프로젝트</span>그래도,<br>여기 살고 있습니다</h1>
-    <p>충남·아산에 남아 살아가는 청년의 이야기를 한 문장으로 남겨주세요.<br>당신의 문장은 다른 사람들의 기록과 함께 전시장 안에 쌓입니다.</p>
-  `;
-  const btn = document.createElement("button");
-  btn.className = "chat-btn";
-  btn.innerHTML = `시작하기 <span class="arrow">→</span>`;
-  btn.onclick = () => { state.step="onboard"; render(); };
-  d.appendChild(btn);
-  return d;
-}
-
-function renderOnboard(){
-  const d = document.createElement("div");
-  d.style.display="flex"; d.style.flexDirection="column"; d.style.flex="1";
-  const line = document.createElement("div");
-  line.className = "onboard-line fade-stage";
-  line.textContent = "지금, 당신은 이곳에 머물고 있나요, 지나가고 있나요?";
-  d.appendChild(line);
-  const btn = document.createElement("button");
-  btn.className = "chat-btn fade-stage";
-  btn.innerHTML = `한 문장 남기러 가기 <span class="arrow">→</span>`;
-  btn.onclick = () => {
-    if(btn.disabled) return;
-    btn.disabled = true;
-    // 문장과 버튼을 먼저 걷어내고, 카메라가 내려앉는 동안 화면을 비워 둔다.
-    line.classList.remove("show"); btn.classList.remove("show");
-    if(window.BottleScene){
-      window.BottleScene.introDescend(()=>{
-        // 배가 자리를 잡고 0.5초 머문 뒤에 다음 질문이 페이드로 올라온다.
-        setTimeout(()=>{
-          state.step="region"; render();
-          const el = document.querySelector(".step");
-          if(el){ el.classList.add("step-fade");
-            requestAnimationFrame(()=> requestAnimationFrame(()=> el.classList.add("show"))); }
-        }, 500);
-      });
-    } else { state.step="region"; render(); }
-  };
-  d.appendChild(btn);
-
-  // 시점이 하늘까지 올라가 아무것도 남지 않으면, 문장 → 버튼 순서로 페이드인
-  if(window.BottleScene){
-    window.BottleScene.playIntro(()=>{
-      requestAnimationFrame(()=> line.classList.add("show"));
-      setTimeout(()=> btn.classList.add("show"), 650);
-    });
-  } else {
-    line.classList.add("show"); btn.classList.add("show");
-  }
-  return d;
-}
-
-function renderRegion(){
-  const d = document.createElement("div"); d.className="step";
-  d.appendChild(progress(1,6));
-  d.appendChild(grow());
-  const h = document.createElement("h2"); h.className="q"; h.textContent="지금 활동하는 지역은 어디인가요?";
-  d.appendChild(h);
-  const p = document.createElement("p"); p.className="sub"; p.textContent="넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.";
-  d.appendChild(p);
-  // 첫 진입이면 아무것도 고르지 않은 상태이므로 목록 첫 항목이 가운데에 온다.
-  if(!state.region) state.region = REGIONS[0];
-  d.appendChild(snapPicker(
-    REGIONS.map(r=>({id:r,label:r})), "v", state.region,
-    // 예전엔 상태만 바꿔서, 씬은 다음 단계로 넘어갈 때 show()가 불릴 때에야 색이 반영됐다.
-    (v)=>{ state.region=v; if(window.BottleScene) window.BottleScene.applyRegion(v); }, "굴려서 고르세요"
-  ));
-  d.appendChild(bottomBar("onboard","다음",()=>{ state.step="state"; render(); }).row);
-  return d;
-}
-
-function renderState(){
-  const d = document.createElement("div"); d.className="step";
-  d.appendChild(progress(2,6));
-  d.appendChild(grow());
-  const h=document.createElement("h2"); h.className="q"; h.textContent="지금 당신의 상태에 가장 가까운 것은?";
-  d.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없습니다. 지금 느끼는 대로 골라주세요.";
-  d.appendChild(p);
-  if(!state.stateId) state.stateId = STATES[0].id;
-  d.appendChild(snapPicker(
-    STATES.map(x=>({id:x.id,label:x.label,desc:x.desc})), "v", state.stateId,
-    (v)=>{ state.stateId=v; if(window.BottleScene) window.BottleScene.setMode(v); }, "굴려서 고르세요"
-  ));
-  d.appendChild(bottomBar("region","다음",()=>{ state.step="sentence"; render(); }).row);
-  return d;
-}
-
-function renderSentence(){
-  const d=document.createElement("div"); d.className="step";
-  d.appendChild(progress(3,6));
-  d.appendChild(grow());
-  const h=document.createElement("h2"); h.className="q"; h.textContent=SENTENCE_Q[state.stateId] || SENTENCE_Q.stay;
-  d.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="정답은 없으며, 최대 80자까지 한 문장으로 남길 수 있습니다.";
-  d.appendChild(p);
-  const ta=document.createElement("textarea");
-  ta.className="sentence"; ta.maxLength=80; ta.placeholder="예: 아직 여기에 내가 아끼는 사람들이 있어서요.";
-  ta.value = state.text;
-  const count=document.createElement("div"); count.className="char-count"; count.textContent=`${ta.value.length}/80`;
-  ta.addEventListener("input",()=>{ state.text=ta.value; count.textContent=`${ta.value.length}/80`; next.disabled=ta.value.trim().length===0; });
-  d.appendChild(ta); d.appendChild(count);
-  const bar=bottomBar("state","다음",()=>{ state.step="share"; render(); });
-  const next=bar.next;
-  next.disabled = state.text.trim().length===0;
-  d.appendChild(bar.row);
-  return d;
-}
-
-function renderShare(){
-  const d=document.createElement("div"); d.className="step";
-  d.appendChild(progress(4,6));
-  d.appendChild(grow());
-  const h=document.createElement("h2"); h.className="q"; h.textContent="이 마음을 몇 명과 나눠봤나요?";
-  d.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="좌우로 넘겨서 골라주세요. 고른 만큼 하루의 시간이 바뀝니다.";
-  d.appendChild(p);
-
-  if(!state.share) state.share = SHARES[0].id;
-  const applyTime=(id)=>{
-    const s0=SHARES.find(x=>x.id===id);
-    if(s0 && window.BottleScene) window.BottleScene.setTimeOfDay(s0.time);
-  };
-  applyTime(state.share);
-
-  d.appendChild(snapPicker(
-    SHARES.map(x=>({id:x.id,label:x.label})), "h", state.share,
-    (v)=>{ state.share=v; applyTime(v); }, "← 좌우로 넘기기 →"
-  ));
-
-  d.appendChild(bottomBar("sentence","다음",()=>{ state.step="keywords"; render(); }).row);
-  return d;
-}
-
-function renderKeywords(){
-  const d=document.createElement("div"); d.className="step";
-  d.appendChild(progress(5,6));
-  d.appendChild(grow());
-  const bottomWrap=d;
-
-  const h=document.createElement("h2"); h.className="q"; h.textContent="그 문장을 설명하는 키워드를 골라주세요";
-  bottomWrap.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="최대 2개까지 선택할 수 있어요. 배의 모습이 함께 바뀌어요.";
-  bottomWrap.appendChild(p);
-  const wrap=document.createElement("div"); wrap.className="tag-wrap";
-  KEYWORDS.forEach(k=>{
-    const t=document.createElement("div");
-    t.className="tag"+(state.keywords.includes(k)?" selected":"");
-    if(!state.keywords.includes(k) && state.keywords.length>=2) t.className+=" disabled";
-    t.textContent=k;
-    t.onclick=()=>{
-      if(state.keywords.includes(k)) state.keywords=state.keywords.filter(x=>x!==k);
-      else if(state.keywords.length<2) state.keywords.push(k);
-      render();
-    };
-    wrap.appendChild(t);
-  });
-  bottomWrap.appendChild(wrap);
-  bottomWrap.appendChild(bottomBar("share","다음",()=>{ state.step="consent"; render(); }).row);
-  return d;
-}
-
-function renderConsent(){
-  const d=document.createElement("div"); d.className="step";
-  d.appendChild(progress(6,6));
-  d.appendChild(grow());
-  const h=document.createElement("h2"); h.className="q"; h.textContent="공개 방식과 활용 동의";
-  d.appendChild(h);
-  const p=document.createElement("p"); p.className="sub"; p.textContent="익명으로 남겨도 되고, 실명 대신 별칭을 적어도 괜찮아요.";
-  d.appendChild(p);
-
-  const discloseWrap=document.createElement("div");
-  d.appendChild(snapPicker(
-    [{id:"익명",label:"익명"},{id:"별칭",label:"별칭"},{id:"실명",label:"실명"}],
-    "v", state.disclose,
-    (v)=>{ state.disclose=v; renderNameField(); updateNext(); }, "굴려서 고르세요"
-  ));
-  d.appendChild(discloseWrap);
-
-  // 별칭/실명을 고른 경우에만 입력창이 나온다. 익명이면 적을 것이 없다.
-  // 피커는 render()를 부르지 않으므로(스크롤 위치가 날아간다) 이 블록만 직접 다시 그린다.
-  function renderNameField(){
-    discloseWrap.innerHTML="";
-    if(state.disclose==="익명") return;
-    const nameInput=document.createElement("input");
-    nameInput.type="text"; nameInput.className="name-input"; nameInput.maxLength=12;
-    nameInput.placeholder = state.disclose==="별칭" ? "예: 바다" : "예: 이승민";
-    nameInput.value = state.name || "";
-    const nameCount=document.createElement("div"); nameCount.className="char-count";
-    nameCount.textContent=`${nameInput.value.length}/12`;
-    nameInput.addEventListener("input",()=>{
-      state.name=nameInput.value;
-      nameCount.textContent=`${nameInput.value.length}/12`;
-      updateNext();
-    });
-    discloseWrap.appendChild(nameInput); discloseWrap.appendChild(nameCount);
-  }
-
-  const box=document.createElement("div"); box.className="consent-box";
-  box.innerHTML=`<label><input type="checkbox" id="consentChk" ${state.consent?"checked":""}>
-    <span>제출한 문장이 전시장 내 화면과 웹 아카이브에 공개되고, 아카이브북·결과보고서에 활용되는 것에 동의합니다.</span></label>
-    <div class="privacy-note">입력한 지역·상태·문장 외의 개인정보는 저장되지 않습니다. 욕설·혐오·개인정보가 포함된 문장은 비공개 처리될 수 있습니다.</div>`;
-  d.appendChild(box);
-  box.querySelector("#consentChk").addEventListener("change",(e)=>{ state.consent=e.target.checked; updateNext(); });
-
-  const bar=bottomBar("keywords","제출하기",()=>{});
-  const next=bar.next;
-
-  // 별칭/실명을 골랐으면 이름이 실제로 적혀 있어야 한다.
-  // 비워둔 채 제출되면 카드에 표시할 이름이 없는데 익명도 아닌 상태가 된다.
-  function updateNext(){
-    const needsName = state.disclose!=="익명";
-    next.disabled = !state.consent || (needsName && (state.name||"").trim()==="");
-  }
-  renderNameField();
-  updateNext();
-
-  next.onclick=()=>{
-    entries.unshift({
-      region: state.region, state: state.stateId, text: state.text,
-      keywords: [...state.keywords],
-      name: state.disclose==="익명" ? "익명" : state.name.trim(),
-      _new: true,
-    });
-    state.step="result"; render();
-  };
-  d.appendChild(bar.row);
-  return d;
-}
-
-/**
- * 스냅 피커 — 선택지를 한 번에 하나만 보여주고 굴려서 고른다.
- *
- * 스크롤·관성·스냅은 전부 네이티브에 맡긴다. 이 함수는 두 가지만 한다.
- *   1) 스크롤을 "읽어서" 지금 가운데 있는 항목을 알아낸다 (절대 되쓰지 않는다)
- *   2) 마우스 드래그를 스크롤로 옮겨준다 (데스크톱은 스크롤바를 끌 수 없으므로)
- *
- * 터치는 손대지 않는다. 건드리면 네이티브 관성과 스냅이 죽는다.
- * 놓는 순간에도 우리가 스크롤을 옮기지 않는다 — 브라우저 스냅에 맡겨야 두 칸씩 튀지 않는다.
- *
- * items  : [{id, label, desc}]
- * axis   : "v" | "h"
- * value  : 현재 선택된 id
- * onPick : 선택이 바뀔 때 호출 (render()를 부르지 않는다 — 다시 그리면 스크롤 위치가 날아간다)
- */
-// 눈금 색 — 검정 55%
-const TICK_COLOR = "rgba(0,0,0,.55)";
-
-function snapPicker(items, axis, value, onPick, hint){
-  const horiz = axis === "h";
-  const wrap=document.createElement("div"); wrap.className="picker "+axis;
-  const frame=document.createElement("div"); frame.className="picker-frame";
-  const track=document.createElement("div"); track.className="picker-track";
-  const list=document.createElement("div"); list.className="picker-list";
-  track.appendChild(list); wrap.appendChild(frame);
-  if(horiz){ const fade=document.createElement("div"); fade.className="picker-fade"; wrap.appendChild(fade); }
-  wrap.appendChild(track);
-
-  // 양끝 여백은 "빈 항목"으로 준다.
-  // 예전엔 첫/마지막 항목의 margin으로 줬는데, 브라우저가 마지막 flex 항목의 바깥 여백을
-  // scrollWidth에 넣어주지 않아 스크롤이 끝까지 가지 못했다 — 실측으로 마지막 선택지가
-  // 가운데에서 74px 오른쪽에 멈췄다(필요한 scrollLeft 756, 실제 최대 682).
-  // 빈 항목은 진짜 폭을 가진 flex 항목이라 어느 브라우저에서나 스크롤 범위에 잡힌다.
-  const padStart=document.createElement("div"); padStart.className="picker-pad";
-  const padEnd=document.createElement("div"); padEnd.className="picker-pad";
-  const ruler=document.createElement("div"); ruler.className="picker-ruler";
-  if(horiz){ list.appendChild(padStart); list.appendChild(ruler); }
-
-  const els=items.map((it,i)=>{
-    const el=document.createElement("div"); el.className="picker-item";
-    el.innerHTML = it.desc
-      ? `<div class="lab">${it.label}</div><div class="desc">${it.desc}</div>`
-      : `<div class="lab">${it.label}</div>`;
-    el.addEventListener("click",()=>{ if(!moved) scrollToIndex(i, true); });
-    list.appendChild(el); return el;
-  });
-  if(horiz) list.appendChild(padEnd);
-
-  /**
-   * 가로 피커의 폭과 여백을 픽셀로 확정한다.
-   *
-   * 퍼센트로 두면 항목 폭이 "리스트 콘텐츠 폭"을 기준으로 잡히는데, 그 콘텐츠 폭은
-   * 다시 우리가 넣는 좌우 여백에 따라 줄어든다. 서로를 참조하는 꼴이라 계산이 어긋났다.
-   *
-   * 선택 항목이 트랙 한가운데 오고 앞뒤 항목이 양옆으로 넉넉히 걸쳐 보이도록,
-   * 항목 폭을 트랙의 58%로 잡고 남는 42%를 양끝에 절반씩 준다.
-   * 예전 72%에서는 이웃이 자기 폭의 19%만 비쳐서, 고르고 나면 다른 선택지가
-   * 아예 없는 것처럼 보였다. 58%면 이웃이 36%씩 걸쳐 좌우에 뭐가 더 있는지 보인다.
-   */
-  // 트랙이 #app(최대 520px)이 아니라 화면 폭 전체를 쓰게 되면서 기준이 달라졌다.
-  // 항목 간격을 예전보다 10% 좁혀 양옆 선택지가 중심에 더 가까이 붙는다.
-  const ITEM_RATIO = 0.47;
-  function layout(){
-    if(!horiz) return;
-    const trackW = track.clientWidth;
-    if(!trackW) return;
-    const itemW = Math.round(trackW * ITEM_RATIO);
-    const pad = Math.max(0, (trackW - itemW) / 2);
-    for(const el of els){
-      el.style.width = itemW+"px";
-      el.style.marginLeft = "0px";
-      el.style.marginRight = "0px";
-    }
-    padStart.style.width = pad+"px";
-    padEnd.style.width = pad+"px";
-    // 눈금자: 굵은 눈금은 항목 간격(itemW)마다, 가는 눈금은 그 1/5마다.
-    // 첫 항목 중심이 pad + itemW/2 이므로 거기서부터 반복시킨다.
-    const minor = itemW / 5;
-    const originMajor = pad + itemW / 2 - 1;
-    const originMinor = pad + itemW / 2 - 0.5;
-    ruler.style.width = (pad * 2 + itemW * els.length) + "px";
-    ruler.style.backgroundImage =
-      `repeating-linear-gradient(to right, ${TICK_COLOR} 0 2px, transparent 2px ${itemW}px),` +
-      `repeating-linear-gradient(to right, ${TICK_COLOR} 0 1px, transparent 1px ${minor}px)`;
-    ruler.style.backgroundSize = `100% 20px, 100% 11px`;
-    ruler.style.backgroundPosition = `${originMajor}px bottom, ${originMinor}px bottom`;
-    list.style.paddingLeft = "0px";
-    list.style.paddingRight = "0px";
-  }
-
-  /** 트랙 가운데에 가장 가까운 항목. 스크롤을 읽기만 한다. */
-  function nearest(){
-    const mid = horiz ? track.scrollLeft + track.clientWidth/2
-                      : track.scrollTop  + track.clientHeight/2;
-    let best=0, bd=Infinity;
-    for(let i=0;i<els.length;i++){
-      const el=els[i];
-      const c = horiz ? el.offsetLeft + el.offsetWidth/2 : el.offsetTop + el.offsetHeight/2;
-      const d = Math.abs(c-mid);
-      if(d<bd){ bd=d; best=i; }
-    }
-    return best;
-  }
-
-  function mark(){
-    const n=nearest();
-    for(let i=0;i<els.length;i++) els[i].classList.toggle("active", i===n);
-    if(items[n] && items[n].id!==value){ value=items[n].id; onPick(value); }
-  }
-
-  /** 프로그램에서 옮기는 유일한 경로 — 클릭과 최초 배치뿐이다. */
-  function scrollToIndex(i, smooth){
-    const el=els[Math.max(0,Math.min(els.length-1,i))];
-    const to = horiz ? el.offsetLeft - (track.clientWidth-el.offsetWidth)/2
-                     : el.offsetTop  - (track.clientHeight-el.offsetHeight)/2;
-    track.scrollTo(horiz ? {left:to, behavior:smooth?"smooth":"auto"}
-                         : {top:to,  behavior:smooth?"smooth":"auto"});
-  }
-
-  let raf=null;
-  track.addEventListener("scroll",()=>{
-    if(raf) cancelAnimationFrame(raf);
-    raf=requestAnimationFrame(mark);
-  }, {passive:true});
-
-  // ── 마우스/펜 드래그만 처리한다. 터치는 네이티브가 훨씬 잘한다. ──
-  let down=false, moved=false, startPos=0, startScroll=0;
-  const pos=(e)=> horiz ? e.clientX : e.clientY;
-
-  track.addEventListener("pointerdown",(e)=>{
-    if(e.pointerType === "touch") return;      // 터치는 건드리지 않는다
-    down=true; moved=false;
-    startPos=pos(e);
-    startScroll = horiz ? track.scrollLeft : track.scrollTop;
-    track.classList.add("dragging");           // 드래그 중에만 스냅을 끈다
-    try{ track.setPointerCapture(e.pointerId); }catch(_e){}
-  });
-  track.addEventListener("pointermove",(e)=>{
-    if(!down) return;
-    const d = startPos - pos(e);
-    if(Math.abs(d)>3) moved=true;
-    if(horiz) track.scrollLeft = startScroll + d;
-    else      track.scrollTop  = startScroll + d;
-  });
-  // 놓을 때 하는 일은 클래스를 떼는 것뿐. 스냅은 브라우저가 알아서 한다.
-  const release=()=>{ if(!down) return; down=false; track.classList.remove("dragging"); };
-  track.addEventListener("pointerup",release);
-  track.addEventListener("pointercancel",release);
-  // 드래그로 끝난 클릭이 항목 선택으로 이어지지 않게 한다
-  track.addEventListener("click",(e)=>{ if(moved){ e.stopPropagation(); e.preventDefault(); } }, true);
-
-  if(hint){ const h=document.createElement("div"); h.className="picker-hint"; h.textContent=hint; wrap.appendChild(h); }
-
-  // 레이아웃이 잡힌 뒤에 여백과 초기 위치를 잡는다
-  // 폰트·레이아웃이 확정된 뒤에 재야 폭이 정확하다. 두 프레임 뒤에 한 번 더 잡는다.
-  const settle=()=>{
-    layout();
-    scrollToIndex(Math.max(0, items.findIndex(it=>it.id===value)), false);
-    mark();
-  };
-  requestAnimationFrame(()=>{ settle(); requestAnimationFrame(settle); });
-  window.addEventListener("resize", ()=>{ layout(); scrollToIndex(nearest(), false); });
-  return wrap;
-}
-
-function stateLabel(id){ return (STATES.find(s=>s.id===id)||{}).label || id; }
-
-function renderResult(){
-  const d=document.createElement("div");
-  d.className="result-wrap";
-
-  const box=document.createElement("div");
-  box.className="fade-stage";
-  box.style.display="flex"; box.style.flexDirection="column"; box.style.alignItems="center"; box.style.gap="22px"; box.style.width="100%";
-  box.innerHTML=`
-    <div class="my-card">
-      <div class="tagline">MY SENTENCE · 지금 이곳</div>
-      <div class="sentence-txt">"${state.text}"</div>
-      <div class="meta-row">
-        <span>${state.region}</span><span>${stateLabel(state.stateId)}</span>
-        ${state.keywords.map(k=>`<span>${k}</span>`).join("")}
-      </div>
-    </div>
-    <p class="note">당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다.</p>
-  `;
-  const btn=document.createElement("button");
-  btn.className="chat-btn"; btn.style.maxWidth="320px";
-  btn.innerHTML=`머무름의 지도 보러가기 <span class="arrow">→</span>`;
-  btn.onclick=()=>{
-    if(window.BottleScene && entries[0]) entries[0].snapshot = window.BottleScene.capture();
-    state.step="archive"; render();
-  };
-  box.appendChild(btn);
-  d.appendChild(box);
-
-  // 이 페이지 진입 시: 살짝 줌 + 투명하지만 윤곽이 보이는 유리병이 풍경을 감싸며 등장(ship in a bottle)
-  // → 완료된 뒤 박스/버튼이 페이드인
-  if(window.BottleScene){
-    window.BottleScene.revealBottle(()=>{
-      requestAnimationFrame(()=> box.classList.add("show"));
-    });
-  } else {
-    box.classList.add("show");
-  }
-  return d;
-}
-
-function renderArchive(){
-  const d=document.createElement("div");
-  d.className="archive-screen";
-  d.innerHTML=`<div class="archive-header">
-      <h2>머무름의 지도</h2>
-      <p>지금까지 ${entries.length}개의 문장이 쌓였습니다</p>
-    </div>`;
-
-  const filterRow=document.createElement("div"); filterRow.className="filter-row";
-  const filters=[{id:"all",label:"전체"}, ...STATES.map(s=>({id:s.id,label:s.label}))];
-  filters.forEach(f=>{
-    const chip=document.createElement("div");
-    chip.className="filter-chip"+(state.filterState===f.id?" active":"");
-    chip.textContent=f.label;
-    chip.onclick=()=>{ state.filterState=f.id; render(); };
-    filterRow.appendChild(chip);
-  });
-  d.appendChild(filterRow);
-
-  const regionWrap=document.createElement("div"); regionWrap.className="region-select";
-  const sel=document.createElement("select");
-  sel.innerHTML = `<option value="all">전체 지역</option>` + REGIONS.map(r=>`<option value="${r}" ${state.filterRegion===r?"selected":""}>${r}</option>`).join("");
-  sel.value = state.filterRegion;
-  sel.onchange=()=>{ state.filterRegion=sel.value; render(); };
-  regionWrap.appendChild(sel);
-  d.appendChild(regionWrap);
-
-  const filtered = entries.filter(e=>
-    (state.filterState==="all" || e.state===state.filterState) &&
-    (state.filterRegion==="all" || e.region===state.filterRegion)
-  );
-
-  const wall=document.createElement("div"); wall.className="wall";
-  if(filtered.length===0){
-    const emp=document.createElement("div"); emp.className="empty-note"; emp.textContent="아직 이 조건에 맞는 기록이 없습니다.";
-    wall.appendChild(emp);
-  } else {
-    filtered.forEach((e,i)=>{
-      const c=document.createElement("div");
-      c.className="wall-card"+(e._new?" new-card":"");
-      c.style.animationDelay = (i*0.05)+"s";
-      c.innerHTML=`
-        ${e.snapshot ? `<img class="snap-thumb" src="${e.snapshot}" alt="내가 만든 병 속 풍경">` : ""}
-        <div class="top-meta"><span>${e.region}</span><span class="state-tag">${stateLabel(e.state)}</span></div>
-        <div class="txt">"${e.text}"</div>
-        <div class="kw-row">${e.keywords.map(k=>`<span class="kw">${k}</span>`).join("")}</div>
-        <div class="by${(e.name && e.name!=="익명") ? " named" : ""}">— ${e.name || "익명"}</div>
-      `;
-      wall.appendChild(c);
-    });
-  }
-  d.appendChild(wall);
-
-  const restart=document.createElement("button");
-  restart.className="restart-btn"; restart.textContent="다시 한 문장 남기기";
-  restart.onclick=()=>{
-    state = {step:"onboard", region:null, stateId:null, text:"", share:null, keywords:[], disclose:"익명", name:"", consent:false,
-      filterState:state.filterState, filterRegion:state.filterRegion};
-    render();
-  };
-  d.appendChild(restart);
-
-  return d;
-}
-
-render();
-</script>
+<!-- 설문 UI — 기능별 파일 (클래식 스크립트라 순서가 곧 의존 순서다: 부품 → 흐름) -->
+<script src="./ui/snap-picker.js"></script>
+<script src="./ui/share-dial.js"></script>
+<script src="./ui/survey.js"></script>
 
 <!-- ===========================================================
      병 속 풍경 3D 씬 (BottleScene)
@@ -1344,6 +472,17 @@ const CAM_RADIUS = (function () {
 // 두 손가락 줌(PC는 휠). 1 = 단계별 기본 거리. 작을수록 가까이. 가까이 갈수록 바라보는 지점이
 // 배 가운데로 옮겨 가서 배 쪽으로 파고든다. 단계가 바뀌면 1로 천천히 돌아온다.
 const ZOOM_MIN = 0.4, ZOOM_MAX = 1.4;
+
+// 화면 구도 — 질문 판(ui/survey.css .qpanel, 화면 아래 약 40%)과 겹치지 않게 배를 화면 위쪽으로
+// 올린다(시안 B′). shift = 화면 높이 대비 위로 올리는 비율(camera.setViewOffset — 원근은 그대로
+// 두고 찍히는 창만 옮긴다), zoom = 거리 배수(올린 만큼 섬 지붕이 잘리지 않게 조금 물러난다).
+// 단계가 바뀌면 부드럽게 옮겨 간다. 디자인 캔버스 시안 배경도 이 값으로 찍었다.
+const FRAMING = {
+  intro:    { shift: 0,    zoom: 1 },     // 첫 화면(하늘)
+  question: { shift: 0.13, zoom: 1.1 },   // 지역 ~ 동의
+  result:   { shift: 0.10, zoom: 1 },     // 병이 글자 위에 오게
+};
+const QUESTION_STEPS = ["region", "state", "sentence", "share", "keywords", "consent"];
 const BOAT_FOCUS_Y = 0.55;   // 줌인할 때 바라볼 배 높이 (갑판 위 가운데쯤)
 
 // 뱃전에 걸린 요소 — 카메라 반대쪽 뱃전에 있으면 선체에 가려진다. 그쪽이 안 보일 때는
@@ -1503,12 +642,10 @@ class BottleScene {
   constructor() {
     this.canvas = document.getElementById("bottleCanvas");
     this.stage = document.getElementById("sceneStage");
-    // 틸트시프트·비네트 층 (CSS는 #bottleCanvas 아래 .tiltBlur/.sceneVignette)
-    for (const cls of ["tiltBlur top", "tiltBlur bottom", "sceneVignette"]) {
-      const el = document.createElement("div");
-      el.className = cls;
-      this.stage.appendChild(el);
-    }
+    // 비네트 층 — 결과 화면에서만 바깥에서 들어온다 (CSS는 index.html <style>의 .sceneVignette)
+    const vignette = document.createElement("div");
+    vignette.className = "sceneVignette";
+    this.stage.appendChild(vignette);
 
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
     // 픽셀비 상한을 2→1.5로 낮춤: 파도 프래그먼트 셰이더(스펙큘러/프레넬 등)가 전체화면을 덮는
@@ -1722,6 +859,7 @@ class BottleScene {
 
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    this._viewW = w; this._viewH = h; this._viewShiftApplied = null;   // 구도(setViewOffset)를 새 크기로 다시 건다
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -3957,6 +3095,7 @@ ${GERSTNER_GLSL}
     const wasVisible = this.visible;
     // 단계가 바뀌면 줌은 기본 거리로 돌아온다(부드럽게) — 당겨 둔 채로 다음 구도가 잘리지 않게
     if (step !== this._zoomStep) { this._zoomStep = step; this._zoomTarget = 1; }
+    this._frameTarget = step === "result" ? FRAMING.result : QUESTION_STEPS.includes(step) ? FRAMING.question : FRAMING.intro;
     this.visible = ACTIVE_STEPS.includes(step);
     this.stage.classList.toggle("visible", this.visible);
     if (!this.visible) return;
@@ -4211,7 +3350,7 @@ ${GERSTNER_GLSL}
     // 두 손가락 줌: 거리에 배수를 곱하고, 가까워질수록(zIn → 1) 바라보는 지점을 선체 가운데로 옮긴다.
     const zoom = this._zoom ?? 1;
     const zIn = Math.max(0, Math.min(1, (1 - zoom) / (1 - ZOOM_MIN)));
-    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen) * zoom;
+    const radius = radiusForAspect(cam.radius, this.camera.aspect, cam.widen) * zoom * (this._frame ? this._frame.zoom : 1);
     // 카메라가 도는 중심 = 바라보는 지점. 둘을 일치시켜야 yaw/pitch가 실제 시선각과 같아진다.
     let tX = (this._camFollowX ?? this.boat.position.x) + cam.tx, tY = cam.ty, tZ = cam.tz;
     if (zIn > 0) {
@@ -4266,8 +3405,20 @@ ${GERSTNER_GLSL}
     // 병이 떠 있으면 병 중심을 바라본다. 드래그로 바뀐 yaw/pitch가 그대로 아크가 된다.
     // oX/oY/oZ가 이미 bottleT로 이어져 있어서, 병이 없으면 그대로 배를 본다.
     this.camera.lookAt(oX, oY + this._lift, oZ);
+    this._applyViewShift();
 
     return { yaw, pitch, radius };
+  }
+
+  /** 화면 구도의 세로 이동을 투영에 건다. 값이 거의 안 바뀌면 투영 행렬을 다시 만들지 않는다. */
+  _applyViewShift() {
+    const shift = this._frame ? this._frame.shift : 0;
+    if (this._viewShiftApplied !== null && this._viewShiftApplied !== undefined &&
+        Math.abs(shift - this._viewShiftApplied) < 1e-4) return;
+    this._viewShiftApplied = shift;
+    const w = this._viewW || window.innerWidth, h = this._viewH || window.innerHeight;
+    if (shift < 1e-4) this.camera.clearViewOffset();
+    else this.camera.setViewOffset(w, h, 0, h * shift, w, h);
   }
 
   _animate() {
@@ -4463,6 +3614,12 @@ ${GERSTNER_GLSL}
     if (this._zoomTarget === undefined) this._zoomTarget = 1;
     if (this._zoom === undefined) this._zoom = 1;
     this._zoom += (this._zoomTarget - this._zoom) * Math.min(1, dt * 8);
+    // 화면 구도(FRAMING) — 단계가 바뀌면 카메라 전환(CAM_MOVE_SEC)과 비슷한 속도로 옮겨 간다
+    const ft = this._frameTarget || FRAMING.intro;
+    if (!this._frame) this._frame = { ...ft };
+    const fk = Math.min(1, dt * 3);
+    this._frame.shift += (ft.shift - this._frame.shift) * fk;
+    this._frame.zoom += (ft.zoom - this._frame.zoom) * fk;
 
     // 시간대 전환
     if (this._timeT < 1) {

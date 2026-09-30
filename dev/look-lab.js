@@ -12,10 +12,10 @@
 const STORE_KEY = "lookLab.v2";
 
 const CSS = `
-  #lookLabBtn{ position:fixed; top:42px; right:10px; z-index:1000; border:0; cursor:pointer;
+  #lookLabBtn{ position:fixed; top:70px; right:10px; z-index:1000; border:0; cursor:pointer;
     background:rgba(20,22,30,.78); color:#f3e6cf; font:600 11px/1 var(--font, sans-serif);
     padding:7px 11px; border-radius:20px; letter-spacing:.02em; backdrop-filter:blur(6px); }
-  #lookLabPanel{ position:fixed; top:74px; right:10px; z-index:1000; display:none; min-width:168px;
+  #lookLabPanel{ position:fixed; top:102px; right:10px; z-index:1000; display:none; min-width:168px;
     background:rgba(20,22,30,.86); color:#f3e6cf; font:12px/1.4 var(--font, sans-serif);
     padding:10px 12px; border-radius:14px; backdrop-filter:blur(8px); box-shadow:0 6px 20px rgba(0,0,0,.25); }
   #lookLabPanel.show{ display:block; }
