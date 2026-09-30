@@ -56,7 +56,7 @@ node statistics/tools/sync-model.mjs
 넣는다 — 둘째 줄을 빠뜨리면 루트만 새 모델이고 두 화면은 옛날 배를 쓴다.
 `--report` 폴더에 아틀라스 미리보기(`atlas_labeled.png`)와 요약이 떨어진다.
 
-### `shared/` 에 지금 무엇이 있나 (2026-09-27 기준)
+### `shared/` 에 지금 무엇이 있나 (2026-09-30 기준)
 
 설문 세션이 `statistics/` 안을 고친 적이 있다 — 두 화면에 걸친 문제라 한쪽만 고칠 수
 없었다(커밋 `ecf3c7a`). 지도 세션이 모르고 지나갈 수 있어 여기 남긴다.
@@ -74,6 +74,7 @@ node statistics/tools/sync-model.mjs
 | `record-schema.js` 기록 한 건의 모양·검사 (09-30, 보안 규칙도 여기서 생성) | ✓ 전역 | ✓ 전역 |
 | `db-config.js` Firebase 웹 설정값·SDK 버전·`dbMode()` (09-30, 비어 있으면 목업) | ✓ (record-sync 가 동적 import) | ✓ |
 | `record-store.js` Firestore 어댑터 (09-30) | ✓ (동적 import) | ✓ (`store.js`) |
+| `boat-look.js` 배 겉모습 값·판정 — 레퍼런스 색 `BOAT_PAINT`·튜브 톤·램프·번짐 모양·선체 부품 판정 (09-30 새로) | ✓ | 아직 안 읽음 — `HANDOFF-map.md` 18장 |
 
 **09-27 지도 세션 답신 → `HANDOFF-map.md` 10장.** 인수인계 체크리스트를 다 반영했고, 설문
 쪽에 부탁할 것 세 가지(`SIDE_SWAP`·`CLOVER`를 shared에서 읽기, `GLB_PROPS` 정리)를 적어 뒀다.

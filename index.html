@@ -151,6 +151,9 @@ import { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "./statistics/shared/ship-tokens
 import { GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, CLOVER } from "./statistics/shared/glb-nodes.js";
 import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 import { SCENE_LOOK, HEMI, AO } from "./statistics/shared/look-tokens.js";
+// 배 겉모습(레퍼런스 색·튜브 톤·램프·번짐 모양·선체 부품 판정) — 지도와 같이 쓴다 (09-30~)
+import { BOAT_PAINT, TUBE_TINT, TUBE_FX_EDGE, LAMP, GLOW_LIGHTHOUSE, GLOW_LAMP, markHullParts, lampTwinZ }
+  from "./statistics/shared/boat-look.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
 // Directory를 statistics 로 잡아 따로 배포되므로 그 폴더 밖의 파일을 못 읽는다.
@@ -554,11 +557,7 @@ const SIDE_SWAP_DEADZONE = 0.15;
 // 튜브(가족)만 톤을 누른다. 아틀라스에서 튜브는 순백·순홍이라 크림색 캐빈보다 밝았고,
 // 어두운 선체 위에서 혼자 떠 보였다(2026-09-30 사용자: "튜브가 혼자 너무 밝아").
 // 재질을 복제해 색 배수만 건다 — 아틀라스는 모든 소품이 같이 쓰므로 텍스처를 고치면 다 바뀐다.
-// 튜브 픽셀만 따로 잰 값(튜브를 켠 장·끈 장의 차이로 가림막을 만들어 밝은 쪽 95% 지점):
-//   이전 낮 196 · 밤 123 (캐빈 189 · 99) → 지금 낮 156 · 밤 96 — 캐빈보다 한 단 아래.
-const TUBE_TINT = [0.62, 0.59, 0.55];   // 살짝 따뜻하게 — 캐빈의 크림 톤과 맞춘다
-// 둥근 고리는 비스듬한 면이 많아 하늘 반사(광택)·테두리 빛을 넓게 받는다. 튜브만 그 몫을 줄인다.
-const TUBE_FX_EDGE = 0.3;
+// 값(TUBE_TINT·TUBE_FX_EDGE)은 statistics/shared/boat-look.js. 실측: 낮 196 → 156 · 밤 123 → 96 (캐빈 189 · 99).
 
 // 등대 — 블렌더 자리에서 이만큼 옮긴다(월드 단위). 유리병 안에 들어가도록 살짝 내렸다
 // ([병] 로그의 등대 여유가 −0.30 → +0.12). 블렌더에서 등대를 옮겨 다시 뽑으면 0으로 되돌릴 것.
@@ -580,39 +579,12 @@ const LIGHTHOUSE = {
   water: 0.6,         // 바다에 닿는 빛의 세기
 };
 
-// 배 색 — 2026-09-30 사용자가 준 레퍼런스(로우폴리 예인선 렌더 세 장)에 맞췄다.
-// 여기 값은 재질 색(조명 받기 전)이다. 이 화면의 낮 조명은 레퍼런스 렌더보다 어둡고 푸르러서(재질 색의
-// 약 40%만 화면에 나온다) 레퍼런스에서 잰 색을 그대로 넣으면 한참 어둡게 나온다 — 그래서 "낮에 렌더된
-// 색이 레퍼런스 색이 되도록" 거꾸로 풀어 낸 값이라 재질 색만 보면 밝고 붉다. 바꾸면 헤드리스로 다시 잴 것(HANDOFF 6.17).
-//   렌더 결과(낮, 가운데 값) → 레퍼런스: 마스트 #935f4c → #a0654f · 갑판 #784f3d → #845044
-const BOAT_PAINT = {
-  mast: 0xed9377,        // 마스트(기둥·가로대 둘) — 무늬 없이 단색
-  stairRail: 0xd08a70,   // 계단 옆판 — 갑판보다 밝은 나무(레퍼런스 계단 #925c4c)
-  stairTread: 0xecb294,  // 계단 디딤판 — 옆판보다 한 단 밝게(레퍼런스 #a57662), 계단이 갑판에서 도드라지게
-  deck: 0xbf7a60,        // 갑판 판자 — 붉은 갈색. 예전 꿀색 원목 대신
-  cabin: 0xfcdcb9,       // 캐빈 페인트 — 레퍼런스 색상(#f8ca98)으로 맞추면 이 조명에선 황토색으로 가라앉아
-                         //   배에서 제일 밝은 면이 아니게 된다 → 채도를 덜어 밝은 크림으로("깔끔하게")
-  cabinRoof: 0x7d5243,   // 캐빈 지붕 판자
-  glass: 0x3a2632,       // 창·둥근 창 유리 (짙은 자줏빛 갈색 — 레퍼런스 창 안쪽)
-  trim: 0xecd6b4,        // 둥근 창 테
-  handle: 0x8d6a55,      // 문손잡이
-  funnelStep: 0xf3dcc6,  // 굴뚝 받침 — 캐빈보다 조금 회색빛 (레퍼런스 #d2b294)
-};
+// 배 색(BOAT_PAINT)은 statistics/shared/boat-look.js — 지도와 같이 쓴다. 눈금 맞춘 방법은 HANDOFF 6.17.
 
 // 램프('관계') — 마스트 가로대 양 끝에 하나씩(GLB에는 한쪽만 있어 반대쪽은 복제), 앞뒤로 서로 반대로
 // 흔들린다. 밤에는 등대처럼 켜진다: 유리가 빛나고, 번짐(스프라이트), 배를 비추는 조명, 수면에 비친 빛.
 // 조명은 처음부터 씬에 두고 세기만 바꾼다 — 조명을 넣고 빼면 모든 재질이 다시 컴파일돼 화면이 멈칫한다.
-const LAMP = {
-  swing: 0.26,        // 흔들리는 각도(라디안, ≈15도). 고리에 매달린 채 배 길이 방향으로
-  period: 2.6,        // 한 번 갔다 오는 시간(초)
-  color: 0xffc98a,    // 등대(거의 흰색)보다 따뜻하게 — 등불로 읽히게
-  glass: 1.3,         // 유리가 빛나는 세기(emissive) — 텍스처의 노란 유리 부분만. 2.4는 하얗게 날아갔다
-  glowSize: 1.1,      // 번짐 크기(월드). 0.75에서 넓히고 모양을 가우시안 꼬리로(GLOW_LAMP) — 가운데 세기는 그대로
-  intensity: 2.2,     // 조명 세기(칸델라, 거리 제곱 감쇠) — 갑판·캐빈·돛대가 밝아질 만큼
-  distance: 3.0,      // 조명이 닿는 거리(월드)
-  water: 0.8,         // 수면에 비치는 빛의 세기
-  waterRadius: 1.1,   // 수면에 비치는 빛의 번짐 반지름(월드)
-};
+// 값(LAMP)은 statistics/shared/boat-look.js — 지도와 같이 쓴다.
 
 // ── 그림 톤(룩) ────────────────────────────────────────────────────────────
 // basic: 지금까지의 화면 — 톤 매핑 없음, 평평한 채움광(AmbientLight).
@@ -734,14 +706,8 @@ function makeGlowTexture(profile, size = 128){
   tex.needsUpdate = true;
   return tex;
 }
-// 등대 번짐 — 예전 캔버스 그라데이션과 같은 모양(가운데 1 → 반지름 25%에서 0.55 → 가장자리 0, 직선)
-const GLOW_LIGHTHOUSE = (r) => (r < 0.25 ? 1 - 1.8 * r : 0.55 * (1 - (r - 0.25) / 0.75));
-// 램프 번짐 — 세기는 예전과 같게, 가장자리는 가우시안 꼬리로 부드럽게 사라진다.
-// 예전(등대와 같은 모양)은 가장자리까지 직선으로 줄다가 원 테두리에서 뚝 끊겨 "빛의 공"이 보였다.
-// 크기(LAMP.glowSize)를 0.75 → 1.1로 넓히고 이 모양을 쓰면, 램프에서 0.1·0.2·0.3 떨어진 자리의 알파는
-// 예전과 거의 같고(0.60/0.33/0.17 ↔ 0.54/0.34/0.15) 예전 테두리(0.375) 너머로 0.5까지 옅게 이어진다.
-const GLOW_LAMP = (r) => Math.min(1, (0.5 * Math.exp(-((r / 0.15) ** 2)) + 0.55 * Math.exp(-((r / 0.5) ** 2)))
-  * (1 - THREE.MathUtils.smoothstep(r, 0.8, 1.0)));
+// 번짐 모양(GLOW_LIGHTHOUSE·GLOW_LAMP)은 statistics/shared/boat-look.js. 램프는 가장자리가 가우시안 꼬리로
+// 사라지고(예전엔 원 테두리에서 끊겨 빛의 공이 보였다) 거리별 밝기는 예전과 같다(HANDOFF 6.18).
 
 function makeSkyTexture(){
   const c = document.createElement("canvas");
@@ -1915,21 +1881,16 @@ ${GERSTNER_GLSL}
     let hull = null;
     ship.traverse((o) => { if (!hull && o.isMesh && GLB_NODES.hull.test(o.name)) hull = o; });
 
-    // 가로대 끝 재기 — 고리 높이(램프 원점)에서 조금 위까지, 램프와 같은 x 근처의 선체 정점
-    let zMin = Infinity, zMax = -Infinity;
+    // 가로대 반대쪽 끝 — statistics/shared/boat-look.js lampTwinZ (선체 정점에서 잰다)
+    const HP = [];
     if (hull) {
       hull.updateMatrix();
       const p = hull.geometry.attributes.position, v = new THREE.Vector3();
-      for (let i = 0; i < p.count; i++) {
-        v.fromBufferAttribute(p, i).applyMatrix4(hull.matrix);
-        if (v.y < lamp.position.y - 0.005 || v.y > lamp.position.y + 0.03) continue;
-        if (Math.abs(v.x - lamp.position.x) > 0.03) continue;
-        zMin = Math.min(zMin, v.z); zMax = Math.max(zMax, v.z);
-      }
+      for (let i = 0; i < p.count; i++) v.fromBufferAttribute(p, i).applyMatrix4(hull.matrix).toArray(HP, i * 3);
     }
-    const barOk = zMax > zMin && lamp.position.z > zMin && lamp.position.z < zMax;
-    console.assert(barOk, "[selfCheck] 램프 가로대를 선체에서 못 찾음 — 배 중심선 기준으로 대칭 복제한다");
-    const barMid = barOk ? (zMin + zMax) / 2 : 0;
+    const twin0 = lampTwinZ(HP, lamp.position);
+    console.assert(twin0.ok, "[selfCheck] 램프 가로대를 선체에서 못 찾음 — 배 중심선 기준으로 대칭 복제한다");
+    const barMid = (twin0.z + lamp.position.z) / 2;
 
     const mat = lamp.material.clone();
     lamp.material = mat;
@@ -2117,7 +2078,7 @@ ${GERSTNER_GLSL}
     this.lampGlows.forEach((g, i) => {
       // 배 노드의 배율이 곱해지므로 나눠서 월드 크기를 맞춘다(배율은 로드 뒤에 SHIP_SCALE로 바뀐다)
       g.scale.setScalar(LAMP.glowSize / this.shipNode.scale.x);
-      g.material.opacity = on * (0.88 + 0.12 * Math.sin(t * 7.3 + i * 2.1) * Math.sin(t * 3.1 + i));
+      g.material.opacity = on * (1 - LAMP.flicker + LAMP.flicker * Math.sin(t * 7.3 + i * 2.1) * Math.sin(t * 3.1 + i));
       g.visible = on > 0.001;
     });
     this._lampGlassU.value = on * LAMP.glass;
@@ -2595,44 +2556,14 @@ ${GERSTNER_GLSL}
    */
   _markHullParts(hull, toShip) {
     const pos = hull.geometry.attributes.position;
-    const nTri = pos.count / 3;
-    const P = [];
-    for (let i = 0; i < pos.count; i++) P.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(toShip));
-    const key = (p) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
-    const parent = new Int32Array(nTri).map((_, i) => i);
-    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-    const firstTri = new Map();
-    for (let t = 0; t < nTri; t++) for (let k = 0; k < 3; k++) {
-      const kk = key(P[t * 3 + k]);
-      if (!firstTri.has(kk)) { firstTri.set(kk, t); continue; }
-      const a = find(firstTri.get(kk)), b = find(t);
-      if (a !== b) parent[a] = b;
-    }
-    const comps = new Map();
-    for (let t = 0; t < nTri; t++) {
-      const r = find(t);
-      if (!comps.has(r)) comps.set(r, { tris: [], box: new THREE.Box3() });
-      const c = comps.get(r);
-      c.tris.push(t);
-      for (let k = 0; k < 3; k++) c.box.expandByPoint(P[t * 3 + k]);
-    }
-    const list = [...comps.values()].sort((a, b) => b.tris.length - a.tris.length);
-    const main = list[0], rest = list.slice(1);
-    const size = (c) => c.box.getSize(new THREE.Vector3());
-    const mast = rest.filter((c) => c.box.max.y > main.box.max.y + 0.02);
-    const rails = rest.filter((c) => { const d = size(c); return d.x > 0.1 && d.y > 0.1 && Math.min(d.x, d.z) < 0.02; });
-    const stairBox = new THREE.Box3();
-    rails.forEach((c) => stairBox.union(c.box));
-    stairBox.expandByScalar(0.004);
-    const treads = rails.length >= 2
-      ? rest.filter((c) => rails.indexOf(c) < 0 && mast.indexOf(c) < 0 && stairBox.containsBox(c.box)) : [];
-    const part = new Float32Array(pos.count);
-    const mark = (cs, v) => cs.forEach((c) => c.tris.forEach((t) => { part[t * 3] = part[t * 3 + 1] = part[t * 3 + 2] = v; }));
-    mark(mast, 1); mark(rails, 2); mark(treads, 3);
-    hull.geometry.setAttribute("_part", new THREE.BufferAttribute(part, 1));
-    console.assert(mast.length >= 1 && rails.length === 2 && treads.length >= 2,
-      `[selfCheck] 선체 부품 판정이 이상하다 — 마스트 ${mast.length}(보통 3) · 계단 옆판 ${rails.length}(2) · 디딤판 ${treads.length}(6)`);
+    const P = new Float32Array(pos.count * 3), v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) v.fromBufferAttribute(pos, i).applyMatrix4(toShip).toArray(P, i * 3);
+    const r = markHullParts(P);   // statistics/shared/boat-look.js — 지도와 같은 판정
+    hull.geometry.setAttribute("_part", new THREE.BufferAttribute(r.part, 1));
+    console.assert(r.mast >= 1 && r.rails === 2 && r.treads >= 2,
+      `[selfCheck] 선체 부품 판정이 이상하다 — 마스트 ${r.mast}(보통 3) · 계단 옆판 ${r.rails}(2) · 디딤판 ${r.treads}(6)`);
   }
+
 
   /**
    * 선체에서 '갑판 바닥'인 면을 골라 정점 속성 _deck(1 = 갑판)으로 찍는다. 나무 판자는 여기에만 깐다.
