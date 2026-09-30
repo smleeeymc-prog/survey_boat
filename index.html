@@ -33,10 +33,21 @@
   /* 색보정 — 대비·채도·따뜻함. 캔버스에 CSS 필터라 GPU 합성 단계에서 거의 공짜 (09-27 고정).
      값은 지도와 같이 쓰는 statistics/shared/tokens.css 의 --scene-grade */
   #bottleCanvas{ width:100%; height:100%; display:block; filter:var(--scene-grade); }
+  /* 틸트시프트 — 화면 위아래를 흐리게 해 병 속 미니어처처럼(09-27 고정 룩). 무대 안에 있어 씬과 같이
+     나타나고 사라진다. B′ 개편 때 "배를 위로 올린 구도에선 위쪽 흐림이 배를 덮는다"며 뺐다가 되살렸다(09-30
+     사용자: 등대 지붕 흐림이 사라졌다) — 이번엔 띠 경계가 카메라 구도를 따라간다. --view-shift는 화면을
+     위로 민 비율(FRAMING.shift, JS가 넣는다)이라 위 띠는 그만큼 줄고 아래 띠는 그만큼 는다 → 흐림이 늘 같은
+     풍경 자리(등대 지붕·먼 바다)에 걸린다. 34%·3.5px·마스크는 예전 값 그대로. */
+  .tiltBlur{ position:absolute; left:0; right:0; pointer-events:none;
+    -webkit-backdrop-filter:blur(3.5px); backdrop-filter:blur(3.5px); }
+  .tiltBlur.top{ top:0; height:calc(34% - var(--view-shift, 0) * 100%);
+    -webkit-mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
+  .tiltBlur.bottom{ bottom:0; height:calc(34% + var(--view-shift, 0) * 100%);
+    -webkit-mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%);
+    mask-image:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 45%,transparent 100%); }
   /* 비네트 — 결과 화면에서만, 바깥에서 안으로 들어온다(크게 → 제자리, 투명 → 진하게).
-     병이 떠오르고 배경이 흰색으로 바뀐 뒤에 들어오도록 늦게 시작한다. 다른 단계엔 없다(09-30 사용자).
-     (예전의 틸트시프트 흐림은 뺐다 — 배를 화면 위쪽으로 올린 구도에선 위쪽 흐림이 섬·배를 덮고,
-      아래쪽은 질문 판의 어둠·흐림이 대신한다) */
+     병이 떠오르고 배경이 흰색으로 바뀐 뒤에 들어오도록 늦게 시작한다. 다른 단계엔 없다(09-30 사용자). */
   .sceneVignette{ position:absolute; inset:0; pointer-events:none; background:var(--scene-vignette);
     opacity:0; transform:scale(1.7); transition:opacity .6s ease, transform .6s ease; }
   body[data-step="result"] .sceneVignette{ opacity:1; transform:scale(1);
@@ -596,7 +607,7 @@ const LAMP = {
   period: 2.6,        // 한 번 갔다 오는 시간(초)
   color: 0xffc98a,    // 등대(거의 흰색)보다 따뜻하게 — 등불로 읽히게
   glass: 1.3,         // 유리가 빛나는 세기(emissive) — 텍스처의 노란 유리 부분만. 2.4는 하얗게 날아갔다
-  glowSize: 0.75,     // 번짐 크기(월드). 등대 0.9
+  glowSize: 1.1,      // 번짐 크기(월드). 0.75에서 넓히고 모양을 가우시안 꼬리로(GLOW_LAMP) — 가운데 세기는 그대로
   intensity: 2.2,     // 조명 세기(칸델라, 거리 제곱 감쇠) — 갑판·캐빈·돛대가 밝아질 만큼
   distance: 3.0,      // 조명이 닿는 거리(월드)
   water: 0.8,         // 수면에 비치는 빛의 세기
@@ -699,6 +710,39 @@ function patchMaterial(mat, key, fn) {
   mat.needsUpdate = true;
 }
 
+/**
+ * 번짐(스프라이트) 그림 — 흰색이고 알파만 가운데서 바깥으로 줄어든다. 색은 재질 color가 입힌다.
+ * 2D 캔버스 그라데이션으로 만들지 않는다: 캔버스는 알파를 곱해 둔 채 저장하고 그라데이션에 떨림(디더링)을
+ * 넣어서, GPU에 올릴 때 알파로 다시 나누면 옅은 가장자리에서 R·G·B가 제각각 튄다 — 폰(iOS)에서 번짐 안에
+ * 무지개 점으로 보였다(09-30 사용자). 픽셀마다 계산해 정확한 값을 넣는다.
+ * @param {(r:number)=>number} profile 가운데 0 → 가장자리 1 거리에서의 알파(0~1). r ≥ 1은 0으로 친다.
+ */
+function makeGlowTexture(profile, size = 128){
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const r = Math.hypot(((x + 0.5) / size) * 2 - 1, ((y + 0.5) / size) * 2 - 1);
+    const a = r >= 1 ? 0 : Math.max(0, Math.min(1, profile(r)));
+    const i = (y * size + x) * 4;
+    data[i] = data[i + 1] = data[i + 2] = 255;
+    data[i + 3] = Math.round(a * 255);
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  // DataTexture는 기본이 최근접 필터·밉맵 없음이라 크게 늘리면 계단이 진다
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+// 등대 번짐 — 예전 캔버스 그라데이션과 같은 모양(가운데 1 → 반지름 25%에서 0.55 → 가장자리 0, 직선)
+const GLOW_LIGHTHOUSE = (r) => (r < 0.25 ? 1 - 1.8 * r : 0.55 * (1 - (r - 0.25) / 0.75));
+// 램프 번짐 — 세기는 예전과 같게, 가장자리는 가우시안 꼬리로 부드럽게 사라진다.
+// 예전(등대와 같은 모양)은 가장자리까지 직선으로 줄다가 원 테두리에서 뚝 끊겨 "빛의 공"이 보였다.
+// 크기(LAMP.glowSize)를 0.75 → 1.1로 넓히고 이 모양을 쓰면, 램프에서 0.1·0.2·0.3 떨어진 자리의 알파는
+// 예전과 거의 같고(0.60/0.33/0.17 ↔ 0.54/0.34/0.15) 예전 테두리(0.375) 너머로 0.5까지 옅게 이어진다.
+const GLOW_LAMP = (r) => Math.min(1, (0.5 * Math.exp(-((r / 0.15) ** 2)) + 0.55 * Math.exp(-((r / 0.5) ** 2)))
+  * (1 - THREE.MathUtils.smoothstep(r, 0.8, 1.0)));
+
 function makeSkyTexture(){
   const c = document.createElement("canvas");
   c.width = 8; c.height = 256;
@@ -731,6 +775,12 @@ class BottleScene {
   constructor() {
     this.canvas = document.getElementById("bottleCanvas");
     this.stage = document.getElementById("sceneStage");
+    // 틸트시프트 층 — 위아래 흐림. 띠 경계는 카메라 구도(FRAMING)를 따라 옮긴다(_applyViewShift → --view-shift)
+    for (const cls of ["tiltBlur top", "tiltBlur bottom"]) {
+      const el = document.createElement("div");
+      el.className = cls;
+      this.stage.appendChild(el);
+    }
     // 비네트 층 — 결과 화면에서만 바깥에서 들어온다 (CSS는 index.html <style>의 .sceneVignette)
     const vignette = document.createElement("div");
     vignette.className = "sceneVignette";
@@ -1832,18 +1882,9 @@ ${GERSTNER_GLSL}
     beam.frustumCulled = false;
     pivot.add(beam);
 
-    // 등불 번짐 — 돌지 않는다
-    const c = document.createElement("canvas");
-    c.width = c.height = 64;
-    const g = c.getContext("2d");
-    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    // 흰색 그라데이션 — 색은 재질 color(LIGHTHOUSE.color)가 입힌다
-    grd.addColorStop(0, "rgba(255,255,255,1)");
-    grd.addColorStop(0.25, "rgba(255,255,255,0.55)");
-    grd.addColorStop(1, "rgba(255,255,255,0)");
-    g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    // 등불 번짐 — 돌지 않는다. 그림은 makeGlowTexture(캔버스 그라데이션은 폰에서 무지개 점이 났다)
     this.lhGlowMat = new THREE.SpriteMaterial({
-      map: new THREE.CanvasTexture(c), color: LIGHTHOUSE.color, transparent: true, opacity: 0,
+      map: makeGlowTexture(GLOW_LIGHTHOUSE), color: LIGHTHOUSE.color, transparent: true, opacity: 0,
       depthWrite: false, blending: THREE.AdditiveBlending,
     });
     this.lhGlow = new THREE.Sprite(this.lhGlowMat);
@@ -1913,7 +1954,7 @@ ${GERSTNER_GLSL}
     // 번짐 — 유리 한가운데(고리에서 램프 높이의 약 60% 아래). 흔들리는 축에 붙여 램프와 같이 흔들린다.
     const gb = lamp.geometry.boundingBox || (lamp.geometry.computeBoundingBox(), lamp.geometry.boundingBox);
     const glassY = (gb.max.y - (gb.max.y - gb.min.y) * 0.6) * lamp.scale.y;
-    const glowTex = this.lhGlowMat ? this.lhGlowMat.map : null;   // 등대 번짐과 같은 그림
+    const glowTex = makeGlowTexture(GLOW_LAMP);   // 둘이 같이 쓴다
     this.lampPivots = [];
     this.lampGlows = [];
     for (const obj of [lamp, twin]) {
@@ -3914,6 +3955,8 @@ ${GERSTNER_GLSL}
     if (this._viewShiftApplied !== null && this._viewShiftApplied !== undefined &&
         Math.abs(shift - this._viewShiftApplied) < 1e-4) return;
     this._viewShiftApplied = shift;
+    // 틸트시프트 띠도 같은 만큼 옮긴다 — 화면이 위로 민 만큼 흐림 경계도 위로(index.html .tiltBlur)
+    this.stage.style.setProperty("--view-shift", shift.toFixed(4));
     const w = this._viewW || window.innerWidth, h = this._viewH || window.innerHeight;
     if (shift < 1e-4) this.camera.clearViewOffset();
     else this.camera.setViewOffset(w, h, 0, h * shift, w, h);
