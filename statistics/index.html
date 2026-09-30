@@ -8,6 +8,12 @@
 <!-- 전시장 송출 화면이라 검색 노출은 불필요하고, 온보딩 페이지와 내용이 겹친다 -->
 <meta name="robots" content="noindex" />
 <link rel="stylesheet" href="./shared/tokens.css" />
+<!-- 설문(시안 B′)과 같은 서체 — 명조(문장·결론)는 고운바탕, 숫자·설명은 IBM Plex Sans KR.
+     토큰(--serif --ui)은 shared/tokens.css 에 있고, 폰트 파일은 화면마다 받는다(HANDOFF-map 13장).
+     못 받으면 토큰의 다음 후보(나눔명조·시스템 고딕)로 물러난다. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="./css/panel.css" />
 <!-- 통계 표시 모듈 전용. panel.css(껍데기)와 갈라 둔 이유는 그 파일 머리말 참고 -->
 <link rel="stylesheet" href="./css/stats.css" />
@@ -53,35 +59,35 @@
 
 <!--
   화면은 두 시간을 번갈아 간다 (js/panel.js 머리말).
-    풍경  수평선까지 트인 바다. 왼쪽 위 하늘에 제목 카드 하나만.
-    통계  바다가 한 톤 가라앉고(#stageDim) 가운데 카드(#report)에 통계가 한 장씩.
+    풍경  수평선까지 트인 바다. 위쪽 어둠(#scrimTop) 위에 제목과 누적 수만.
+    통계  바다가 한 톤 가라앉고(#stageDim) 가운데 어두운 유리 카드(#report)에 통계가 한 장씩.
   새 배가 들어오면 어느 쪽이든 멈추고 그 배가 먼저다.
+  톤은 설문(시안 B′)과 같다 — 글자는 풍경 위에 바로 얹지 않고 어둠 위에 밝은 글자로 (css/panel.css 머리말).
 -->
+<div class="scrimTop" aria-hidden="true"></div>
 <div class="stageDim" id="stageDim" aria-hidden="true"></div>
 
 <header class="masthead" id="panel">
   <p class="m-title">그래도, 여기 살고 있습니다</p>
   <p class="m-count"><span id="countNum">0</span><span class="p-plus" id="countPlus" aria-hidden="true">+1</span></p>
   <p class="m-sub">개의 문장이 이곳에 머물러 있습니다</p>
-  <!-- 풍경 시간에만 — 다음 통계 장을 예고하고, 선이 차면 통계가 시작된다 -->
+  <!-- 풍경 시간에만 — 다음 통계 장을 예고하고, 금색 선이 차면 통계가 시작된다 (설문의 단계 표시줄과 같은 꼴) -->
   <div class="m-next" id="mNext"><div class="m-next-in">
     <i class="m-bar" aria-hidden="true"><i class="m-bar-fill" id="mBarFill"></i></i>
-    <p class="m-next-text"><i>Data Analysis</i> 다음 장 <b id="mNextIdx"></b></p>
-    <p class="m-next-label" id="mNextLabel"></p>
+    <p class="m-next-text"><b class="m-next-num" id="mNextIdx"></b><span class="m-next-name" id="mNextLabel"></span><span class="m-next-tag" id="mNextTag">다음 장</span></p>
   </div></div>
 </header>
 
 <!--
-  통계 보고서 한 장. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드 구성을 옮겼다.
+  통계 보고서 한 장. 장 번호 · 진행선 · 한 줄 결론 · 차트 · 각주.
   채우는 건 js/panel.js, 무엇을 넣을지는 js/stats/index.js 가 정한다.
 -->
 <article class="report" id="report" aria-live="polite">
   <div class="r-top">
-    <p class="r-tag" id="rTag"></p>
+    <p class="r-chapter"><b class="r-num" id="rNum"></b><span class="r-name" id="rLabel"></span></p>
     <p class="r-idx" id="rIdx"></p>
   </div>
   <div class="r-rule" aria-hidden="true"><i class="r-progress"></i></div>
-  <p class="r-lead"><span class="r-label" id="rLabel"></span><span class="r-dots" aria-hidden="true"></span><span class="r-value" id="rValue"></span></p>
   <p class="r-headline" id="rHeadline"></p>
   <div class="r-chart" id="statRows"></div>
   <div class="r-foot">
@@ -91,24 +97,24 @@
 </article>
 
 <!--
-  방금 도착한 문장 — 항해일지 카드. 레퍼런스의 "Drug Facts" 라벨(항목 ······ 값, 한/영 병기,
-  초 단위 기록 시각)을 배가 싣고 온 문장의 기록으로 옮겼다.
+  방금 도착한 문장 — 화면 아래 어둠 위의 자막. 설문의 질문 판과 같은 꼴이다
+  (아래로 짙어지는 어둠 + 흐림, 그 위에 밝은 명조 한 문장, 금색 가는 선).
 -->
-<aside class="arrival" id="arrival">
+<aside class="arrival" id="arrival"><div class="arrival-in">
   <div class="log-top">
-    <p class="log-tag"><i>Ship&#8217;s Log</i> 방금 도착한 문장</p>
+    <p class="log-tag">방금 도착한 문장</p>
     <p class="log-no" id="logNo"></p>
   </div>
-  <div class="log-rule" aria-hidden="true"></div>
+  <div class="log-rule" aria-hidden="true"><i class="log-progress"></i></div>
   <p class="arrival-text" id="arrivalText"></p>
   <p class="arrival-sign" id="arrivalSign"></p>
   <dl class="log-rows">
-    <div class="log-row"><dt><i>From</i> 출발한 곳</dt><dd id="logFrom"></dd></div>
-    <div class="log-row"><dt><i>Status</i> 지금의 자리</dt><dd id="logStatus"></dd></div>
-    <div class="log-row"><dt><i>Cargo</i> 싣고 온 것</dt><dd id="logCargo"></dd></div>
-    <div class="log-row"><dt><i>Logged</i> 기록 시각</dt><dd id="logLogged"></dd></div>
+    <div class="log-row"><dt>출발한 곳</dt><dd id="logFrom"></dd></div>
+    <div class="log-row"><dt>지금의 자리</dt><dd id="logStatus"></dd></div>
+    <div class="log-row"><dt>싣고 온 것</dt><dd id="logCargo"></dd></div>
+    <div class="log-row"><dt>기록 시각</dt><dd class="num" id="logLogged"></dd></div>
   </dl>
-</aside>
+</div></aside>
 
 <div id="hud"></div>
 

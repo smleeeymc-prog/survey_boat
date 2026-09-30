@@ -99,7 +99,7 @@ export function runSelfChecks(scene) {
 
   // 8) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
   for (const id of ["panel", "countNum", "countPlus", "mNext", "mBarFill", "mNextIdx", "mNextLabel", "stageDim",
-                    "report", "rTag", "rIdx", "rLabel", "rValue",
+                    "mNextTag", "report", "rNum", "rIdx", "rLabel",
                     "rHeadline", "statRows", "rExtra", "rPeriod", "rLegend",
                     "arrival", "logNo", "arrivalText", "arrivalSign",
                     "logFrom", "logStatus", "logCargo", "logLogged"]) {

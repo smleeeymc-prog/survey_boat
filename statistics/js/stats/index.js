@@ -5,11 +5,10 @@
  * 여기와 metrics.js / insights.js / views.js 안에서 끝나고, 패널도 3D 쪽도 건드릴 일이 없다.
  *
  * 한 장(chapter)은 보고서 한 쪽이다 — 레퍼런스(dh-learning.kr 전시 화면)의 "Data Analysis"
- * 카드를 옮겼다. 패널은 이 파일이 준 조각을 정해진 자리에 꽂기만 한다.
+ * 카드 구성을 설문(시안 B′)의 말투로 옮겼다. 패널은 이 파일이 준 조각을 정해진 자리에 꽂기만 한다.
  *
- *     Data Analysis — Why people stay                    01 / 09   ← tagline · 장 번호
- *     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   ← 굵은 선 = 진행 막대
- *     머무르게 하는 이유 · · · · · · · · · · · · · · · · · · 가족   ← label · value
+ *     01  머무르게 하는 이유                               01 / 09   ← index · label · total
+ *     ─────────────────────────────────────────────────────────────   ← 흰 실선 위 금색 진행선
  *     사람들이 여기 머무는 건, “가족” 때문입니다.                     ← headline (한 줄 결론)
  *     ( 차트 )                                                      ← html
  *     머무는 사람 23명 중 61%가 골랐습니다                              ← extra
@@ -113,7 +112,7 @@ export class StatDeck {
     };
   }
 
-  /** 다음에 나올 장 — 풍경 시간에 제목 카드가 예고한다("다음 장 02 같은 낱말, 다른 이유") */
+  /** 다음에 나올 장 — 풍경 시간에 위쪽 제목 아래에서 예고한다("02 같은 낱말, 다른 이유 · 다음 장") */
   peek() {
     const s = this.slides[this.i];
     return { index: this.i + 1, total: this.slides.length, label: METRIC[s.metric].label, tagline: s.tagline };

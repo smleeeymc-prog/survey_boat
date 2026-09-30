@@ -5,18 +5,19 @@
  * 확정됐다(인수인계 6장). 그래서 3D에는 배 실루엣만 있고, 숫자·통계·문장은 전부
  * 여기서 처리한다. 씬 쪽 모듈은 이 파일을 모르고, 이 파일도 three.js를 모른다.
  *
- * 구성:
- *   제목 카드   왼쪽 위 하늘. 제목 · 누적 문장 수 · 다음 통계 장 예고. 늘 떠 있다.
- *   통계 카드   화면 가운데. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드 — 장 번호 ·
- *              굵은 선 · 라벨·····값 · 한 줄 결론 · 차트 · 각주. 통계 시간에만 뜬다.
+ * 구성 (톤은 설문 시안 B′와 같다 — css/panel.css 머리말):
+ *   위쪽 제목   위에서 짙어지는 어둠 위에 제목 · 누적 문장 수 · 다음 통계 장 예고. 늘 떠 있다.
+ *   통계 카드   화면 가운데 어두운 유리. 장 번호 · 진행선 · 한 줄 결론 · 차트 · 각주.
+ *              통계 시간에만 뜬다. 레퍼런스(dh-learning.kr)의 "Data Analysis" 카드 구성.
  *              무엇을 세고 어떻게 그리는지는 js/stats/ 에 있고, 여기는 받은 조각을 꽂는다.
- *   항해일지    새 기록이 도착하면 아래에 뜬다. 레퍼런스의 "Drug Facts" 라벨을 옮겼다.
+ *   아래 문장   새 기록이 도착하면 화면 아래 자막으로 뜬다(설문의 질문 판과 같은 꼴).
+ *              그 문장과 출발한 곳 · 지금의 자리 · 싣고 온 것 · 기록 시각.
  *
  * ── 화면의 두 시간 ─────────────────────────────────────────────────────────
  * 통계를 크게 보여주려면 화면 한가운데를 내줘야 하고, 그러면 바다가 가려진다. 그래서
  * 둘을 겹치지 않고 번갈아 보낸다 — 한 편의 필름처럼.
  *
- *   풍경   LANDSCAPE_SEC 초. 수평선까지 트인 바다와 흐르는 배들. 제목 카드 아래 가는 선이
+ *   풍경   LANDSCAPE_SEC 초. 수평선까지 트인 바다와 흐르는 배들. 제목 아래 금색 선이
  *          차오르며 다음 장을 예고한다("다음 장 02 같은 낱말, 다른 이유").
  *   통계   바다가 한 톤 가라앉고 가운데 카드가 떠서 SESSION_CHAPTERS 장을 차례로 보여준다.
  *          다 보여주면 카드가 내려가고 다시 풍경. 다음 통계 시간은 그다음 장부터 잇는다.
@@ -27,7 +28,7 @@
  *
  *   incoming()   카메라가 그 배로 고개를 돌리기 시작   통계 카드가 바로 비켜선다(바다도 다시 밝게).
  *                                                     풍경이었다면 예고 선이 그 자리에 멈춘다
- *   showArrival  줌이 끝나 배가 선 순간                숫자 +1, 항해일지 카드
+ *   showArrival  줌이 끝나 배가 선 순간                숫자 +1, 아래에 방금 도착한 문장
  *   hideArrival  줌을 푸는 중                          카드만 내린다
  *   endLive()    연출 끝                               끊긴 시간으로 돌아간다 — 통계였다면 카드가
  *                                                     다시 뜨고, 그 장을 절반도 못 보여줬으면 처음부터,
@@ -42,11 +43,11 @@
  * ========================================================================== */
 
 import {
-  STAT_ROTATE_SEC, STATE_LABEL,
+  STAT_ROTATE_SEC, STATE_LABEL, ARRIVAL_HOLD_SEC,
   LANDSCAPE_SEC, LANDSCAPE_FIRST_SEC, SESSION_CHAPTERS,
 } from "./config.js";
 import { StatDeck } from "./stats/index.js";
-import { esc, fmtStamp } from "./stats/text.js";
+import { fmtStamp } from "./stats/text.js";
 
 /** 장이 물러나는 시간(ms). css/panel.css 의 .report.out 과 맞춘다 */
 const OUT_MS = 460;
@@ -60,9 +61,10 @@ export class Panel {
     this.el = {
       count: $("countNum"), plus: $("countPlus"),
       next: $("mNext"), nextBar: $("mBarFill"), nextIdx: $("mNextIdx"), nextLabel: $("mNextLabel"),
+      nextTag: $("mNextTag"),
       dim: $("stageDim"),
-      report: $("report"), tag: $("rTag"), idx: $("rIdx"),
-      label: $("rLabel"), value: $("rValue"), headline: $("rHeadline"),
+      report: $("report"), num: $("rNum"), idx: $("rIdx"),
+      label: $("rLabel"), headline: $("rHeadline"),
       chart: $("statRows"), extra: $("rExtra"), period: $("rPeriod"), legend: $("rLegend"),
       arrival: $("arrival"), logNo: $("logNo"), text: $("arrivalText"), sign: $("arrivalSign"),
       from: $("logFrom"), status: $("logStatus"), cargo: $("logCargo"), logged: $("logLogged"),
@@ -151,8 +153,9 @@ export class Panel {
     this._landSec = sec;
     this._landT = fromT;
     const p = this.deck.peek();
-    if (this.el.nextIdx) this.el.nextIdx.textContent = `${pad2(p.index)} / ${pad2(p.total)}`;
+    if (this.el.nextIdx) this.el.nextIdx.textContent = pad2(p.index);
     if (this.el.nextLabel) this.el.nextLabel.textContent = p.label;
+    if (this.el.nextTag) this.el.nextTag.textContent = "다음 장";
     if (this.el.nextBar) {
       this.el.nextBar.style.setProperty("--land", `${sec}s`);
       this.el.nextBar.style.setProperty("--land-from", `${-fromT}s`);
@@ -181,20 +184,16 @@ export class Panel {
   }
 
   /**
-   * 시간을 멈추고 제목 카드 아랫줄에 고정 안내를 적는다. 보정 화면(?depths=1)처럼 통계가
+   * 시간을 멈추고 제목 아랫줄(다음 장 예고 자리)에 고정 안내를 적는다. 보정 화면(?depths=1)처럼 통계가
    * 의미 없는 상태에서, 빈 통계를 띄워 고장처럼 보이게 하지 않으려고 둔다.
    * 가운데 카드는 띄우지 않는다 — 보정 화면에서 보려는 배들이 바로 그 뒤에 있다.
    */
   pin(label, text) {
     this._mode = "pin";
     const e = this.el;
-    if (e.nextIdx) e.nextIdx.textContent = label;
-    if (e.nextLabel) e.nextLabel.textContent = text;
-    if (e.next) {
-      const t = e.next.querySelector(".m-next-text");
-      if (t && t.firstChild) t.firstChild.textContent = "Calibration";
-      if (t && t.childNodes[1]) t.childNodes[1].textContent = " ";
-    }
+    if (e.nextIdx) e.nextIdx.textContent = "—";
+    if (e.nextLabel) e.nextLabel.textContent = label;
+    if (e.nextTag) e.nextTag.textContent = text;
     if (e.nextBar) e.nextBar.classList.remove("run");
     this._stage("landscape");
   }
@@ -244,10 +243,10 @@ export class Panel {
 
   _fill(c) {
     const e = this.el;
-    e.tag.innerHTML = `<i>Data Analysis</i>${c.tagline ? ` — ${esc(c.tagline)}` : ""}`;
+    // 설문의 단계 표시줄과 같은 꼴 — 명조 장 번호 · 자간 넓은 이름 · 오른쪽 "01 / 09"
+    e.num.textContent = c.index ? pad2(c.index) : "";
     e.idx.textContent = c.index ? `${pad2(c.index)} / ${pad2(c.total)}` : "";
     e.label.textContent = c.label || "";
-    e.value.textContent = c.value || "";
     e.headline.innerHTML = keepTogether(c.headline || "");   // insights.js 가 참여자 글을 이미 esc 했다
     e.chart.innerHTML = c.html || "";
     e.chart.dataset.view = c.view || "";
@@ -273,14 +272,18 @@ export class Panel {
   }
 
   /**
-   * 줌이 끝나 배가 섰다 — 숫자를 올리고 항해일지 카드를 띄운다.
+   * 줌이 끝나 배가 섰다 — 숫자를 올리고 아래에 방금 도착한 문장을 띄운다.
    * 카드는 배가 다 선 뒤에 뜬다(css 의 지연). 레퍼런스: 카메라 먼저, 카드는 그다음.
    */
   showArrival(record) {
     this.reveal(record.record_id);
     if (this._mode !== "pin" && this._mode !== "arrival") this.incoming();
     this._fillLog(record);
-    if (this.el.arrival) restart(this.el.arrival, "on");
+    // 금색 가는 선이 카드가 떠 있는 시간(머무는 시간)에 걸쳐 찬다
+    if (this.el.arrival) {
+      this.el.arrival.style.setProperty("--hold", `${ARRIVAL_HOLD_SEC}s`);
+      restart(this.el.arrival, "on");
+    }
   }
 
   hideArrival() {
@@ -307,7 +310,7 @@ export class Panel {
     this._enterLandscape(p.landSec || LANDSCAPE_SEC, p.landT || 0);
   }
 
-  /** 항해일지 카드. 레퍼런스 라벨의 "항목 ······ 값" 줄을 그대로 쓴다. */
+  /** 방금 도착한 문장과 그 기록(출발한 곳 · 지금의 자리 · 싣고 온 것 · 기록 시각). */
   _fillLog(record) {
     const e = this.el;
     if (!e.arrival) return;

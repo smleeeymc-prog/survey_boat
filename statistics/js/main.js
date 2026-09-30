@@ -356,7 +356,7 @@ class MapScene {
    *
    * 줌 배율은 "예전 제시 화면보다 배가 3배 크게"(config.js ARRIVAL_ZOOM). 배가 화면에서
    * 차지하는 크기는 거리 × tan(화각/2) 에 반비례하므로 배까지 거리로 화각을 정한다.
-   * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y)에 둔다 — 아래에 항해일지 카드가 뜬다.
+   * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y)에 둔다 — 아래에 방금 도착한 문장이 뜬다.
    */
   _beginArrival(boat) {
     boat.phase = "approach";
@@ -465,7 +465,7 @@ class MapScene {
       this.calibLabels.push({ boat, tag });
     }
     this._reindex();
-    // 통계는 멈추고 제목 카드에 보정 안내를 적는다. 가짜 기록으로 통계를 돌리면 빈 칸이 뜨는데,
+    // 통계는 멈추고 제목 아랫줄에 보정 안내를 적는다. 가짜 기록으로 통계를 돌리면 빈 칸이 뜨는데,
     // 그게 고장인지 데이터가 없는 건지 구분이 안 된다. 가운데 카드는 띄우지 않는다 — 보려는 배를 덮는다.
     this.panel.pin(
       "등장 깊이 보정",

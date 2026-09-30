@@ -201,9 +201,16 @@ const bodyMarkup = indexHtml
   .replace(/<script src="\.\/shared\/survey-taxonomy\.js"><\/script>/, "")
   .trim();
 
+// 서체(고운바탕 · IBM Plex Sans KR)는 index.html 과 같은 구글 폰트 주소를 그대로 건다. 파일에
+// 굽지 않는 이유: 한글 폰트는 글자 범위별로 수십 조각이라 수 MB가 붙는다. 인터넷이 없으면
+// 토큰(--serif --ui)의 다음 후보(나눔명조·시스템 고딕)로 물러난다 — HANDOFF-map 13장.
+const FONTS_URL = (indexHtml.match(/href="(https:\/\/fonts\.googleapis\.com\/css2[^"]+)"/) || [])[1];
+if (!FONTS_URL) throw new Error("[build] index.html 에서 구글 폰트 주소를 못 찾음");
+
 const sceneDoc = `<!doctype html>
 <html lang="ko"data-glass="lens">
 <head><meta charset="utf-8"><title>머무름의 지도</title>
+<link rel="stylesheet" href="${FONTS_URL}">
 <style>${css}</style></head>
 <body>
 ${bodyMarkup}

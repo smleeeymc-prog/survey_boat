@@ -1,16 +1,26 @@
 /* =============================================================================
- * panel.css — 화면 위의 글자들: 제목 카드 · 통계 카드 · 항해일지 카드, 그리고 화면 골격.
+ * panel.css — 화면 위의 글자들: 위쪽 제목 · 가운데 통계 카드 · 아래 방금 도착한 문장, 그리고 화면 골격.
+ *
+ * ── 톤: 설문 화면(시안 B′, 영화 자막형)과 같다 ─────────────────────────────
+ * 09-30 설문이 시안 B′로 바뀌었고, 두 화면이 한 작품으로 읽히게 지도도 같은 톤을 쓴다.
+ * 서체·글자색은 두 화면이 같이 읽는 shared/tokens.css 의 토큰을 그대로 연결한다(값을 베끼지 않는다):
+ *   --serif    고운바탕 — 문장·결론·고른 낱말 (설문의 질문·문장·선택지)
+ *   --ui       IBM Plex Sans KR — 숫자·설명·표 (설문의 설명·버튼·숫자)
+ *   --b-text / --b-text2 / --b-text3   어둠 위 글자 (본문 / 설명 / 보조)
+ *   --b-gold   고른 것·진행 — 이 화면의 유일한 강조색 (진행선·밑줄·결론이 가리키는 표식)
+ *   --b-ink    밝은 바탕(금색 표식) 위 글자
+ * 원칙(설문과 같다): 글자를 풍경 위에 바로 얹지 않는다. 위쪽 제목은 위에서 짙어지는 어둠(.scrimTop),
+ * 방금 도착한 문장은 아래에서 짙어지는 어둠 + 흐림(.arrival), 통계는 어두운 유리 카드(.report).
+ * 그 위에는 늘 밝은 글자다 — 낮·저녁·밤 어느 하늘에서도 같은 대비가 나온다.
+ * [변경] 예전에는 크림 유리 카드 셋에 짙은 먹색 글자였다. 설문의 예전 톤과 같은 계열이었고,
+ * 설문이 B′로 바뀌면서 같이 옮겼다.
  *
  * 화면은 두 시간을 번갈아 간다(js/panel.js 머리말).
- *   풍경  수평선(화면 28%)까지 트인 바다. 왼쪽 위 하늘에 제목 카드 하나만.
+ *   풍경  수평선(화면 28%)까지 트인 바다. 위쪽에 제목과 누적 수만.
  *   통계  바다가 한 톤 가라앉고(.stageDim) 가운데 카드(.report)가 떠서 통계를 한 장씩.
- * 새 배가 들어오면 통계 카드는 비켜서고, 줌이 끝나면 아래에 항해일지 카드가 뜬다.
+ * 새 배가 들어오면 통계 카드는 비켜서고, 줌이 끝나면 아래에 방금 도착한 문장이 뜬다.
  *
- * [변경] 예전에는 위 44%를 덮는 유리 패널에 통계를 넣었다. 수평선이 그 뒤에 묻혀 바다가
- * 답답했고, 통계는 좁은 띠에 눌려 작았다. 통계를 가운데 카드로 옮겨 크게 보여주는 대신
- * 늘 떠 있지 않고 "통계 시간"에만 뜬다.
- *
- * 세 카드는 같은 크림 유리다. 유리는 3단계로 내려간다 (html[data-glass]).
+ * 통계 카드의 유리는 3단계로 내려간다 (html[data-glass]).
  *   lens  블러 + 채도 + feDisplacementMap 굴절  (Chromium 계열에서만)
  *   blur  블러 + 채도만                          (Safari/Firefox 기본, 저사양 1차 강등)
  *   flat  backdrop-filter 없이 불투명 배경        (프레임이 계속 모자랄 때 최종 강등)
@@ -23,18 +33,13 @@
  * ========================================================================== */
 
 :root {
-  /* --font 를 비롯한 토큰은 shared/tokens.css 에서 온다. 설문 페이지도 같은 파일을
-     읽으므로 여기서 다시 선언하지 않는다. 3D 팔레트(config.js)와는 별개다 — 패널은
-     UI 레이어라 시간대가 바뀌어도 같은 색이다.
-
-     패널은 크림 유리다. 설문 페이지가 크림 바탕의 밝은 UI라 어두운 유리를 얹으면
-     두 화면이 다른 제품처럼 보인다. 밝은 바탕이므로 강조는 --gold 를 쓴다. */
-  --c-ground: var(--cream);  /* 유리 바탕 */
-  --c-title: var(--ink3);    /* 맨 위 작은 타이틀 */
-  --c-count: var(--ink);     /* 초대형 숫자 */
-  --c-sub:   var(--ink2);    /* 숫자 아래 설명 */
-  --c-label: #8d8880;        /* 라벨·각주 — ink3를 살짝 따뜻하게 (지도 전용) */
-  --c-accent:var(--gold);    /* 강조 표식 */
+  /* 이 파일 안에서 부르는 짧은 이름. 값은 전부 shared/tokens.css 에서 온다. */
+  --t1: var(--b-text);       /* 어둠 위 본문 */
+  --t2: var(--b-text2);      /* 어둠 위 설명 */
+  --t3: var(--b-text3);      /* 어둠 위 보조 */
+  --accent: var(--b-gold);   /* 고른 것·진행 */
+  /* 설문 B′의 어둠 색 (scrim-top · scrim-bottom 과 같은 값) */
+  --night: 7, 9, 14;
 
   --u: min(1vw, .5625vh);
   --pad-x: calc(5 * var(--u));
@@ -46,8 +51,6 @@
   --ease-io: cubic-bezier(.45, 0, .55, 1);
   --ease-out: cubic-bezier(.22, .61, .36, 1);
   --ease-back: cubic-bezier(.34, 1.56, .64, 1);
-  /* 레퍼런스 카드의 이탤릭 머리글. 한글 서체에는 제대로 된 이탤릭이 없어 라틴 세리프를 쓴다 */
-  --font-italic: Georgia, "Noto Serif", "Times New Roman", serif;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,31 +60,42 @@ html, body {
   /* 캔버스가 뜨기 전 한 프레임의 섬광을 막는다. 낮 팔레트의 안개색과 같은 값이라
      씬이 떠도 바탕이 바뀐 티가 안 난다 (config.js TIME_OF_DAY.day.fog). */
   background: #bfe9ef;
-  color: var(--ink);
-  font-family: var(--font);
+  color: var(--t1);
+  font-family: var(--ui);
   overflow: hidden;                  /* 전시장 송출이라 스크롤이 있으면 안 된다 */
   -webkit-font-smoothing: antialiased;
 }
 
-/* 3D 씬은 화면 전체를 덮는다. 패널이 그 위에 얹혀야 backdrop-filter가
-   "뒤에 있는 파도"를 샘플링할 수 있다 — 패널 아래로 캔버스를 잘라내면 유리가 아니라
-   그냥 반투명 색판이 된다. */
+/* 3D 씬은 화면 전체를 덮는다. 카드가 그 위에 얹혀야 backdrop-filter가
+   "뒤에 있는 파도"를 샘플링할 수 있다. */
 #scene {
   position: fixed; inset: 0;
   width: 100%; height: 100%;
   display: block;
   z-index: 0;
-  /* 화면 색보정 — 설문과 같은 값(shared/tokens.css). 캔버스에만 건다: 패널의 backdrop-filter가
+  /* 화면 색보정 — 설문과 같은 값(shared/tokens.css). 캔버스에만 건다: 카드의 backdrop-filter가
      필터 먹은 캔버스를 비치므로 유리 너머 톤도 두 화면이 맞는다. */
   filter: var(--scene-grade);
 }
 
-/* 비네트 — 캔버스 바로 위, 카드들보다 아래. 카드 글자까지 어두워지면 안 된다. */
+/* 비네트 — 캔버스 바로 위, 글자들보다 아래. 글자까지 어두워지면 안 된다. */
 .sceneVignette {
   position: fixed; inset: 0;
   z-index: 1;
   pointer-events: none;
   background: var(--scene-vignette);
+}
+
+/* 위쪽 어둠 — 설문 B′의 .scrim-top 과 같은 장치. 하늘은 밝기가 시간대마다 달라서
+   글자를 바로 얹으면 낮엔 되고 밤엔 안 된다(예전 설문이 그랬다). 제목 뒤만 짙고 수평선(28%)
+   전에 다 풀린다 — 수평선과 먼 바다는 가리지 않는다. */
+.scrimTop {
+  position: fixed; left: 0; right: 0; top: 0;
+  height: calc(46 * var(--u));
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(var(--night), .66) 0%, rgba(var(--night), .52) 42%, rgba(var(--night), .2) 74%, rgba(var(--night), 0) 100%);
 }
 
 /* 통계 시간에 바다를 한 톤 가라앉힌다. 가운데(카드 뒤)는 깊게, 가장자리는 옅게 —
@@ -92,85 +106,55 @@ html, body {
   z-index: 1;
   pointer-events: none;
   background: radial-gradient(ellipse 95% 62% at 50% 56%,
-    rgba(12, 24, 36, .38) 0%, rgba(12, 24, 36, .24) 62%, rgba(12, 24, 36, .12) 100%);
+    rgba(var(--night), .42) 0%, rgba(var(--night), .26) 62%, rgba(var(--night), .12) 100%);
   opacity: 0;
   transition: opacity 1.4s var(--ease-io);
 }
 .stageDim.on { opacity: 1; }
 
-/* ── 세 카드가 같이 쓰는 크림 유리 ──────────────────────────────────────── */
-/* 크림을 위에서 아래로 조금 진하게 깐다. 카드 뒤가 매 프레임 변하는 바다라 균일한 농도로는
-   작은 글자가 배·물결에 먹힌다. */
-.masthead, .report, .arrival {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)),
-    linear-gradient(180deg, rgba(247,244,239,.74), rgba(247,244,239,.86));
-  backdrop-filter: blur(16px) saturate(1.35);
-  -webkit-backdrop-filter: blur(16px) saturate(1.35);
-  border: 1px solid rgba(255,255,255,.55);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.7),     /* 위쪽 스페큘러 라인 */
-    0 12px 40px rgba(18,32,44,.24);         /* 유리가 바다 위에 떠 있게 하는 그림자 */
-}
-/* 2단계 — 실제 굴절. Chromium 계열만 backdrop-filter에 SVG 필터를 얹을 수 있다. */
-@supports (backdrop-filter: url(#liquid-lens)) {
-  html[data-glass="lens"] .masthead,
-  html[data-glass="lens"] .report {
-    backdrop-filter: blur(16px) saturate(1.55) url(#liquid-lens);
-    -webkit-backdrop-filter: blur(16px) saturate(1.55) url(#liquid-lens);
-  }
-}
-/* 최종 강등 — 프레임이 계속 모자라면 backdrop-filter를 아예 끈다. */
-html[data-glass="flat"] .masthead,
-html[data-glass="flat"] .report,
-html[data-glass="flat"] .arrival {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: rgba(247,244,239,.96);
-}
-
-/* ── 제목 카드 — 왼쪽 위 하늘 ────────────────────────────────────────────── */
-/* 수평선(28%) 위 하늘 띠에 앉는다. 바다를 덮지 않는 크기로 줄였다 — 이 화면의 유일한
-   큰 숫자(누적 문장 수)는 그대로 여기 있다. */
+/* ── 위쪽 제목 ───────────────────────────────────────────────────────────── */
+/* 카드 없이 어둠 위에 바로 — 설문 첫 화면의 제목처럼 명조로 작품 이름을 적고,
+   이 화면의 유일한 큰 숫자(누적 문장 수)는 숫자 서체(--ui)로. */
 .masthead {
   position: fixed;
-  left: var(--pad-x); top: calc(4.5 * var(--u));
+  left: var(--pad-x); top: calc(5 * var(--u));
   z-index: 3;
+  min-width: calc(56 * var(--u));
   max-width: calc(100vw - 2 * var(--pad-x));
-  padding: calc(3 * var(--u)) calc(4.2 * var(--u)) calc(3.2 * var(--u));
-  border-radius: calc(2.6 * var(--u));
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .35);
 }
 .m-title {
-  font-size: calc(2.7 * var(--u));
-  line-height: 1.3;
-  font-weight: 500;
-  letter-spacing: .01em;
-  color: var(--c-title);
+  font-family: var(--serif);
+  font-size: calc(3.5 * var(--u));
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--t1);
 }
 .m-count {
   display: flex;
   align-items: flex-start;
-  font-size: calc(14 * var(--u));
-  line-height: .84;
-  font-weight: 700;
-  letter-spacing: -.025em;
-  color: var(--c-count);
-  margin-top: calc(1 * var(--u));
+  font-size: calc(13 * var(--u));
+  line-height: .9;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  color: var(--t1);
+  margin-top: calc(1.4 * var(--u));
   /* 숫자가 1자리씩 늘어도 글자 폭이 안 흔들리게 */
   font-variant-numeric: tabular-nums;
 }
-/* 새 문장이 보이는 순간 숫자 옆에 잠깐 붙는 +1. 표식(금색 바탕)이 색을 입고 글자는 먹색이다. */
+/* 새 문장이 보이는 순간 숫자 옆에 잠깐 붙는 +1. 금색 알약에 짙은 글자(설문의 밝은 알약 버튼과 같은 결). */
 .p-plus {
-  font-size: calc(2.9 * var(--u));
+  font-size: calc(2.7 * var(--u));
   line-height: 1;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
-  color: var(--ink);
-  background: var(--gold2);
+  color: var(--b-ink);
+  background: var(--accent);
   border-radius: 99px;
-  padding: .28em .55em .24em;
-  margin: .3em 0 0 .45em;
+  padding: .3em .6em .26em;
+  margin: .35em 0 0 .5em;
   opacity: 0;
+  text-shadow: none;
 }
 .p-plus.pop { animation: p-pop 3s var(--ease-out) both; }
 @keyframes p-pop {
@@ -181,15 +165,16 @@ html[data-glass="flat"] .arrival {
   100% { opacity: 0; transform: translateY(-.9em); }
 }
 .m-sub {
-  font-size: calc(3 * var(--u));
-  line-height: 1.35;
-  font-weight: 500;
-  color: var(--c-sub);
-  margin-top: calc(1.1 * var(--u));
+  font-size: calc(2.8 * var(--u));
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--t2);
+  margin-top: calc(1.2 * var(--u));
 }
-/* 다음 통계 장 예고 — 풍경 시간에만. 가는 선이 차오르면 통계가 시작된다.
-   통계·새 배 시간에는 접혀서 제목 카드가 숫자까지만 남는다. 높이를 grid 한 줄의 0fr ↔ 1fr 로
-   접어서 카드가 부드럽게 줄고 는다(높이를 모르는 내용도 이렇게 하면 트랜지션이 된다). */
+/* 다음 통계 장 예고 — 풍경 시간에만. 설문의 단계 표시줄과 같은 꼴: 흰 실선 위로 금색 선이 차고,
+   아래에 명조 장 번호 · 이름 · 자간 넓은 "다음 장". 금색 선이 다 차면 통계가 시작된다.
+   통계·새 배 시간에는 접혀서 숫자까지만 남는다. 높이를 grid 한 줄의 0fr ↔ 1fr 로 접어서
+   부드럽게 줄고 는다(높이를 모르는 내용도 이렇게 하면 트랜지션이 된다). */
 .m-next {
   display: grid;
   grid-template-rows: 0fr;
@@ -199,7 +184,7 @@ html[data-glass="flat"] .arrival {
 }
 .m-next.on {
   grid-template-rows: 1fr;
-  margin-top: calc(2.2 * var(--u));
+  margin-top: calc(2.6 * var(--u));
   opacity: 1;
   transition: grid-template-rows .9s var(--ease-io), margin-top .9s var(--ease-io), opacity .8s var(--ease-io) .3s;
 }
@@ -207,37 +192,42 @@ html[data-glass="flat"] .arrival {
 .m-bar {
   display: block;
   position: relative;
-  height: max(2px, calc(.36 * var(--u)));
-  background: rgba(26,26,26,.12);
-  overflow: hidden;
+  height: 2px;
+}
+.m-bar::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: .5px;
+  height: 1px;
+  background: rgba(255, 255, 255, .3);
 }
 .m-bar-fill {
   position: absolute; inset: 0;
-  background: var(--c-accent);
+  background: var(--accent);
   transform-origin: left center;
   transform: scaleX(0);
 }
 .m-bar-fill.run { animation: r-fill var(--land, 30s) linear var(--land-from, 0s) both; }
-.m-next-text, .m-next-label {
-  font-size: calc(2.1 * var(--u));
-  line-height: 1.35;
-  font-weight: 600;
+.m-next-text {
+  display: flex;
+  align-items: baseline;
+  gap: calc(1.4 * var(--u));
+  margin-top: calc(1.3 * var(--u));
   white-space: nowrap;
 }
-.m-next-text { margin-top: calc(1 * var(--u)); color: var(--c-label); letter-spacing: .02em; }
-.m-next-text i {
-  font-family: var(--font-italic);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 1.14em;
-  color: var(--ink);
-  margin-right: .3em;
+.m-next-num { font-family: var(--serif); font-size: calc(3.2 * var(--u)); font-weight: 700; color: var(--t1); }
+.m-next-name { font-size: calc(2.2 * var(--u)); font-weight: 500; letter-spacing: .08em; color: var(--t2); }
+.m-next-tag {
+  margin-left: auto;
+  font-size: calc(1.9 * var(--u));
+  font-weight: 500;
+  letter-spacing: .24em;
+  color: var(--t3);
 }
-.m-next-text b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; margin-left: .2em; }
-.m-next-label { color: var(--ink2); }
 
-/* ── 통계 카드 — 화면 가운데 ────────────────────────────────────────────────
-   레퍼런스의 "Data Analysis" 카드: 이탤릭 머리글 · 굵은 선 · 라벨 ····· 값 · 결론 · 근거 · 각주.
+/* ── 통계 카드 — 화면 가운데, 어두운 유리 ─────────────────────────────────
+   장 번호 · 진행선 · 한 줄 결론 · 차트 · 각주. 레퍼런스(dh-learning)의 "Data Analysis" 카드
+   구성을 설문 B′의 말투로 옮겼다: 머리는 설문의 단계 표시줄(명조 번호 · 자간 넓은 이름 ·
+   "01 / 09" · 흰 실선 위 금색 진행선), 결론은 설문의 질문처럼 명조 굵게.
    높이를 고정하고 세로 flex 로 차트(.r-chart)가 남는 높이를 전부 받는다 — 장마다 결론이
    한 줄이냐 두 줄이냐가 달라도 카드 테두리가 흔들리지 않는다.
    가운데보다 조금 아래(56%)에 둔다: 위로는 수평선과 하늘이, 아래로는 가까운 바다가 남는다. */
@@ -250,7 +240,14 @@ html[data-glass="flat"] .arrival {
   display: flex;
   flex-direction: column;
   padding: calc(4.4 * var(--u)) calc(5 * var(--u));
-  border-radius: calc(2.8 * var(--u));
+  border-radius: calc(2.4 * var(--u));
+  background: linear-gradient(180deg, rgba(var(--night), .62), rgba(var(--night), .74));
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+  border: 1px solid rgba(246, 242, 234, .12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .06),  /* 위쪽 가장자리의 가는 빛 */
+    0 24px 60px rgba(0, 0, 0, .34);          /* 유리가 바다 위에 떠 있게 하는 그림자 */
   /* 통계 시간이 아니면 숨는다. 뜰 때는 살짝 아래에서 올라오고, 질 때는 가라앉는다. */
   opacity: 0;
   visibility: hidden;
@@ -263,96 +260,92 @@ html[data-glass="flat"] .arrival {
   transform: translate(-50%, -50%);
   transition: opacity 1.1s var(--ease-io) .2s, transform 1.3s var(--ease-out) .2s, visibility 0s;
 }
+/* 2단계 — 실제 굴절. Chromium 계열만 backdrop-filter에 SVG 필터를 얹을 수 있다. */
+@supports (backdrop-filter: url(#liquid-lens)) {
+  html[data-glass="lens"] .report {
+    backdrop-filter: blur(18px) saturate(1.15) url(#liquid-lens);
+    -webkit-backdrop-filter: blur(18px) saturate(1.15) url(#liquid-lens);
+  }
+}
+/* 최종 강등 — 프레임이 계속 모자라면 backdrop-filter를 아예 끈다. */
+html[data-glass="flat"] .report {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(12, 15, 21, .95);
+}
+
 .r-top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1em;
-  font-size: calc(2.4 * var(--u));
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: .03em;
-  color: var(--c-label);
   white-space: nowrap;
 }
-.r-tag { overflow: hidden; text-overflow: ellipsis; }
-.r-tag i {
-  font-family: var(--font-italic);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 1.16em;
-  letter-spacing: 0;
-  color: var(--ink);
+.r-chapter { display: flex; align-items: baseline; gap: calc(1.6 * var(--u)); min-width: 0; }
+.r-num { font-family: var(--serif); font-size: calc(4 * var(--u)); font-weight: 700; color: var(--t1); }
+.r-name {
+  font-size: calc(2.4 * var(--u));
+  font-weight: 500;
+  letter-spacing: .2em;
+  color: var(--t2);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.r-idx { color: var(--ink2); font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+.r-idx {
+  font-size: calc(2.3 * var(--u));
+  font-weight: 500;
+  letter-spacing: .12em;
+  color: var(--t2);
+  font-variant-numeric: tabular-nums;
+}
 
-/* 굵은 선 — 레퍼런스 라벨의 머리 아래 선. 그 밑의 가는 금색 선이 이 장이 넘어가기까지 남은 시간이다. */
+/* 흰 실선 위로 금색 선이 찬다 — 이 장이 넘어가기까지 남은 시간 (설문 단계 표시줄의 진행선) */
 .r-rule {
   position: relative;
   flex: none;
-  height: max(2px, calc(.55 * var(--u)));
-  margin: calc(1 * var(--u)) 0 calc(1.8 * var(--u));
-  background: var(--ink);
+  height: 2px;
+  margin: calc(1.6 * var(--u)) 0 calc(2.8 * var(--u));
   transform-origin: left center;
 }
+.r-rule::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: .5px;
+  height: 1px;
+  background: rgba(255, 255, 255, .3);
+}
 .r-progress {
-  position: absolute;
-  left: 0; right: 0; top: 100%;
-  height: max(2px, calc(.42 * var(--u)));
-  margin-top: 1px;
-  background: var(--c-accent);
+  position: absolute; inset: 0;
+  background: var(--accent);
   transform-origin: left center;
   transform: scaleX(0);
 }
 
-/* 라벨 ····· 값 */
-.r-lead {
-  display: flex;
-  align-items: baseline;
-  gap: calc(1 * var(--u));
-  font-size: calc(2.8 * var(--u));
-  line-height: 1.2;
-  white-space: nowrap;
-}
-.r-label { color: var(--ink2); font-weight: 600; flex: none; }
-.r-dots {
-  flex: 1 1 auto;
-  min-width: 2em;
-  border-bottom: max(1px, calc(.24 * var(--u))) dotted rgba(26,26,26,.38);
-  transform: translateY(-.28em);
-  transform-origin: left center;
-}
-.r-value {
-  color: var(--ink);
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 62%;
-}
-
-/* 한 줄 결론 — 이 장에서 가장 먼저 읽히는 것. 강조한 낱말 아래에만 금색 형광 띠를 깐다.
-   글자는 먹색 그대로다(글자는 데이터 색을 입지 않는다). */
+/* 한 줄 결론 — 이 장에서 가장 먼저 읽히는 것. 설문의 질문처럼 명조 굵게.
+   결론이 가리키는 낱말만 금색 + 금색 밑줄 — 설문에서 고른 낱말을 표시하는 방식 그대로다.
+   차트의 금색 표식과 같은 색이라, 문장의 낱말과 그림의 표식이 한눈에 이어진다. */
 .r-headline {
   flex: none;
-  margin-top: calc(1.8 * var(--u));
-  font-size: calc(5.2 * var(--u));
-  line-height: 1.28;
+  font-family: var(--serif);
+  font-size: calc(5.3 * var(--u));
+  line-height: 1.45;
   font-weight: 700;
-  letter-spacing: -.01em;
-  color: var(--ink);
+  color: var(--t1);
   word-break: keep-all;               /* 한국어는 어절 단위로 끊어야 읽힌다 */
-  text-wrap: balance;
+  /* balance 는 두 줄 길이를 맞추느라 "머무는 / 건," 처럼 쉼표 앞에서 끊었다. pretty 는 앞줄을
+     채우고 마지막 줄만 너무 짧지 않게 한다 — 한국어 문장은 이쪽이 자연스럽다. */
+  text-wrap: pretty;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .3);
 }
 .r-headline:empty { display: none; }
 .r-headline .nw { white-space: nowrap; }
 .r-headline em {
   font-style: normal;
-  font-weight: 800;
-  background-image: linear-gradient(var(--gold2), var(--gold2));
+  color: var(--accent);
+  background-image: linear-gradient(var(--accent), var(--accent));
   background-repeat: no-repeat;
-  background-position: 0 86%;
-  background-size: 100% .36em;
-  padding: 0 .05em;
+  background-position: 0 100%;
+  background-size: 100% max(1.5px, .07em);
+  padding-bottom: .06em;
 }
 
 /* 차트 자리 — 모양은 css/stats.css 의 .sv-* 블록이 각자 정한다. 여기는 높이만 준다. */
@@ -360,55 +353,51 @@ html[data-glass="flat"] .arrival {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
-  margin-top: calc(2 * var(--u));
+  margin-top: calc(2.4 * var(--u));
   font-size: calc(2.6 * var(--u));
 }
 
 .r-foot {
   flex: none;
-  margin-top: calc(1.6 * var(--u));
+  margin-top: calc(1.8 * var(--u));
   font-size: calc(2.2 * var(--u));
-  line-height: 1.4;
-  font-weight: 600;
+  line-height: 1.5;
 }
-.r-extra { color: var(--ink2); }
+.r-extra { color: var(--t2); font-weight: 500; }
 .r-extra:empty { display: none; }
 .r-period {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   column-gap: 1.2em;
-  color: var(--c-label);
+  color: var(--t3);
 }
 .r-legend { white-space: nowrap; }
 
 
 /* ── 장이 들어오는 순서 ─────────────────────────────────────────────────────
-   선이 그어지고 → 라벨 → 점선 → 값 → 결론 → (차트 표식들, stats.css) → 각주.
-   레퍼런스처럼 한 번에 뜨지 않고 읽는 순서대로 차례로 선다. 전부 transform·opacity 만
-   움직여서 합성 단계에서 끝난다 — 유리 패널이 매 프레임 배경을 다시 흐리는 중이라,
-   레이아웃을 흔드는 애니메이션은 쓰지 않는다. */
+   머리 → 선 → 결론 → (차트 표식들, stats.css) → 금색 밑줄 → 각주.
+   한 번에 뜨지 않고 읽는 순서대로 차례로 선다. 전부 transform·opacity 만 움직여서
+   합성 단계에서 끝난다 — 유리가 매 프레임 배경을 다시 흐리는 중이라, 레이아웃을 흔드는
+   애니메이션은 쓰지 않는다. */
 @keyframes r-rise  { from { opacity: 0; transform: translateY(calc(1.4 * var(--u))); } }
 @keyframes r-fade  { from { opacity: 0; } }
 @keyframes r-wipe  { from { transform: scaleX(0); } }
 @keyframes r-slide { from { opacity: 0; transform: translateX(calc(-1.6 * var(--u))); } }
-@keyframes r-mark  { from { background-size: 0% .36em; } }
+@keyframes r-mark  { from { background-size: 0% max(1.5px, .07em); } }
 @keyframes r-fill  { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 .report.in .r-top      { animation: r-rise .6s var(--ease-out) both; }
 .report.in .r-rule     { animation: r-wipe .8s var(--ease-io) both; }
-.report.in .r-label    { animation: r-fade .5s var(--ease-out) .2s both; }
-.report.in .r-dots     { animation: r-wipe .7s var(--ease-io) .3s both; }
-.report.in .r-value    { animation: r-slide .6s var(--ease-out) .75s both; }
-.report.in .r-headline { animation: r-rise .9s var(--ease-out) .35s both; }
+.report.in .r-headline { animation: r-rise .9s var(--ease-out) .3s both; }
 .report.in .r-headline em { animation: r-mark .8s var(--ease-io) 1.1s both; }
 .report.in .r-foot     { animation: r-fade .8s var(--ease-out) 1.4s both; }
-/* 진행 막대는 장이 머무는 시간(--dwell, panel.js 가 넣는다)에 걸쳐 찬다.
+/* 진행선은 장이 머무는 시간(--dwell, panel.js 가 넣는다)에 걸쳐 찬다.
    물러나는 시간(.46초)만큼 짧게 잡아, 다 찼을 때 장이 넘어간다. */
 .report.in .r-progress { animation: r-fill calc(var(--dwell, 9s) - .46s) linear both; }
 
-/* 물러날 때 — 위로 살짝 빠지며 흐려지고, 굵은 선은 오른쪽으로 걷힌다 */
-.report.out .r-top, .report.out .r-lead, .report.out .r-headline,
+/* 물러날 때 — 위로 살짝 빠지며 흐려지고, 선은 오른쪽으로 걷힌다 */
+.report.out .r-top, .report.out .r-headline,
 .report.out .r-chart, .report.out .r-foot {
   opacity: 0;
   transform: translateY(calc(-1 * var(--u)));
@@ -421,129 +410,124 @@ html[data-glass="flat"] .arrival {
 }
 .report.out .r-progress { transform: scaleX(1); opacity: 0; transition: opacity .3s; }
 
-/* 움직임 없이 바꿔 끼울 때(보정 화면, 가려진 기록을 뺄 때) */
+/* 움직임 없이 바꿔 끼울 때(가려진 기록을 뺄 때) */
 .report.still :not(.r-progress) { animation: none !important; }
 
-/* ── 새 기록 카드 — 항해일지(Ship's Log) ──────────────────────────────────── */
-/* 새로 제출된 기록은 배가 크게 제시되는 동안 문장도 같이 떠 있는다.
-   3D 안에 텍스트를 넣지 않기로 했으므로(6장) 유리 카드로 처리한다.
-   레퍼런스의 "Drug Facts" 라벨 구성: 이탤릭 머리글 · 굵은 선 · 본문 · 항목 ······ 값. */
+/* ── 방금 도착한 문장 — 화면 아래 자막 ──────────────────────────────────────
+   설문의 질문 판과 같은 꼴이다: 아래로 짙어지는 어둠 + 흐림(흰 물결 조각을 평균 내 글자 뒤
+   밝기를 고르게 만든다), 그 위에 밝은 명조 한 문장. 위쪽은 마스크로 서서히 풀려 줌으로 당긴
+   배의 밑동을 끊지 않는다. 3D 안에 텍스트를 넣지 않기로 했으므로(6장) 이 층으로 처리한다. */
 .arrival {
   position: fixed;
-  left: var(--pad-x); right: var(--pad-x); bottom: calc(5 * var(--u));
+  left: 0; right: 0; bottom: 0;
   z-index: 3;
-  padding: calc(3.6 * var(--u)) calc(4.6 * var(--u)) calc(3.4 * var(--u));
-  border-radius: calc(2.6 * var(--u));
+  padding: calc(15 * var(--u)) var(--pad-x) calc(6 * var(--u));
+  background: linear-gradient(180deg,
+    rgba(var(--night), 0) 0%, rgba(var(--night), .7) 24%, rgba(var(--night), .9) 48%, rgba(var(--night), .94) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 calc(13 * var(--u)));
+  mask-image: linear-gradient(180deg, transparent 0, #000 calc(13 * var(--u)));
   opacity: 0;
-  transform: translateY(calc(2.4 * var(--u))) scale(.985);
+  transform: translateY(calc(2.4 * var(--u)));
   transition: opacity .8s var(--ease-io), transform .9s var(--ease-io);
   pointer-events: none;
 }
-/* 줌이 끝나고 배가 선 다음에 뜬다 — 레퍼런스: 카메라 먼저, 카드는 1.5초에 걸쳐 */
+/* 줌이 끝나고 배가 선 다음에 뜬다 — 레퍼런스: 카메라 먼저, 글자는 1.5초에 걸쳐 */
 .arrival.on {
   opacity: 1;
   transform: none;
   transition: opacity 1.3s var(--ease-io) .3s, transform 1.4s var(--ease-out) .3s;
 }
+html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.arrival-in { max-width: calc(120 * var(--u)); margin: 0 auto; }
 .log-top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1em;
-  font-size: calc(2.2 * var(--u));
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: .03em;
-  color: var(--c-label);
   white-space: nowrap;
 }
-.log-tag i {
-  font-family: var(--font-italic);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 1.22em;
-  letter-spacing: 0;
-  color: var(--ink);
-  margin-right: .35em;
-}
-.log-no { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .06em; }
+/* 설문 결과 화면의 "자간 넓은 작은 이름표"와 같은 결 — 어둠 위라 금색 */
+.log-tag { font-size: calc(2.2 * var(--u)); font-weight: 600; letter-spacing: .22em; color: var(--accent); }
+.log-no { font-size: calc(2.2 * var(--u)); font-weight: 500; letter-spacing: .12em; color: var(--t2); font-variant-numeric: tabular-nums; }
+/* 흰 실선 위로 금색 선이 찬다 — 이 문장이 떠 있는 남은 시간(--hold, panel.js 가 넣는다) */
 .log-rule {
-  height: max(2px, calc(.55 * var(--u)));
-  margin: calc(1 * var(--u)) 0 calc(2.2 * var(--u));
-  background: var(--ink);
+  position: relative;
+  height: 2px;
+  margin: calc(1.4 * var(--u)) 0 calc(2.8 * var(--u));
   transform-origin: left center;
 }
+.log-rule::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: .5px;
+  height: 1px;
+  background: rgba(255, 255, 255, .3);
+}
+.log-progress {
+  position: absolute; inset: 0;
+  background: var(--accent);
+  transform-origin: left center;
+  transform: scaleX(0);
+}
 .arrival-text {
-  font-size: calc(4.1 * var(--u));
-  line-height: 1.48;
-  font-weight: 600;
-  color: var(--ink);
+  font-family: var(--serif);
+  font-size: calc(5.6 * var(--u));
+  line-height: 1.5;
+  font-weight: 700;
+  color: var(--t1);
   word-break: keep-all;               /* 한국어는 어절 단위로 끊어야 읽힌다 */
   text-wrap: pretty;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .4);
 }
-.arrival-text.long { font-size: calc(3.5 * var(--u)); }
+/* 설문은 80자까지 받는다. 긴 문장은 한 단계 줄여 자막이 배를 덮지 않게 한다. */
+.arrival-text.long { font-size: calc(4.6 * var(--u)); }
 .arrival-sign {
-  margin-top: calc(.8 * var(--u));
-  text-align: right;
+  margin-top: calc(1.2 * var(--u));
   font-size: calc(2.4 * var(--u));
-  font-weight: 500;
-  color: var(--c-label);
+  color: var(--t3);
 }
+/* 이 문장의 기록 — 이름표(작게, 자간 넓게) 아래 값. 고른 것(지역·자리·키워드)은 명조,
+   시각은 숫자 서체. 세로 화면은 두 칸, 가로는 한 줄 네 칸. */
 .log-rows {
-  margin-top: calc(1.8 * var(--u));
-  padding-top: calc(1.2 * var(--u));
-  border-top: 1px solid rgba(26,26,26,.16);
-  font-size: calc(2.3 * var(--u));
-  line-height: 1.25;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(2 * var(--u)) calc(4 * var(--u));
+  margin-top: calc(3 * var(--u));
+  padding-top: calc(2.4 * var(--u));
+  border-top: 1px solid rgba(255, 255, 255, .14);
 }
-.log-row { display: flex; align-items: baseline; gap: .6em; padding: calc(.5 * var(--u)) 0; }
-.log-row dt {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: baseline;
-  gap: .6em;
-  min-width: 0;
-  color: var(--c-label);
-  font-weight: 600;
+.log-row { min-width: 0; }
+.log-row dt { font-size: calc(1.9 * var(--u)); font-weight: 500; letter-spacing: .18em; color: var(--t3); }
+.log-row dd {
+  margin-top: calc(.6 * var(--u));
+  font-family: var(--serif);
+  font-size: calc(2.9 * var(--u));
+  font-weight: 700;
+  color: var(--t1);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-/* 항목과 값 사이의 점선 — 레퍼런스 라벨의 리더 */
-.log-row dt::after {
-  content: "";
-  flex: 1 1 auto;
-  min-width: 1em;
-  border-bottom: max(1px, calc(.22 * var(--u))) dotted rgba(26,26,26,.3);
-  transform: translateY(-.25em);
-}
-.log-row dt i {
-  font-family: var(--font-italic);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 1.1em;
-  color: var(--ink2);
-  min-width: 3.6em;
-}
-.log-row dd { color: var(--ink); font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.log-row dd.num { font-family: var(--ui); font-weight: 500; font-size: calc(2.6 * var(--u)); font-variant-numeric: tabular-nums; }
 
-/* 카드 안도 차례로 선다 — 선 → 문장 → 서명 → 항목 넷 */
+/* 차례로 선다 — 선 → 문장 → 서명 → 기록 넷. 선은 떠 있는 시간에 걸쳐 찬다. */
 .arrival.on .log-rule     { animation: r-wipe .9s var(--ease-io) .5s both; }
+.arrival.on .log-progress { animation: r-fill var(--hold, 8s) linear .5s both; }
 .arrival.on .arrival-text { animation: r-rise 1s var(--ease-out) .7s both; }
 .arrival.on .arrival-sign { animation: r-fade .8s var(--ease-out) 1.3s both; }
-.arrival.on .log-row      { animation: r-slide .7s var(--ease-out) both; }
+.arrival.on .log-row      { animation: r-rise .7s var(--ease-out) both; }
 .arrival.on .log-row:nth-child(1) { animation-delay: 1.4s; }
 .arrival.on .log-row:nth-child(2) { animation-delay: 1.52s; }
 .arrival.on .log-row:nth-child(3) { animation-delay: 1.64s; }
 .arrival.on .log-row:nth-child(4) { animation-delay: 1.76s; }
 
 /* ── 가로 화면(리허설용 모니터) ────────────────────────────────────────────
-   통계 카드는 가로로 넓게(가로로 긴 그림 — 버블 줄·호 — 이 커진다), 항해일지는 오른쪽 아래로.
-   줌 화면의 배는 화면 가운데라 카드가 배를 덮지 않는다. */
+   통계 카드는 가로로 넓게(가로로 긴 그림이 커진다). 아래 자막은 화면 폭 어둠 위에
+   가운데 한 단(설문도 넓은 화면에서 520px 한 단)으로, 기록 넷은 한 줄로. */
 @media (min-aspect-ratio: 1/1) {
   .report { width: min(64vw, calc(190 * var(--u))); }
-  .arrival {
-    left: auto; right: calc(4 * var(--u)); bottom: calc(4 * var(--u));
-    width: calc(76 * var(--u));
-  }
+  .log-rows { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* 움직임을 줄이도록 설정한 환경 — 전부 끄고 마지막 모습만 보여준다 */

@@ -14,12 +14,18 @@
  * 크기 비교(히트맵)는 한 색상의 밝기 계단(시퀀셜). 0을 기준으로 양쪽으로 갈리는
  * 값(정착 온도)만 따뜻함/차가움 두 색에 무채색 중앙(다이버징). 카테고리 색을 돌려
  * 쓰는 뷰는 없다 — 이 화면에서 색이 "정체성"을 나타내는 지표가 없다.
- * 글자는 데이터 색을 입지 않는다 — 값·라벨은 먹색 계열이고, 색은 그 옆의 표식이 입는다.
+ * 값·라벨 글자는 어둠 위 글자색(--t1/--t2/--t3)이고, 색은 그 옆의 표식이 입는다. 예외 하나 —
+ * 결론 문장이 가리키는 낱말은 금색(panel.css .r-headline em): 설문 B′에서 "고른 것"을 금색으로
+ * 적는 방식을 따른 것이고, 차트의 금색 표식과 문장의 낱말을 잇는 범례 구실을 한다.
  *
- * 검산(dataviz validate_palette, 크림 바탕 #f1ede6): 금색 #94743f ↔ 회색 #aca69c
- * 정상 시각 ΔE 16.2 · 색각 이상 ΔE 15.8 · 금색 대비 3:1 이상. 회색은 대비 2.1:1로 일부러
- * 물러나 있고, 그 대신 모든 값이 표식 옆에 글자로 적혀 있다(툴팁 대신).
- * 다이버징 양극은 CVD 분리 ΔE 13.9, 크림 바탕 대비 3:1 이상.
+ * 톤: 설문 B′와 같다(panel.css 머리말). 카드가 어두운 유리라 표식도 어둠 위의 색이다.
+ * 금색은 shared/tokens.css 의 --b-gold 그대로다 — 설문에서 고른 것·진행을 나타내는 바로 그 색.
+ * 검산(dataviz validate_palette --mode dark, 카드 바탕 #151a21):
+ *   강조형 금색 --b-gold ↔ 회색 #62666c  정상 시각 ΔE 34.6 · 색각 이상 ΔE 32.6 · 둘 다 대비 3:1 이상
+ *     (금색은 밝기 L .85 로 어두운 모드 권장 띠(.48~.67)보다 밝다 — 토큰 값을 그대로 쓰려고 둔 것이고,
+ *      강조형이라 범주 구분이 아니라 "이것 하나"를 가리키는 데만 쓴다)
+ *   다이버징 #B8863F(머무름) ↔ #4A94CB(떠남)  모든 검사 통과 — ΔE 19.6 · 대비 3:1 이상
+ * 모든 값이 표식 옆에 글자로 적혀 있다(툴팁 대신).
  *
  * ── 이 화면에는 hover 가 없다 ─────────────────────────────────────────────
  * 전시장 기기에 입력장치가 없어서 툴팁을 띄울 방법이 없다. 값은 화면에 직접 적되,
@@ -32,22 +38,27 @@
  * ========================================================================== */
 
 :root {
-  --sv-lead: #94743f;               /* 강조 표식 — 결론이 가리키는 것 */
-  --sv-rest: #aca69c;               /* 강조가 아닌 표식들의 한 회색 */
-  --sv-track: rgba(26, 26, 26, .07);
-  --sv-base: rgba(26, 26, 26, .42); /* 막대의 기준선 */
+  --sv-lead: var(--b-gold);                  /* 강조 표식 — 결론이 가리키는 것 */
+  --sv-rest: #62666c;                        /* 강조가 아닌 표식들의 한 회색 */
+  --sv-track: rgba(246, 242, 234, .08);
+  --sv-base: rgba(246, 242, 234, .4);        /* 막대의 기준선 */
+  --sv-ring: rgba(12, 15, 21, .92);          /* 표식끼리 겹칠 때 두르는 카드 바탕색 테 */
 
-  /* 시퀀셜 — 히트맵. 금색 계열 한 색상의 알파만 움직인다(= --sv-lead 의 RGB). */
-  --sv-seq: 148, 116, 63;
+  /* 시퀀셜 — 히트맵. 금색(--b-gold #E6C79A) 한 색상의 알파만 움직인다. */
+  --sv-seq: 230, 199, 154;
 
   /* 다이버징 — 정착 온도. 따뜻함(머무름) ↔ 차가움(떠남), 중앙은 무채색.
      차가운 쪽을 바다색 계열에서 고른 건 배·바다 은유와 맞물리게 하려는 것이다. */
-  --sv-warm: #a87f42;
-  --sv-cool: #4f7d99;
-  --sv-mid:  #c3bdb3;
+  --sv-warm: #B8863F;
+  --sv-cool: #4A94CB;
+  --sv-mid:  rgba(246, 242, 234, .35);
 
   --sv-d0: .5s;                     /* 결론 문장이 선 뒤 표식이 서기 시작하는 때 */
 }
+
+/* 고른 것(키워드·자리·지역)과 사람의 문장은 명조 — 설문에서 선택지와 문장을 명조로 적는 것과 같다.
+   숫자·축·비율은 숫자 서체(--ui, 카드에서 물려받는다). */
+.sv-bar-label, .sv-mo-top, .sv-net-node b, .sv-th-label, .sv-tw-text { font-family: var(--serif); }
 
 /* 표식 등장 — 이름은 움직임, 순번은 --i */
 @keyframes sv-grow-x { from { transform: scaleX(0); } }
@@ -75,13 +86,14 @@
   /* 가운데 카드는 예전 패널보다 차트 자리가 두 배 넘게 높다 — 낱말이 곧 그림이라 그만큼 키운다 */
   font-size: calc(var(--stat-base) * 1.35);
 }
-.sv-rank-item { line-height: 1.12; white-space: nowrap; }
+/* 낱말은 설문의 키워드 선택지처럼 명조 */
+.sv-rank-item { font-family: var(--serif); line-height: 1.2; white-space: nowrap; }
 /* 여기서는 낱말이 곧 표식이다 — 1위 낱말이 금색인 건 시안 그대로다 */
-.sv-rank-item.t1 { color: var(--c-accent); font-weight: 800; }
-.sv-rank-item.t2 { color: var(--ink); font-weight: 700; }
-.sv-rank-item.t3 { color: var(--ink2); font-weight: 600; }
-.sv-rank-item.t4 { color: #6d6a64; font-weight: 500; }
-.sv-rank-item.t5 { color: #9a968f; font-weight: 500; }
+.sv-rank-item.t1 { color: var(--accent); font-weight: 700; }
+.sv-rank-item.t2 { color: var(--t1); font-weight: 700; }
+.sv-rank-item.t3 { color: var(--t2); font-weight: 600; }
+.sv-rank-item.t4 { color: rgba(246, 242, 234, .5); font-weight: 400; }
+.sv-rank-item.t5 { color: rgba(246, 242, 234, .36); font-weight: 400; }
 .report.in .sv-rank-item {
   display: inline-block;
   animation: sv-rise .7s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .07s) both;
@@ -100,7 +112,7 @@
 }
 .sv-bar-row { display: contents; }
 .sv-bar-label {
-  color: var(--ink2);
+  color: var(--t2);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -119,15 +131,15 @@
   background: var(--sv-rest);
   transform-origin: left center;
 }
-.sv-bar-row.lead .sv-bar-label { color: var(--ink); font-weight: 800; }
+.sv-bar-row.lead .sv-bar-label { color: var(--t1); font-weight: 700; }
 .sv-bar-row.lead .sv-bar-fill { background: var(--sv-lead); }
 .sv-bar-pct {
-  color: var(--c-label);
+  color: var(--t3);
   font-weight: 600;
   text-align: right;
   font-variant-numeric: tabular-nums;   /* 세로로 줄맞춤되는 숫자 */
 }
-.sv-bar-row.lead .sv-bar-pct { color: var(--ink); font-weight: 800; }
+.sv-bar-row.lead .sv-bar-pct { color: var(--t1); font-weight: 700; }
 .sv-bar-pct i { font-style: normal; font-size: .74em; opacity: .7; }
 .report.in .sv-bar-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
 .report.in .sv-bar-label,
@@ -137,12 +149,13 @@
 /* ── bubble — 강조한 것을 먹색으로, 나머지는 옅은 회색으로 한 줄에 ─────────── */
 .sv-bubble { display: block; height: 100%; }
 .sv-bubble svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.sv-bub circle { fill: #d9d4cb; }
-.sv-bub.lead circle { fill: var(--ink); }
-.sv-bub text { fill: var(--ink2); font-weight: 600; text-anchor: middle; }
-.sv-bub text.in { fill: var(--ink2); }
-.sv-bub.lead text.in { fill: var(--c-ground); font-weight: 800; }
-.sv-bub text.out { fill: var(--c-label); font-weight: 600; }
+/* 가운데 원(결론이 가리키는 이유)만 금색 — 설문에서 "고른 것"의 색. 나머지는 옅은 원 */
+.sv-bub circle { fill: rgba(246, 242, 234, .13); }
+.sv-bub.lead circle { fill: var(--sv-lead); }
+.sv-bub text { font-family: var(--serif); fill: var(--t2); font-weight: 700; text-anchor: middle; }
+.sv-bub text.in { fill: var(--t2); }
+.sv-bub.lead text.in { fill: var(--b-ink); font-weight: 700; }
+.sv-bub text.out { fill: var(--t3); font-weight: 600; }
 .report.in .sv-bub {
   transform-box: fill-box;
   transform-origin: center;
@@ -151,10 +164,10 @@
 
 /* ── headline — 1위 하나만 크게 (보정 화면 안내) ──────────────────────────── */
 .sv-headline { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3em; font-size: var(--stat-base); }
-.sv-head-word { font-size: 1.25em; font-weight: 700; color: var(--c-accent); line-height: 1.05; }
-.sv-head-share { font-size: .52em; font-weight: 600; color: var(--c-count); }
+.sv-head-word { font-size: 1.25em; font-weight: 700; color: var(--accent); line-height: 1.05; }
+.sv-head-share { font-size: .52em; font-weight: 600; color: var(--t1); }
 .sv-head-share i { font-style: normal; font-size: .66em; opacity: .7; }
-.sv-head-rest { flex-basis: 100%; font-size: .34em; color: var(--c-label); margin-top: .35em; }
+.sv-head-rest { flex-basis: 100%; font-size: .34em; color: var(--t3); margin-top: .35em; }
 
 /* ── motives — 같은 낱말, 다른 이유 ────────────────────────────────────────── */
 .sv-motives {
@@ -166,14 +179,14 @@
   height: 100%;
 }
 .sv-mo-row { display: contents; }
-.sv-mo-label { color: var(--c-label); font-weight: 600; white-space: nowrap; }
-.sv-mo-top { color: var(--ink2); font-weight: 700; white-space: nowrap; }
-.sv-mo-pct { color: var(--c-label); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.sv-mo-label { color: var(--t3); font-weight: 600; white-space: nowrap; }
+.sv-mo-top { color: var(--t2); font-weight: 700; white-space: nowrap; }
+.sv-mo-pct { color: var(--t3); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
 .sv-mo-pct i { font-style: normal; font-size: .74em; opacity: .75; }
-.sv-mo-rest { color: var(--c-label); font-size: .86em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sv-mo-row.lead .sv-mo-label { color: var(--ink2); }
-.sv-mo-row.lead .sv-mo-top { color: var(--ink); font-weight: 800; }
-.sv-mo-row.lead .sv-mo-pct { color: var(--ink); font-weight: 800; }
+.sv-mo-rest { color: var(--t3); font-size: .86em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-mo-row.lead .sv-mo-label { color: var(--t2); }
+.sv-mo-row.lead .sv-mo-top { color: var(--t1); font-weight: 700; }
+.sv-mo-row.lead .sv-mo-pct { color: var(--t1); font-weight: 700; }
 .sv-mo-row.lead .sv-bar-fill { background: var(--sv-lead); }
 /* 문장이 적은 동기는 비교에서 빠진다는 걸 드러낸다 — 막대 대신 "적음" */
 .sv-mo-row.thin .sv-bar-track { background: none; border-left-color: var(--sv-track); }
@@ -196,15 +209,15 @@
   height: 100%;
 }
 .sv-hm-col, .sv-hm-rowlabel {
-  color: var(--c-label);
+  color: var(--t3);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
 }
 .sv-hm-col { text-align: center; padding-bottom: .3em; }
 /* 열 머리의 인원 — 지역 분포가 여기서 함께 읽힌다 */
-.sv-hm-col b { font-weight: 600; color: var(--ink3); margin-left: .3em; font-size: .88em; font-variant-numeric: tabular-nums; }
-.sv-hm-col.on, .sv-hm-rowlabel.on { color: var(--ink); font-weight: 800; }
+.sv-hm-col b { font-weight: 600; color: var(--t3); margin-left: .3em; font-size: .88em; font-variant-numeric: tabular-nums; }
+.sv-hm-col.on, .sv-hm-rowlabel.on { color: var(--t1); font-weight: 700; }
 .sv-hm-rowlabel { align-self: center; padding-right: .6em; }
 .sv-hm-row { display: contents; }
 .sv-hm-cell {
@@ -213,19 +226,19 @@
   align-items: center;
   justify-content: center;
   background: rgba(var(--sv-seq), calc(.05 + var(--t) * .87));
-  color: var(--ink2);
+  color: var(--t2);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   border-radius: 2px;
   min-width: 0;
   min-height: 0;
 }
-.sv-hm-cell.deep { color: var(--c-ground); }
+.sv-hm-cell.deep { color: var(--b-ink); }
 .sv-hm-cell.zero { color: transparent; }
 .sv-hm-cell.on {
-  outline: max(2px, calc(.45 * var(--u))) solid var(--ink);
+  outline: max(2px, calc(.45 * var(--u))) solid var(--t1);   /* 결론이 가리키는 칸 — 밝은 테 */
   outline-offset: -1px;
-  font-weight: 800;
+  font-weight: 700;
   position: relative;
   z-index: 1;
 }
@@ -284,12 +297,12 @@
   height: calc(var(--s) * .62em);
   margin-top: calc(var(--s) * -.31em);
   border-radius: 50%;
-  background: var(--ink2);
-  box-shadow: 0 0 0 2px var(--c-ground);
+  background: var(--t2);
+  box-shadow: 0 0 0 2px var(--sv-ring);
 }
-.sv-net-node b { margin-top: .3em; white-space: nowrap; font-weight: 600; color: var(--ink2); }
-.sv-net-node.on i { background: var(--ink); }
-.sv-net-node.on b { color: var(--ink); font-weight: 800; }
+.sv-net-node b { margin-top: .3em; white-space: nowrap; font-weight: 600; color: var(--t2); }
+.sv-net-node.on i { background: var(--t1); }
+.sv-net-node.on b { color: var(--t1); font-weight: 700; }
 .report.in .sv-net-arcs path {
   transform-box: fill-box;
   transform-origin: 50% 100%;
@@ -307,7 +320,7 @@
   height: 100%;
 }
 .sv-th-row { display: contents; }
-.sv-th-label { color: var(--ink2); font-weight: 600; white-space: nowrap; }
+.sv-th-label { color: var(--t2); font-weight: 600; white-space: nowrap; }
 .sv-th-track { position: relative; height: .62em; background: var(--sv-track); }
 .sv-th-zero {
   /* 0 자리를 눈에 보이게 세워 둔다. 이게 없으면 막대가 어디서 갈리는지 알 수 없다. */
@@ -319,17 +332,17 @@
 .sv-th-row.warm .sv-th-fill { background: var(--sv-warm); border-radius: 0 3px 3px 0; transform-origin: left center; }
 .sv-th-row.cool .sv-th-fill { background: var(--sv-cool); border-radius: 3px 0 0 3px; transform-origin: right center; }
 /* 점수 글자는 먹색 — 색은 막대가 입는다 */
-.sv-th-val { text-align: right; color: var(--ink2); font-weight: 700; font-variant-numeric: tabular-nums; }
-.sv-th-row.lead .sv-th-label, .sv-th-row.lead .sv-th-val { color: var(--ink); font-weight: 800; }
+.sv-th-val { text-align: right; color: var(--t2); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sv-th-row.lead .sv-th-label, .sv-th-row.lead .sv-th-val { color: var(--t1); font-weight: 700; }
 .sv-th-row.thin .sv-th-fill { opacity: .38; }
-.sv-th-row.thin .sv-th-label, .sv-th-row.thin .sv-th-val { color: var(--c-label); }
+.sv-th-row.thin .sv-th-label, .sv-th-row.thin .sv-th-val { color: var(--t3); }
 .sv-th-axis {
   grid-column: 2 / 3;
   display: flex;
   justify-content: space-between;
   align-self: start;
   font-size: .82em;
-  color: var(--c-label);
+  color: var(--t3);
   font-weight: 600;
 }
 .report.in .sv-th-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
@@ -364,8 +377,8 @@
   text-align: center;
   font-size: .95em;
   font-style: normal;
-  font-weight: 800;
-  color: var(--ink);
+  font-weight: 700;
+  color: var(--t1);
   font-variant-numeric: tabular-nums;
 }
 .sv-pulse-axis {
@@ -374,7 +387,7 @@
   justify-content: space-between;
   margin-top: .35em;
   font-size: .82em;
-  color: var(--c-label);
+  color: var(--t3);
   font-weight: 600;
 }
 .report.in .sv-pulse-axis { animation: sv-in .6s var(--ease-out) var(--sv-d0) both; }
@@ -404,8 +417,8 @@
 }
 @keyframes sv-tw-scroll { to { transform: translateY(-50%); } }
 .sv-tw-item { display: block; }
-.sv-tw-text { display: block; color: var(--ink); font-weight: 600; line-height: 1.45; word-break: keep-all; }
-.sv-tw-meta { display: block; margin-top: .15em; font-size: .78em; color: var(--c-label); font-weight: 600; }
+.sv-tw-text { display: block; color: var(--t1); font-weight: 600; line-height: 1.45; word-break: keep-all; }
+.sv-tw-meta { display: block; margin-top: .15em; font-size: .78em; color: var(--t3); font-weight: 600; }
 .report.in .sv-textwall { animation: sv-in 1s var(--ease-out) var(--sv-d0) both; }
 
 @media (prefers-reduced-motion: reduce) {
