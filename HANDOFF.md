@@ -64,7 +64,7 @@ node statistics/tools/sync-model.mjs
 |---|:--:|:--:|
 | `ocean-core.js` 파도 표·GLSL·`waveHeightAt`·랩 도메인 | ✓ | ✓ |
 | `palette.js` 시간대 4종·밝기·지역 색 (`KEYWORD_COLOR`·`KEYWORD_PROP`은 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ (`config.js` 재수출) |
-| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) | ✓ `<link>` | ✓ `<link>` (색보정·비네트도 씀) |
+| `tokens.css` UI 색·서체 (`--ink` `--cream` `--gold` …) + 화면 색보정·비네트 (`--scene-grade` `--scene-vignette`) + 작품 UI 톤(`--serif` `--ui` `--b-*`, 09-30 B′) | ✓ `<link>` | ✓ `<link>` (톤 토큰은 아직 안 씀 — `HANDOFF-map.md` 13장) |
 | `ship-tokens.js` 뱃머리 보정·흘수 (`CABIN_BASE_COLOR`는 09-27 삭제 — 지도만 쓰던 값) | ✓ | ✓ |
 | `glb-nodes.js` GLB 노드 이름 전부 + `KEYWORD_NODES` + `SIDE_PROPS`·`CLOVER`(09-27 새로, `GLB_PROPS`는 삭제) | ✓ | ✓ |
 | `deps.js` three 버전 | ✓ | ✓ |

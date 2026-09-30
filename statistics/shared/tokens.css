@@ -27,4 +27,18 @@
      --scene-vignette 캔버스 위에 덮은 pointer-events:none 층의 background. */
   --scene-grade:contrast(1.07) saturate(1.1) sepia(0.08) hue-rotate(-6deg) brightness(1.03);
   --scene-vignette:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(10,12,24,.28) 100%);
+
+  /* 작품 UI 톤 (09-30 설문 개편 시안 B′ — 사용자가 고름). 두 화면이 같은 작품으로 읽히게 서체·글자색을 같이 쓴다.
+     원칙: 글자를 풍경 위에 바로 얹지 않는다 — 어두운 바탕(그라데이션·유리) 위엔 밝은 명조(--b-text),
+     밝은 바탕(하늘·흰 종이) 위엔 짙은 글자(--b-navy · --b-paper-ink). 고른 것·진행은 금색 하나(--b-gold).
+     설문 쓰임새: ui/survey.css. 폰트 파일은 각 화면이 구글 폰트로 받는다(Gowun Batang 400/700 · IBM Plex Sans KR 400/500/600). */
+  --serif:'Gowun Batang', 'Nanum Myeongjo', serif;   /* 질문·문장·선택지 */
+  --ui:'IBM Plex Sans KR', var(--font);              /* 설명·버튼·숫자 */
+  --b-text:#F6F2EA;                                  /* 어둠 위 글자 */
+  --b-text2:rgba(246,242,234,.74);                   /* 어둠 위 설명 */
+  --b-text3:rgba(246,242,234,.66);                   /* 어둠 위 보조 (어둠 90% 위 4.5:1 이상) */
+  --b-gold:#E6C79A;                                  /* 고른 것·진행선·밑줄 */
+  --b-ink:#111318;                                   /* 밝은 버튼 위 글자 */
+  --b-navy:#0B2A35;                                  /* 밝은 하늘 위 글자 */
+  --b-paper-ink:#1B1A17;                             /* 흰(크림) 종이 위 글자 */
 }

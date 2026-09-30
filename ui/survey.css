@@ -7,20 +7,12 @@
  *       밝은 화면(첫 화면의 하늘, 결과의 흰 배경)에서만 짙은 글자를 쓴다.
  * 배치: 질문 판(.qpanel)은 모든 단계에서 높이가 같다 — 질문 제목이 늘 같은 자리에서 시작한다.
  *       배는 그 위에 오도록 카메라가 구도를 올린다(index.html FRAMING).
- * 색·서체 토큰은 여기만 쓴다(지도 화면과 무관). 공유 UI 토큰은 statistics/shared/tokens.css.
+ * 서체·글자색 토큰은 지도와 같이 쓰는 statistics/shared/tokens.css (--serif --ui --b-*). 배치값만 여기.
  * 디자인 원본: 디자인 캔버스 "설문 UI 개선 시안 5종"의 B′ 줄.
  * ========================================================================== */
 
 :root{
-  --serif:'Gowun Batang', 'Nanum Myeongjo', serif;
-  --ui:'IBM Plex Sans KR', var(--font);
-  --b-text:#F6F2EA;                       /* 어둠 위 글자 */
-  --b-text2:rgba(246,242,234,.74);        /* 설명 */
-  --b-text3:rgba(246,242,234,.66);        /* 보조 (어둠 90% 위에서 4.5:1 이상) */
-  --b-gold:#E6C79A;                       /* 고른 것·진행 */
-  --b-ink:#111318;                        /* 밝은 버튼 위 글자 */
-  --b-navy:#0B2A35;                       /* 밝은 하늘 위 글자 (하늘과 8:1 이상) */
-  --b-paper-ink:#1B1A17;                  /* 결과 화면(흰 배경) 글자 */
+  /* 서체·글자색(--serif --ui --b-*)은 지도와 같이 쓰는 statistics/shared/tokens.css 에 있다. 여기는 설문 배치값만. */
   --qpanel-h:339px;                       /* 질문 판 높이 — 390×844에서 질문이 505px에서 시작 */
   --side:max(0px, calc(50% - 260px));     /* 넓은 화면에서도 520px 폭 안에 */
   --safe-b:env(safe-area-inset-bottom, 0px);
