@@ -1,7 +1,7 @@
 /* ===========================================================
    그래도, 여기 살고 있습니다 — 설문 흐름 (클래식 스크립트)
-   ※ 실제 서버/DB 없음. 브라우저 메모리에만 데이터가 존재하며
-     새로고침 시 초기화됩니다. (Firebase 설계는 HANDOFF.md 13장)
+   ※ 기록 저장은 ui/record-sync.js 가 맡는다(Firebase, HANDOFF.md 13장). DB 설정이 비어 있거나
+     ?mock=1 이면 아래 목업 entries 로만 돌고, 새로고침하면 초기화된다.
 
    화면 모양은 ui/survey.css (시안 B′). 세로 선택지는 ui/snap-picker.js,
    나눔 다이얼은 ui/share-dial.js. 3D 씬(window.BottleScene)은 index.html의 모듈이
@@ -17,7 +17,7 @@ const SHARES = SURVEY_TAXONOMY.SHARES;
 const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
 const SENTENCE_Q = SURVEY_TAXONOMY.SENTENCE_Q;
 
-// 시연용 목업 시드 데이터
+// 시연용 목업 시드 데이터 — DB 설정이 비었을 때만 아카이브에 쓰인다 (record-sync.js archiveView)
 let entries = [
   {region:"아산", state:"stay", text:"여기서 나고 자란 친구들이 아직 다 있어서, 떠날 이유를 못 찾겠어요.", keywords:["관계","익숙함"], name:"익명"},
   {region:"천안", state:"leaving", text:"괜찮은 일자리가 여기엔 없어서, 결국 서울로 가게 될 것 같아요.", keywords:["일","불안"], name:"익명"},
@@ -370,12 +370,15 @@ function renderConsent(){
     content: box, prev: "keywords", nextLabel: "제출하기",
     onNext: () => {
       entries.forEach(e => { e._new = false; });   // "나의 기록" 표시는 방금 남긴 것 하나만
-      entries.unshift({
-        region: state.region, state: state.stateId, text: state.text,
+      const entry = {
+        region: state.region, state: state.stateId, share: state.share, text: state.text,
         keywords: [...state.keywords],
         name: state.disclose === "익명" ? "익명" : state.name.trim(),
-        _new: true, id: Date.now(),
-      });
+        // id를 여기서 미리 정한다 = DB 문서 id. 재전송해도 같은 문서라 중복이 생기지 않는다
+        _new: true, id: RecordSync.newId(),
+      };
+      entries.unshift(entry);
+      RecordSync.submit(entry);   // 기다리지 않는다 — 전송이 실패해도 결과 화면은 뜨고 문장은 대기열에 남는다
       state.step = "result"; render();
     },
   });
@@ -404,7 +407,10 @@ const ICON_AGAIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 function mySnapshot(){
   const e = entries[0];
   if(!e || !e._new) return null;
-  if(!e.snapshot && window.BottleScene) e.snapshot = window.BottleScene.capture();
+  if(!e.snapshot && window.BottleScene){
+    e.snapshot = window.BottleScene.capture();
+    RecordSync.attachThumb(e);   // 작은 WebP로 줄여 기록 뒤에 올린다
+  }
   return e.snapshot || null;
 }
 function cardInfo(){
@@ -470,12 +476,17 @@ function restart(){
    문장이 길면 다섯 줄에서 자르고, 누르면 그 카드만 두 칸을 차지하며 전부 펼친다.
    병 스냅샷은 작게(카드 오른쪽 위) — 문장이 주인공이다. */
 function renderArchive(){
+  // DB가 붙어 있으면 서버의 최신 기록 + 내 것, 아니면 위 목업 entries (ui/record-sync.js)
+  const view = RecordSync.archiveView(entries, () => { if(state.step === "archive") render(); });
   const d = h("div", "archive-screen");
   d.innerHTML = `<header class="ar-head">
       <p class="ar-eyebrow">그래도, 여기 살고 있습니다</p>
       <h2 class="ar-title">머무름의 지도</h2>
-      <p class="ar-sub">지금까지 ${entries.length}개의 문장이 쌓였습니다</p>
+      <p class="ar-sub"></p>
     </header>`;
+  d.querySelector(".ar-sub").textContent = view.loading ? "기록을 불러오는 중입니다"
+    : view.failed ? "지금은 다른 기록을 불러오지 못했어요"
+    : `지금까지 ${view.total}개의 문장이 쌓였습니다`;
 
   const tabs = h("div", "ar-tabs");
   tabs.setAttribute("role", "tablist");
@@ -498,7 +509,7 @@ function renderArchive(){
   regionRow.appendChild(sel);
   d.appendChild(regionRow);
 
-  const filtered = entries.filter(e =>
+  const filtered = view.list.filter(e =>
     (state.filterState === "all" || e.state === state.filterState) &&
     (state.filterRegion === "all" || e.region === state.filterRegion)
   );
@@ -508,16 +519,24 @@ function renderArchive(){
     grid.appendChild(h("p", "ar-empty", "아직 이 조건에 맞는 기록이 없습니다."));
   } else {
     filtered.forEach((e, i) => {
-      const c = h("button", "ar-card" + (e._new ? " mine" : "") + (e.snapshot ? " has-snap" : ""));
+      // 남이 쓴 글이 들어오므로 innerHTML 에 넣지 않는다 — 글자는 textContent, 그림은 안전한 data URL만
+      const snap = RecordSync.safeImage(e.snapshot);
+      const c = h("button", "ar-card" + (e._new ? " mine" : "") + (snap ? " has-snap" : ""));
       c.type = "button";
       c.setAttribute("aria-expanded", "false");
       c.style.animationDelay = (i * 0.04) + "s";
       const named = e.name && e.name !== "익명";
-      c.innerHTML = `
-        <span class="ar-meta">${e._new ? `<b>나의 기록</b> · ` : ""}${e.region} · ${stateLabel(e.state)}</span>
-        ${e.snapshot ? `<img class="ar-snap" src="${e.snapshot}" alt="">` : ""}
-        <span class="ar-text">“${e.text}”</span>
-        <span class="ar-foot"><span class="ar-kw">${e.keywords.join(" · ")}</span><span class="ar-by${named ? " named" : ""}">— ${e.name || "익명"}</span></span>`;
+      const meta = h("span", "ar-meta");
+      if(e._new){ meta.appendChild(h("b", null, "나의 기록")); meta.append(" · "); }
+      meta.append(`${e.region} · ${stateLabel(e.state)}`);
+      c.appendChild(meta);
+      if(snap){ const img = h("img", "ar-snap"); img.src = snap; img.alt = ""; c.appendChild(img); }
+      c.appendChild(h("span", "ar-text", `“${e.text}”`));
+      const foot = h("span", "ar-foot");
+      foot.appendChild(h("span", "ar-kw", e.keywords.join(" · ")));
+      foot.appendChild(h("span", "ar-by" + (named ? " named" : ""), `— ${e.name || "익명"}`));
+      c.appendChild(foot);
+      if(!snap) RecordSync.lazyThumb(c, e);   // 남의 카드는 화면에 들어올 때 썸네일을 받는다
       c.onclick = () => {
         const open = c.classList.toggle("open");
         c.setAttribute("aria-expanded", open ? "true" : "false");
