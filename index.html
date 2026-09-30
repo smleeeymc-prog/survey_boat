@@ -3097,17 +3097,26 @@ ${GERSTNER_GLSL}
   _buildRippleSources() {
     const wu = this.waterMesh.material.uniforms;
     // 배는 굽는 순간의 높이를 기준으로 삼는다. 둥실거리면 그만큼 단면이 옮겨간다.
-    this._sdfBoat = this._bakeContactSDF(this.boat, -this.boat.position.y);
-    this._sdfIsland = this._bakeContactSDF(this.islandGroup, -this.islandGroup.position.y);
-    if (this._sdfBoat) wu.uSdfBoat.value = this._sdfBoat.tex;
-    if (this._sdfIsland) wu.uSdfIsland.value = this._sdfIsland.tex;
+    // [버그 09-30] 배는 **내려앉은 뒤에만** 굽는다. 첫 화면에서 배는 숨어 있다가 "뽁" 하고 크기 0에서
+    // 부풀며 하늘 높이 나타나는데(_updateBoatDrop), 예전엔 보이는 첫 프레임에 한 번 구워 버려서
+    // 크기 0·하늘 높이의 배를 구웠다 — 거리장이 텅 비어 배 둘레 일렁임만 사라지고 섬은 멀쩡했다.
+    // 굽기는 한 번뿐이라 그 뒤로도 되살아나지 않았다.
+    const boatReady = this.boat.visible && this._dropT >= 1 && Math.abs(this.boat.scale.x - 1) < 1e-6;
+    if (!this._sdfBoat && boatReady) {
+      this._sdfBoat = this._bakeContactSDF(this.boat, -this.boat.position.y);
+      if (this._sdfBoat) wu.uSdfBoat.value = this._sdfBoat.tex;
+    }
+    if (!this._sdfIsland) {
+      this._sdfIsland = this._bakeContactSDF(this.islandGroup, -this.islandGroup.position.y);
+      if (this._sdfIsland) wu.uSdfIsland.value = this._sdfIsland.tex;
+    }
   }
 
   /** 거리장의 위치·방향·흘수를 이번 프레임 값으로 갱신한다. */
   _updateRipples(dt) {
     const wu = this.waterMesh.material.uniforms;
     if (wu.uRippleOn.value < 0.5) return;
-    if (!this._sdfBoat && this.boat.children.length) this._buildRippleSources();
+    if ((!this._sdfBoat || !this._sdfIsland) && this.boat.children.length) this._buildRippleSources();
 
     // 수면이 물체 기준으로 어느 높이에 있는지 → 네 단면 중 어디를 읽을지.
     // 물체가 떠오르면 값이 내려가 더 얕은 단면(= 좁은 접촉면)을 읽는다.
