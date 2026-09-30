@@ -17,12 +17,12 @@
 
 // Firebase 콘솔 → 프로젝트 설정 → 내 앱(웹) → "SDK 설정 및 구성"의 firebaseConfig 를 그대로
 export const FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyAgAjRVVM58REt5npomSStI5D1NgjJTcD8",
+  authDomain: "ibda-2026-exhibition.firebaseapp.com",
+  projectId: "ibda-2026-exhibition",
+  storageBucket: "ibda-2026-exhibition.firebasestorage.app",
+  messagingSenderId: "16854484838",
+  appId: "1:16854484838:web:21ffbd6dea427f1af8aaa7",
 };
 
 // SDK는 gstatic CDN의 ES 모듈을 동적 import()로 받는다(빌드 도구 없음).
