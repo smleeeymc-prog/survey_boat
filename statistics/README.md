@@ -28,13 +28,16 @@ statistics/
 │  └─ sync-model.mjs         루트 GLB와 사본이 갈라지지 않게 맞추기
 ├─ css/
 │  ├─ panel.css      위쪽 제목 · 가운데 통계 카드 · 아래 방금 도착한 문장 (설문 B′ 톤) · 모션 · 반응형
-│  └─ stats.css      통계 표시 모듈 전용 — js/stats/views.js 와 한 쌍
+│  ├─ stats.css      통계 표시 모듈 전용 — js/stats/views.js 와 한 쌍
+│  └─ tilt-shift.css 화면 위아래 흐림(미니어처) — 설문 .tiltBlur 와 같은 모양
 └─ js/
    ├─ config.js      상수 전부 (원본에서 가져온 값 / 지도 전용 값이 구분돼 있음)
    ├─ ocean.js       파도 셰이더 + waveHeightAt  ← 온보딩 씬에서 그대로 확장
    ├─ fleet.js       배 몸체 + 키워드 요소를 InstancedMesh로
    ├─ boat-paint.js  설문 배와 같은 칠 — 갑판 판자·마스트·계단·캐빈·굴뚝 받침·튜브 톤·램프 한 쌍
-   ├─ material-patch.js  한 재질에 셰이더 패치 여럿 겹쳐 걸기 (구운 AO + 배 칠)
+   ├─ material-patch.js  한 재질에 셰이더 패치 여럿 겹쳐 걸기 (구운 AO + 배 칠 + 표면 효과)
+   ├─ surface-fx.js  광택(하늘 반사)·테두리 빛·면 색 변주 — 설문과 같은 세기
+   ├─ tilt-shift.js  틸트시프트 띠(css/tilt-shift.css)를 구도에 맞춰 옮긴다
    ├─ clover.js      '우연' 클로버 데칼 (GLB에 없어서 선체에 투영해 만든다)
    ├─ style.js       "답변 → 배의 모습" 매핑이 있는 유일한 곳
    ├─ motion.js      푸아송 디스크 배치 + 흐름
@@ -164,7 +167,7 @@ node statistics/tools/sync-model.mjs --check  # 다른지만 확인 (다르면 e
 | `palette.js` | `TIME_OF_DAY`, `INITIAL_TIME_KEY`, 밝기, `REGION_SAND` | 루트 모듈 / `js/config.js` |
 | `ship-tokens.js` | `SHIP_FORWARD_OFFSET`, `SHIP_DRAFT` | 루트 모듈 / `js/fleet.js` |
 | `glb-nodes.js` | GLB 노드 이름, `KEYWORD_NODES`(키워드 → 요소), `SIDE_PROPS`, `CLOVER` | 루트 모듈 / `js/fleet.js`·`js/clover.js` |
-| `look-tokens.js` | `SCENE_LOOK`(조명 비율·거칠기 상한), `HEMI`(반구광), `AO` | 루트 모듈 / `js/main.js`·`js/fleet.js` |
+| `look-tokens.js` | `SCENE_LOOK`(조명 비율·거칠기 상한), `HEMI`(반구광), `AO`, `SURFACE_FX`(광택·테두리·면 변주), `TILT_SHIFT` | 루트 모듈 / `js/main.js`·`js/fleet.js` |
 | `boat-look.js` | `BOAT_PAINT`(배 칠 색), `TUBE_TINT`, `LAMP`, 부품 판정 `markHullParts`·`lampTwinZ` | 루트 모듈 / `js/boat-paint.js` |
 | `tokens.css` | UI 색, `--scene-grade`, `--scene-vignette` | 두 `index.html` |
 | `deps.js` | three 버전 | 루트 모듈 / `js/selfcheck.js` |
@@ -442,6 +445,8 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 | 조명 비율 (주변광 ×0.25 · 해 ×1.5 · 반구광 추가) | `look-tokens.js` `SCENE_LOOK`·`HEMI` | `main.js` |
 | 거칠기 상한 0.68 | `SCENE_LOOK.roughnessCap` | `fleet.js` 재질 복제 뒤 |
 | 구운 AO | `look-tokens.js` `AO` | `fleet.js` `patchBakedAO` |
+| 광택(하늘 반사) 0.8 · 테두리 빛 0.2 · 면 색 변주 1 | `look-tokens.js` `SURFACE_FX` (튜브만 `boat-look.js` `TUBE_FX_EDGE`) | `surface-fx.js` — 칠 위에 겹쳐 건다 |
+| 틸트시프트 (위아래 34% 띠, 3.5px) | `look-tokens.js` `TILT_SHIFT` | `css/tilt-shift.css` + `js/tilt-shift.js` (띠가 구도를 따라간다) |
 | 화면 색보정 | `tokens.css` `--scene-grade` | `#scene { filter }` |
 | 비네트 | `tokens.css` `--scene-vignette` | `.sceneVignette` 층 (캔버스 위, 카드들 아래) |
 
@@ -460,8 +465,15 @@ export const STYLE_SOURCE = "random";   // "random" | "record"
 픽셀당 곱셈 몇 번뿐이다 — draw call도 텍스처도 그대로다. 클로버는 GLB 밖에서 만든
 지오메트리라 `_ao`가 없고, 그래서 패치하지 않는다(`fleet.js` `patchBakedAO`).
 
-**가져오지 않은 것** — 광택·테두리 빛·면 색 변주·부드러운 그림자·틸트시프트는 "가까이서
-한 척" 전용이라 멀리서 수십 척을 보는 지도에는 안 보이거나 비싸다(인수인계 5.4).
+**표면 효과·틸트시프트도 넣었다** (09-30 사용자 결정, `../HANDOFF-map.md` 19장). 처음엔 "가까이서 한 척"
+전용이라 뺐던 것들이다. 걱정했던 것은 이렇게 풀었다:
+- 멀리 작은 배에서 테두리 빛이 번쩍이는 점이 되는 것 → 배가 화면에서 130px보다 작아지면 광택·테두리를 줄이고
+  45px 아래에선 끈다(`surface-fx.js` `FAR_FADE`). 도착 제시(약 620px)와 가까운 배(약 150px)는 설문과 같은 세기.
+- 면 색 변주가 파도에 기울 때마다 깜빡이는 것 → 해시를 인스턴스 행렬 전(물체 공간) 면 법선으로 낸다.
+- 틸트시프트 비용 → CSS `backdrop-filter` 띠(재 보니 WebGL 두 패스보다 쌌다), 프레임이 모자라면 워치독이 가장 먼저 끈다.
+- 구운 AO를 두 번 곱하지 않게 AO 패치와 표면 효과 패치를 나눴다(`material-patch.js`로 겹쳐 건다).
+
+**여전히 안 가져온 것** — 부드러운 그림자(사용자 결정, 지도는 그림자 패스가 없다).
 
 ### 설문 배 모습 — 칠·램프 한 쌍 (2026-09-30, `../HANDOFF-map.md` 18장)
 

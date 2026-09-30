@@ -120,6 +120,10 @@ export function runSelfChecks(scene) {
     console.assert(document.getElementById(id), `[selfCheck] #${id} 엘리먼트가 없음`);
   }
 
+  // 9) 틸트시프트 띠 두 장. 없으면 흐림이 조용히 사라진다(index.html 마크업, css/tilt-shift.css).
+  console.assert(scene.tilt && scene.tilt.layers.length === 2,
+    `[selfCheck] 틸트시프트 띠(.tiltBlur.top/.bottom)가 ${scene.tilt ? scene.tilt.layers.length : 0}장 — index.html 확인`);
+
   const propTri = Object.values(fleet.propTriangles);
   console.log(
     `[머무름의 지도] 배 몸체 그룹 ${fleet.body.length}개 · 요소 그룹 ${fleet.props.length}개 / ` +

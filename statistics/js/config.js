@@ -39,8 +39,8 @@ export { TIME_OF_DAY, SCENE_BRIGHTNESS } from "../shared/palette.js";
 export { SHIP_FORWARD_OFFSET, SHIP_DRAFT } from "../shared/ship-tokens.js";
 export { GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, CLOVER } from "../shared/glb-nodes.js";
 // 두 화면이 같은 배를 같은 색으로 찍는 데 필요한 룩 값 (조명 비율·거칠기 상한·구운 AO 세기).
-// 광택·테두리 빛·그림자 같은 "가까이서 한 척" 전용 효과는 설문에만 있고 여기엔 없다.
-export { SCENE_LOOK, HEMI, AO } from "../shared/look-tokens.js";
+// 광택·테두리 빛·면 색 변주·틸트시프트 세기도 같이 본다(SURFACE_FX·TILT_SHIFT). 그림자만 설문 전용이다.
+export { SCENE_LOOK, HEMI, AO, SURFACE_FX, TILT_SHIFT } from "../shared/look-tokens.js";
 
 // ── 배 칠 (HANDOFF-map 18장 — 설문 배와 같은 모습) ─────────────────────────────
 // 색 값은 shared/boat-look.js BOAT_PAINT 한 곳이다. 거기를 고치면 설문 배가 바뀌므로, 지도 조명에서

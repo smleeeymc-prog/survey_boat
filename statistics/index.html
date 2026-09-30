@@ -17,6 +17,8 @@
 <link rel="stylesheet" href="./css/panel.css" />
 <!-- 통계 표시 모듈 전용. panel.css(껍데기)와 갈라 둔 이유는 그 파일 머리말 참고 -->
 <link rel="stylesheet" href="./css/stats.css" />
+<!-- 틸트시프트(위아래 흐림) — 설문과 같은 값, 띠는 js/tilt-shift.js 가 구도에 맞춰 옮긴다 -->
+<link rel="stylesheet" href="./css/tilt-shift.css" />
 </head>
 <body>
 
@@ -40,6 +42,9 @@
 -->
 
 <canvas id="scene"></canvas>
+<!-- 틸트시프트 띠 — 캔버스 바로 위(캔버스만 흐리고 글자·카드는 또렷하게). css/tilt-shift.css -->
+<div class="tiltBlur top" aria-hidden="true"></div>
+<div class="tiltBlur bottom" aria-hidden="true"></div>
 <!-- 비네트 층 — 캔버스와 패널 사이. 값은 shared/tokens.css --scene-vignette (설문과 같다) -->
 <div class="sceneVignette" aria-hidden="true"></div>
 

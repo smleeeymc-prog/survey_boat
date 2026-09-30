@@ -14,6 +14,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as C from "./config.js";
 import { buildWater, waveHeightAt, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
+import { setSurfaceFxSky, setSurfaceFxViewport } from "./surface-fx.js";
+import { TiltShift } from "./tilt-shift.js";
 import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed } from "./motion.js";
 import { makeStyle } from "./style.js";
 import { TourCamera } from "./camera.js";
@@ -139,6 +141,8 @@ class MapScene {
     hemiSky.lerp(new THREE.Color(lum, lum, lum), H.skyDesat);
     const hemiGround = new THREE.Color(P.ocean).multiplyScalar(H.groundMul);
     this.scene.add(new THREE.HemisphereLight(hemiSky, hemiGround, P.ambI * B * L.hemiScale));
+    // 배 광택·테두리 빛이 비칠 하늘색 — 지금 시간대 하늘 띠(surface-fx.js, 설문과 같은 규칙)
+    setSurfaceFxSky(P.sky);
 
     this.water = buildWater();
     this.scene.add(this.water);
@@ -160,6 +164,7 @@ class MapScene {
     this.cam.attachPointer(canvas);
 
     this.panel = new Panel(document);
+    this.tilt = new TiltShift(document);
     this.slots = new SlotPool();
     this.boats = [];
     this.records = [];
@@ -189,11 +194,17 @@ class MapScene {
   _resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this._syncFxViewport();
     this.cam.setAspect(w / h);
     // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다.
     // 화면 폭은 기기 화면비마다 다르므로 상수로 박을 수 없고, 카메라에서 역산한다.
     // (창 크기를 바꾸면 속도도 따라 바뀐다 — 전시장에서는 한 번 고정되므로 무해하다)
     this.flowSpeed = (2 * this.cam.frameHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
+  }
+
+  /** 표면 효과가 "배가 화면에서 몇 픽셀인가"를 재는 기준 — 그리기 버퍼 높이(픽셀비 포함). */
+  _syncFxViewport() {
+    setSurfaceFxViewport(this.renderer.getDrawingBufferSize(new THREE.Vector2()).y);
   }
 
   async load() {
@@ -542,6 +553,10 @@ class MapScene {
     p.samples.length = 0;
     p.checkAt = p.wall + 3.0;
 
+    // 0차: 틸트시프트가 가장 먼저 꺼진다 — 매 프레임 바뀌는 캔버스 위 backdrop-filter라 비싸고,
+    // 없어도 화면 내용은 그대로다. 끈 뒤 3초를 다시 재서 나머지 단계를 판단한다.
+    if (this.tilt.enabled && avg > 0.026) { this.tilt.disable(); return; }
+
     if (p.step === 0) {
       // 1차: 온보딩과 같은 기준(33fps 미만). 3D 쪽 사치품부터 끈다.
       if (avg > 0.030) {
@@ -549,6 +564,7 @@ class MapScene {
         u.uSpecOn.value = 0.0;
         u.uRippleOn.value = 0.0;
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1));
+        this._syncFxViewport();
         document.documentElement.dataset.glass = "blur";   // 굴절도 같이 내린다
         p.step = 2;
       } else p.step = 1;
@@ -611,6 +627,8 @@ class MapScene {
     }
 
     this._updateRipples();
+    // 틸트시프트 초점 띠 — 평소엔 배들이 흐르는 수면, 도착 제시 중엔 줌하는 만큼 그 배로(tilt-shift.js)
+    this.tilt.update(this.cam.camera, this.arriving, this.cam._zoomT, C.FLEET_SHIP_SCALE);
     this.renderer.render(this.scene, this.cam.camera);
     if (CALIB) this._updateCalibLabels();
 

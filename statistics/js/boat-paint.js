@@ -199,7 +199,7 @@ export function applyBoatPaint(b, mat) {
     patchMaterial(mat, "boat-paint-funnelStep", (s) => paintBoxShader(s, b.geo, 0, "funnelStep"));
   } else if (b.node === GLB_NODES.tube) {
     // 튜브(가족)만 톤을 누른다 — 순백·순홍이라 어두운 선체 위에서 혼자 떠 보였다(설문 6.15).
-    // 설문의 광택·테두리 빛 몫(TUBE_FX_EDGE)은 지도에 그 효과가 없어 옮길 것이 없다.
+    // 광택·테두리 빛 몫(TUBE_FX_EDGE)은 fleet.js 가 surface-fx.js 에 넘긴다.
     mat.color.setRGB(...TUBE_TINT);
   }
 }

@@ -47,8 +47,8 @@ const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-node
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
   // clover.js·boat-paint.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만들고 배를 칠한다.
-  // material-patch.js 는 boat-paint.js·fleet.js 둘 다 쓰므로 그 앞.
-  "clover.js", "material-patch.js", "boat-paint.js", "fleet.js", "camera.js", "store.js",
+  // material-patch.js 는 boat-paint.js·surface-fx.js·fleet.js 가 쓰므로 그 앞.
+  "clover.js", "material-patch.js", "boat-paint.js", "surface-fx.js", "fleet.js", "tilt-shift.js", "camera.js", "store.js",
   // 통계 모듈은 panel.js 보다 먼저다 — Panel 생성자가 StatDeck 을 만들고, StatDeck 은
   // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
   // text.js 는 셋 모두가 쓰는 글자 도구, insights.js 는 metrics 의 MOTIVE_OF 를 쓴다.
@@ -96,6 +96,7 @@ const css = [
   read(path.join(STAT, "shared", "tokens.css")),
   read(path.join(STAT, "css", "panel.css")),
   read(path.join(STAT, "css", "stats.css")),
+  read(path.join(STAT, "css", "tilt-shift.css")),
 ].join("\n");
 // 화면이 실제로 읽는 사본을 그대로 굽는다. 루트 assets/ 는 백업이라, 그쪽을 읽으면
 // 모델을 다시 구웠을 때 시안만 옛 배가 된다.

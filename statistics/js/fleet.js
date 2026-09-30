@@ -45,6 +45,8 @@ import {
 import { buildCloverGeometry, makeCloverMaterial } from "./clover.js";
 import { patchMaterial } from "./material-patch.js";
 import { prepareBoatGeometry, applyBoatPaint } from "./boat-paint.js";
+import { applySurfaceFx } from "./surface-fx.js";
+import { TUBE_FX_EDGE } from "../shared/boat-look.js";
 
 // GLB 노드 이름은 shared/glb-nodes.js 한 곳에서 온다 — 설문 화면도 같은 값을 읽는다.
 // 이름이 바뀌면 조용히 역할이 사라지므로 selfCheck가 존재를 확인한다.
@@ -96,6 +98,13 @@ function mirrorAcrossCenterline(geo, midZ) {
   if (n) { for (let i = 0; i < n.count; i++) n.setZ(i, -n.getZ(i)); n.needsUpdate = true; }
   const t = geo.attributes.tangent;
   if (t) { for (let i = 0; i < t.count; i++) { t.setZ(i, -t.getZ(i)); t.setW(i, -t.getW(i)); } t.needsUpdate = true; }
+  flipWinding(geo);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+}
+
+/** 삼각형 꼭짓점 순서를 뒤집는다(앞면·뒷면이 바뀐다). 법선은 건드리지 않는다. */
+function flipWinding(geo) {
   if (geo.index) {
     const a = geo.index.array;
     for (let i = 0; i + 2 < a.length; i += 3) { const tmp = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = tmp; }
@@ -112,8 +121,6 @@ function mirrorAcrossCenterline(geo, midZ) {
       attr.needsUpdate = true;
     }
   }
-  geo.computeBoundingBox();
-  geo.computeBoundingSphere();
 }
 
 /** 인스턴스 버퍼를 한 번 잡아 두는 InstancedMesh. 컬링은 끈다(바다 전체에 흩어진다). */
@@ -229,6 +236,11 @@ export class ShipFleet {
       if (!child.isMesh || !child.geometry) return;
       const geo = child.geometry.clone();
       geo.applyMatrix4(child.matrixWorld);
+      // 배율이 음수인(거울상) 노드는 굽고 나면 삼각형 감김이 법선과 반대가 된다. 일반 Mesh는 three가
+      // 행렬식을 보고 앞면을 뒤집어 주지만 구운 지오메트리는 그렇지 않다 — 감김을 직접 되돌린다.
+      // (GLB의 굴뚝이 그랬다: 바깥 벽이 잘려 나가고 안쪽 먼 벽이 그려져, 법선이 카메라 반대를 보며
+      //  늘 까맣게 찍혔다. 광택을 넣자 그 면이 프레넬 최대로 번쩍여서 드러났다 — 09-30)
+      if (child.matrixWorld.determinant() < 0) flipWinding(geo);
       baked.push({ child, geo, ...roleOf(child, ship) });
     });
     const hull = baked.find((b) => b.role === "hull");
@@ -255,6 +267,9 @@ export class ShipFleet {
       const mat = cloneMaterial(b.child.material);
       if (b.geo.attributes._ao) patchBakedAO(mat);
       applyBoatPaint(b, mat);
+      // 광택·테두리 빛·면 색 변주 — AO 값을 같이 쓰므로 AO 패치가 걸린 재질에만, 칠 뒤에(surface-fx.js).
+      // 튜브만 광택·테두리 몫을 줄인다(설문과 같다 — 순백·순홍이라 혼자 번쩍였다).
+      if (b.geo.attributes._ao) applySurfaceFx(mat, b.node === GLB_NODES.tube ? TUBE_FX_EDGE : 1);
       const inst = makeInstanced(b.geo, mat, this.capacity, `fleet:${b.kw || b.role}:${b.child.name}`);
 
       if (b.role === "prop") {
