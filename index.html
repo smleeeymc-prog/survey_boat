@@ -569,6 +569,25 @@ const LIGHTHOUSE = {
   water: 0.6,         // 바다에 닿는 빛의 세기
 };
 
+// 배 색 — 2026-09-30 사용자가 준 레퍼런스(로우폴리 예인선 렌더 세 장)에 맞췄다.
+// 여기 값은 재질 색(조명 받기 전)이다. 이 화면의 낮 조명은 레퍼런스 렌더보다 어둡고 푸르러서(재질 색의
+// 약 40%만 화면에 나온다) 레퍼런스에서 잰 색을 그대로 넣으면 한참 어둡게 나온다 — 그래서 "낮에 렌더된
+// 색이 레퍼런스 색이 되도록" 거꾸로 풀어 낸 값이라 재질 색만 보면 밝고 붉다. 바꾸면 헤드리스로 다시 잴 것(HANDOFF 6.17).
+//   렌더 결과(낮, 가운데 값) → 레퍼런스: 마스트 #935f4c → #a0654f · 갑판 #784f3d → #845044
+const BOAT_PAINT = {
+  mast: 0xed9377,        // 마스트(기둥·가로대 둘) — 무늬 없이 단색
+  stairRail: 0xd08a70,   // 계단 옆판 — 갑판보다 밝은 나무(레퍼런스 계단 #925c4c)
+  stairTread: 0xecb294,  // 계단 디딤판 — 옆판보다 한 단 밝게(레퍼런스 #a57662), 계단이 갑판에서 도드라지게
+  deck: 0xbf7a60,        // 갑판 판자 — 붉은 갈색. 예전 꿀색 원목 대신
+  cabin: 0xfcdcb9,       // 캐빈 페인트 — 레퍼런스 색상(#f8ca98)으로 맞추면 이 조명에선 황토색으로 가라앉아
+                         //   배에서 제일 밝은 면이 아니게 된다 → 채도를 덜어 밝은 크림으로("깔끔하게")
+  cabinRoof: 0x7d5243,   // 캐빈 지붕 판자
+  glass: 0x3a2632,       // 창·둥근 창 유리 (짙은 자줏빛 갈색 — 레퍼런스 창 안쪽)
+  trim: 0xecd6b4,        // 둥근 창 테
+  handle: 0x8d6a55,      // 문손잡이
+  funnelStep: 0xf3dcc6,  // 굴뚝 받침 — 캐빈보다 조금 회색빛 (레퍼런스 #d2b294)
+};
+
 // 램프('관계') — 마스트 가로대 양 끝에 하나씩(GLB에는 한쪽만 있어 반대쪽은 복제), 앞뒤로 서로 반대로
 // 흔들린다. 밤에는 등대처럼 켜진다: 유리가 빛나고, 번짐(스프라이트), 배를 비추는 조명, 수면에 비친 빛.
 // 조명은 처음부터 씬에 두고 세기만 바꾼다 — 조명을 넣고 빼면 모든 재질이 다시 컴파일돼 화면이 멈칫한다.
@@ -1512,6 +1531,8 @@ ${GERSTNER_GLSL}
         }
         // 램프 쌍 — 이것도 _installSurfaceFx보다 먼저(복제한 재질에 표면 효과가 붙게)
         this._buildLamps(ship);
+        // 캐빈·굴뚝 받침 페인트(창·문) — 마찬가지로 먼저
+        this._installPaint(ship);
 
         // [삭제됨] 예전엔 "갈매기가 4마리 겹쳐 들어있다"고 보고 가장 큰 하나만 남기고 지웠다.
         // 오판이었다 — 네 조각은 한 마리의 부위(몸통·날개끝·부리·발)였다. 지금 GLB는 아틀라스로
@@ -1923,6 +1944,125 @@ ${GERSTNER_GLSL}
     this._lampLocal = new THREE.Vector3(lamp.parent.position.x, lamp.parent.position.y + glassY, barMid);
   }
 
+  /**
+   * 캐빈과 굴뚝 받침에 칠한 나무 느낌을 입힌다 — 레퍼런스(09-30)처럼, 다만 덜 낡고 깔끔하게.
+   * 둘 다 GLB에선 텍스처 없는 단색 상자라, 상자 좌표로 면을 가려 셰이더가 그린다(텍스처·UV 불필요).
+   *   캐빈: 크림 페인트 + 옅은 세로 결, 뱃머리 쪽 면에 창 넷, 양옆 면에 창 하나 + 문(둥근 창·손잡이),
+   *         지붕은 짙은 판자. 뒷면(굴뚝 쪽)은 비워 둔다.
+   *   굴뚝 받침: 페인트 + 결만.
+   * 재질은 복제한다 — 원래 재질을 다른 요소가 같이 쓸 수 있다.
+   */
+  _installPaint(ship) {
+    const setup = (name, decor, color) => {
+      const m = ship.getObjectByName(name);
+      console.assert(m && m.isMesh, `[selfCheck] 페인트 칠할 "${name}" 메쉬가 없다`);
+      if (!m || !m.isMesh) return;
+      m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox;
+      // 면 모양(창 크기 등)은 실제 치수로 잡아야 늘어나지 않는다 — 노드 배율을 곱한 배 좌표 치수
+      const dim = bb.getSize(new THREE.Vector3()).multiply(new THREE.Vector3(Math.abs(m.scale.x), Math.abs(m.scale.y), Math.abs(m.scale.z)));
+      m.material = m.material.clone();
+      m.material.color.set(0xffffff);
+      patchMaterial(m.material, "paint", (shader) => this._paintShader(shader, bb, dim, decor, color));
+    };
+    setup(GLB_NODES.cabin, 1, BOAT_PAINT.cabin);
+    setup("Funnel_step", 0, BOAT_PAINT.funnelStep);
+  }
+
+  _paintShader(shader, bb, dim, decor, color) {
+    const C = (hex) => new THREE.Color(hex);
+    Object.assign(shader.uniforms, {
+      uPaintMin: { value: bb.min.clone() }, uPaintSize: { value: bb.getSize(new THREE.Vector3()) },
+      uPaintDim: { value: dim.clone() }, uPaintCol: { value: C(color) },
+      uPaintRoof: { value: C(BOAT_PAINT.cabinRoof) }, uPaintGlass: { value: C(BOAT_PAINT.glass) },
+      uPaintTrim: { value: C(BOAT_PAINT.trim) }, uPaintHandle: { value: C(BOAT_PAINT.handle) },
+    });
+    (this._paintU = this._paintU || {})[decor ? "cabin" : "funnelStep"] = shader.uniforms;   // 6.17
+    shader.vertexShader = shader.vertexShader
+      .replace("void main() {", `
+        uniform vec3 uPaintMin, uPaintSize;
+        varying vec3 vPaintP; varying vec3 vPaintN;
+        void main() {`)
+      .replace("#include <project_vertex>", `
+        vPaintP = (position - uPaintMin) / uPaintSize;   // 상자 안 0~1
+        vPaintN = objectNormal;
+        #include <project_vertex>`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", `
+        uniform vec3 uPaintDim, uPaintCol, uPaintRoof, uPaintGlass, uPaintTrim, uPaintHandle;
+        varying vec3 vPaintP; varying vec3 vPaintN;
+        float paintHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+        // 둥근 모서리 사각형까지의 거리 (안쪽 음수). b = 반폭·반높이, r = 모서리 반지름
+        float paintRR(vec2 p, vec2 b, float r) {
+          vec2 q = abs(p) - b + r;
+          return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+        }
+        // 거리 d의 안쪽을 1로 — 경계는 한 픽셀 폭으로 부드럽게(멀리서 반짝이지 않게)
+        float paintFill(float d, float aa) { return 1.0 - smoothstep(-aa, aa, d); }
+        // 창 하나: 바깥 그림자 선 → 밝은 테 → 유리(위가 조금 밝고 비스듬한 반사 한 줄)
+        vec3 paintWindow(vec3 col, vec2 q, vec2 c, vec2 hb, float r, float aa) {
+          float d = paintRR(q - c, hb, r);
+          col = mix(col, uPaintCol * 0.72, paintFill(d - 0.0052, aa));
+          col = mix(col, min(uPaintCol * 1.06, vec3(1.0)), paintFill(d - 0.0038, aa));
+          vec2 g = (q - c) / hb;                                   // 창 안 -1~1
+          vec3 glass = uPaintGlass * mix(0.8, 1.25, g.y * 0.5 + 0.5);
+          float streak = smoothstep(0.18, 0.0, abs(g.x + g.y * 0.6 - 0.2)) * 0.9;
+          glass += uPaintTrim * 0.10 * streak;
+          return mix(col, glass, paintFill(d, aa));
+        }
+        void main() {`)
+      .replace("#include <map_fragment>", `
+        #include <map_fragment>
+        {
+          vec3 P = clamp(vPaintP, 0.0, 1.0);
+          vec3 an = abs(vPaintN);
+          // 면 가르기: 법선이 가장 큰 축. X면은 (z, y), Z면은 (x, y), 위아래는 (x, z)
+          int face = an.x > an.y && an.x > an.z ? 0 : (an.z > an.y ? 2 : 1);
+          vec2 uv = face == 0 ? P.zy : (face == 2 ? P.xy : P.xz);
+          vec2 dimF = face == 0 ? uPaintDim.zy : (face == 2 ? uPaintDim.xy : uPaintDim.xz);
+          vec2 q = uv * dimF;                                        // 면 위 실제 좌표(배 단위)
+          float aa = max(max(fwidth(q.x), fwidth(q.y)), 1e-5);
+          vec3 col = uPaintCol;
+          if (face != 1) {
+            // 옅은 세로 결 — 칠 아래 나무가 살짝 비치는 정도(±2%). 레퍼런스보다 훨씬 옅게: "덜 낡게"
+            float gx = q.x * 260.0;
+            col *= 0.985 + 0.02 * sin(gx + sin(q.x * 37.0) * 2.0) * (0.6 + 0.4 * sin(q.y * 23.0 + gx * 0.1));
+          }
+          if (${decor ? "true" : "false"}) {
+            float W = dimF.x, H = dimF.y;
+            if (face == 1 && vPaintN.y > 0.0) {
+              // 지붕 — 짙은 판자 (배 길이 방향으로 길게, 폭 0.022마다 이음매)
+              float v = q.y / 0.022, idx = floor(v), f = fract(v);
+              float seam = smoothstep(0.0, max(0.08, fwidth(v) * 1.5), f) * smoothstep(1.0, 1.0 - max(0.08, fwidth(v) * 1.5), f);
+              col = uPaintRoof * (0.9 + floor(paintHash(idx + 3.0) * 3.0) * 0.08) * mix(0.62, 1.0, seam);
+            } else if (face == 0 && vPaintN.x < 0.0) {
+              // 뱃머리 쪽 면 — 창 넷을 한 줄로
+              float m = 0.12 * W, slot = (W - 2.0 * m) / 4.0;
+              vec2 hb = vec2(slot * 0.36, 0.13 * H);
+              for (int i = 0; i < 4; i++) {
+                col = paintWindow(col, q, vec2(m + slot * (float(i) + 0.5), 0.64 * H), hb, 0.3 * hb.x, aa);
+              }
+            } else if (face == 2) {
+              // 양옆 면 — 뱃머리 쪽에 창 하나, 선미 쪽에 문 (x가 커질수록 선미)
+              col = paintWindow(col, q, vec2(0.21 * W, 0.64 * H), vec2(0.10 * W, 0.13 * H), 0.035 * W, aa);
+              vec2 dc = vec2(0.68 * W, 0.415 * H), dh = vec2(0.15 * W, 0.385 * H);
+              float dd = paintRR(q - dc, dh, 0.25 * dh.x);
+              col = mix(col, uPaintCol * 0.965, paintFill(dd, aa));                          // 문짝
+              col = mix(col, uPaintCol * 0.66, paintFill(abs(dd) - 0.0011, aa));             // 문틈
+              // 둥근 창 — 밝은 테, 테 바깥 그림자 선, 짙은 유리
+              vec2 pc = vec2(dc.x, 0.62 * H);
+              float R = 0.085 * W, dp = length(q - pc) - R;
+              col = mix(col, uPaintCol * 0.7, paintFill(dp - 0.0012, aa));
+              col = mix(col, uPaintTrim, paintFill(dp, aa));
+              col = mix(col, uPaintGlass * 1.1, paintFill(dp + 0.36 * R, aa));
+              // 손잡이 — 가로 막대
+              col = mix(col, uPaintHandle, paintFill(paintRR(q - vec2(dc.x - 0.07 * W, 0.40 * H), vec2(0.035 * W, 0.006 * H), 0.004), aa));
+            }
+          }
+          diffuseColor.rgb = col;
+        }`);
+  }
+
   /** 램프 흔들기·켜기. on = 밤 정도 × 램프가 보이는지('관계'를 골랐는지). */
   _updateLamps(t) {
     if (!this.lampPivots) return;
@@ -2320,7 +2460,13 @@ ${GERSTNER_GLSL}
     const toShip = hull.matrix.clone();                         // 선체 로컬 → 배 로컬 (선체는 Ship의 자식)
     const toShipN = new THREE.Matrix3().getNormalMatrix(toShip);
     this._markDeckFaces(hull, toShip);
+    this._markHullParts(hull, toShip);
     patchMaterial(hull.material, "wood", (shader) => {
+      shader.uniforms.uMastCol = { value: new THREE.Color(BOAT_PAINT.mast) };
+      shader.uniforms.uStairRailCol = { value: new THREE.Color(BOAT_PAINT.stairRail) };
+      shader.uniforms.uStairTreadCol = { value: new THREE.Color(BOAT_PAINT.stairTread) };
+      shader.uniforms.uDeckCol = { value: new THREE.Color(BOAT_PAINT.deck) };
+      this._hullPaintU = shader.uniforms;   // 색 눈금 맞출 때 콘솔·검증 스크립트가 만진다(6.17)
       shader.uniforms.uHullToShip = { value: toShip };
       shader.uniforms.uHullToShipN = { value: toShipN };
       shader.uniforms.uWoodAmt = this.fx.uWoodAmt;
@@ -2329,17 +2475,20 @@ ${GERSTNER_GLSL}
         .replace("void main() {", `
           uniform mat4 uHullToShip; uniform mat3 uHullToShipN;
           attribute float _deck;
-          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck;
+          attribute float _part;
+          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck; varying float vWoodPart;
           void main() {`)
         .replace("#include <project_vertex>", `
           vWoodP = (uHullToShip * vec4(transformed, 1.0)).xyz;
           vWoodN = normalize(uHullToShipN * objectNormal);
           vWoodDeck = _deck;
+          vWoodPart = _part;
           #include <project_vertex>`);
       shader.fragmentShader = shader.fragmentShader
         .replace("void main() {", `
           uniform float uWoodAmt, uWoodSideAmt;
-          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck;
+          uniform vec3 uMastCol, uStairRailCol, uStairTreadCol, uDeckCol;
+          varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck; varying float vWoodPart;
           float woodHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
           // 판자 이음매: 판자 안쪽은 1, 이음매 선에서 0 (멀어서 선이 픽셀보다 가늘면 흐리게 — 반짝임 방지)
           float woodSeam(float v, float w) {
@@ -2369,19 +2518,79 @@ ${GERSTNER_GLSL}
             float idx = floor(v);
             float f = fract(v);
             float seam = woodSeam(v, 0.09);
-            float tone = 0.86 + floor(woodHash(idx + deck * 17.0) * 3.0) * 0.1;   // 0.86 / 0.96 / 1.06
+            // 갑판 판자 끝 이음매 — 판자마다 어긋난 자리에서 끊긴다(레퍼런스 갑판처럼). 토막마다 색 단계도 다르다.
+            float bu = (p.x + woodHash(idx * 3.7 + 1.0) * 0.13) / 0.13;
+            float seg = floor(bu) * deck;
+            float butt = mix(1.0, woodSeam(bu, 0.02), deck);
+            // 색 단계: 옆면 0.86/0.96/1.06, 갑판은 폭을 넓혀 0.84/0.97/1.10 — 레퍼런스 갑판은 판자마다 차이가 크다
+            float tone = mix(0.86, 0.84, deck) + floor(woodHash(idx + seg * 7.13 + deck * 17.0) * 3.0) * mix(0.1, 0.13, deck);
             float bevel = smoothstep(0.62, 0.9, f) * (1.0 - smoothstep(0.9, 0.93, f));  // 판자 윗단 밝은 띠
             vec3 base = diffuseColor.rgb;
             vec3 sideCol = mix(base, vec3(0.30, 0.10, 0.05), 0.35);                     // 따뜻한 붉은 갈색
-            vec3 deckCol = vec3(0.50, 0.29, 0.12);                                       // 꿀색 원목
-            vec3 wood = mix(sideCol, deckCol, deck) * tone * (1.0 + bevel * 0.18);
+            // 갑판: 예전엔 꿀색 원목(0.50, 0.29, 0.12)이었다 — 레퍼런스의 붉은 갈색 판자로 (BOAT_PAINT.deck)
+            vec3 wood = mix(sideCol, uDeckCol, deck) * tone * (1.0 + bevel * mix(0.18, 0.10, deck));
             // 물 아래는 짙은 바닥 칠 (띠 없이 색만 — 흰 흘수선 띠는 배가 떨어지기 전에도 보여서 뺐다)
             float below = (1.0 - deck) * (1.0 - smoothstep(-${SHIP_DRAFT.toFixed(3)} + 0.005, -${SHIP_DRAFT.toFixed(3)} + 0.008, p.y));
             wood = mix(wood, base * vec3(0.55, 0.40, 0.42), below);
-            wood *= mix(0.6, 1.0, seam);
+            wood *= mix(0.6, 1.0, seam) * mix(0.62, 1.0, butt);
             diffuseColor.rgb = mix(diffuseColor.rgb, wood, uWoodAmt * mix(uWoodSideAmt, 1.0, deck));
+          }
+          // 마스트·계단 — 무늬 없이 제 색(_markHullParts). 나무 켜고 끄기와 무관하게 늘 칠한다.
+          if (vWoodPart > 0.5) {
+            diffuseColor.rgb = vWoodPart < 1.5 ? uMastCol : (vWoodPart < 2.5 ? uStairRailCol : uStairTreadCol);
           }`);
     });
+  }
+
+  /**
+   * 선체 메쉬 안의 마스트·계단을 찾아 정점 속성 _part로 찍는다 (0 선체, 1 마스트, 2 계단 옆판, 3 계단 디딤판).
+   * 선체는 재질 하나(단색)라 색으로는 못 가른다. 좌표로 이어진 덩어리로 나누면 부품이 따로 떨어진다
+   * (09-30 GLB: 덩어리 14개 — 몸통 1, 마스트 3, 계단 8, 갑판 해치 2):
+   *   - 가장 큰 덩어리 = 선체 몸통
+   *   - 마스트 = 몸통 윗단보다 2cm 넘게 솟은 덩어리 (기둥, 캐빈 지붕 위 가로대, 꼭대기 가로대)
+   *   - 계단 옆판 = 길고 높은데 얇은 판 (길이·높이 > 0.1, 두께 < 0.02)
+   *   - 계단 디딤판 = 옆판 두 장이 감싸는 상자 안에 든 나머지 덩어리
+   * 모델을 다시 뽑아 못 찾으면 그 부품만 선체 색으로 남는다 — assert로 알린다.
+   */
+  _markHullParts(hull, toShip) {
+    const pos = hull.geometry.attributes.position;
+    const nTri = pos.count / 3;
+    const P = [];
+    for (let i = 0; i < pos.count; i++) P.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(toShip));
+    const key = (p) => `${Math.round(p.x * 1e4)},${Math.round(p.y * 1e4)},${Math.round(p.z * 1e4)}`;
+    const parent = new Int32Array(nTri).map((_, i) => i);
+    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const firstTri = new Map();
+    for (let t = 0; t < nTri; t++) for (let k = 0; k < 3; k++) {
+      const kk = key(P[t * 3 + k]);
+      if (!firstTri.has(kk)) { firstTri.set(kk, t); continue; }
+      const a = find(firstTri.get(kk)), b = find(t);
+      if (a !== b) parent[a] = b;
+    }
+    const comps = new Map();
+    for (let t = 0; t < nTri; t++) {
+      const r = find(t);
+      if (!comps.has(r)) comps.set(r, { tris: [], box: new THREE.Box3() });
+      const c = comps.get(r);
+      c.tris.push(t);
+      for (let k = 0; k < 3; k++) c.box.expandByPoint(P[t * 3 + k]);
+    }
+    const list = [...comps.values()].sort((a, b) => b.tris.length - a.tris.length);
+    const main = list[0], rest = list.slice(1);
+    const size = (c) => c.box.getSize(new THREE.Vector3());
+    const mast = rest.filter((c) => c.box.max.y > main.box.max.y + 0.02);
+    const rails = rest.filter((c) => { const d = size(c); return d.x > 0.1 && d.y > 0.1 && Math.min(d.x, d.z) < 0.02; });
+    const stairBox = new THREE.Box3();
+    rails.forEach((c) => stairBox.union(c.box));
+    stairBox.expandByScalar(0.004);
+    const treads = rails.length >= 2
+      ? rest.filter((c) => rails.indexOf(c) < 0 && mast.indexOf(c) < 0 && stairBox.containsBox(c.box)) : [];
+    const part = new Float32Array(pos.count);
+    const mark = (cs, v) => cs.forEach((c) => c.tris.forEach((t) => { part[t * 3] = part[t * 3 + 1] = part[t * 3 + 2] = v; }));
+    mark(mast, 1); mark(rails, 2); mark(treads, 3);
+    hull.geometry.setAttribute("_part", new THREE.BufferAttribute(part, 1));
+    console.assert(mast.length >= 1 && rails.length === 2 && treads.length >= 2,
+      `[selfCheck] 선체 부품 판정이 이상하다 — 마스트 ${mast.length}(보통 3) · 계단 옆판 ${rails.length}(2) · 디딤판 ${treads.length}(6)`);
   }
 
   /**
