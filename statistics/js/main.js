@@ -18,7 +18,7 @@ import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed
 import { makeStyle } from "./style.js";
 import { TourCamera } from "./camera.js";
 import { Panel } from "./panel.js";
-import { MockStore } from "./store.js";
+import { pickStore } from "./store.js";
 import { runSelfChecks } from "./selfcheck.js";
 
 const qs = new URLSearchParams(location.search);
@@ -659,8 +659,9 @@ scene.frame();
 scene.load()
   .then(() => {
     if (CALIB) { scene._setupCalibration(); return; }
-    // 목업 저장소. 백엔드가 정해지면 이 한 줄만 갈아끼운다 (store.js 머리말 참고).
-    scene.connect(new MockStore(
+    // 저장소: DB 설정이 있으면 Firestore, 비었거나 ?mock=1 이면 목업 (store.js pickStore).
+    // seed·interval 은 목업일 때만 쓴다.
+    scene.connect(pickStore(qs,
       Number(qs.get("seed") ?? 46),
       Number(qs.get("interval") ?? 14)
     ));
@@ -669,7 +670,7 @@ scene.load()
     console.error("모델(GLB) 로드 실패:", err);
     // 배가 없어도 바다와 패널은 계속 돈다 — 전시 중 모델 하나 때문에 화면이
     // 통째로 검게 죽는 것보다 낫다.
-    scene.connect(new MockStore(Number(qs.get("seed") ?? 46), 0));
+    scene.connect(pickStore(qs, Number(qs.get("seed") ?? 46), 0));
   });
 
 window.__map = scene;   // 콘솔에서 들여다볼 수 있게

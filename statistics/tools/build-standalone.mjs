@@ -39,7 +39,10 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 // 이어붙이는 순서 = 최상위에서 평가되는 순서. const/class는 호이스팅되지 않으므로
 // "먼저 평가돼야 하는 것"이 앞에 와야 한다 (panel.js의 METRICS가 config의 STATE_LABEL을 읽는 식).
 // shared/ 가 먼저다 — config.js가 그 값들을 다시 내보내기 때문에 앞에 평가돼 있어야 한다.
-const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js", "look-tokens.js"];
+// db-config.js → record-store.js 순서 (record-store 가 db-config 를 읽는다). 시안은 목업으로 돌지만
+// store.js 가 이 둘을 import 하므로 빠지면 이름이 없어 죽는다. SDK는 동적 import라 굽지 않는다.
+const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js", "look-tokens.js",
+  "db-config.js", "record-store.js"];
 const MODULE_ORDER = [
   "config.js", "motion.js", "style.js", "ocean.js",
   // clover.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만든다.
@@ -191,7 +194,9 @@ bundle = bundle.replace(
 
 // 설문 분류값은 클래식 스크립트라 전역에 얹힌다. 번들 전체가 하나의 <script> 안에
 // 들어가므로, 앞에 붙여만 두면 config.js가 읽는 globalThis.SURVEY_TAXONOMY 가 생긴다.
-const taxonomy = read(path.join(STAT, "shared", "survey-taxonomy.js"));
+// record-schema.js(기록 모양·검사)도 같은 클래식 전역이고, 분류값을 읽으므로 그 다음에 둔다.
+const taxonomy = read(path.join(STAT, "shared", "survey-taxonomy.js")) + "\n" +
+  read(path.join(STAT, "shared", "record-schema.js"));
 
 // index.html에서 <body> 안의 마크업만 가져온다 (importmap·모듈 스크립트·css 링크는 뺀다).
 const indexHtml = read(path.join(STAT, "index.html"));
@@ -199,6 +204,7 @@ const bodyMarkup = indexHtml
   .slice(indexHtml.indexOf("<body>") + 6, indexHtml.indexOf('<script type="importmap">'))
   // 분류값 스크립트는 아래에서 인라인으로 넣으므로 태그는 뺀다 (파일이 없어 404가 난다)
   .replace(/<script src="\.\/shared\/survey-taxonomy\.js"><\/script>/, "")
+  .replace(/<script src="\.\/shared\/record-schema\.js"><\/script>/, "")
   .trim();
 
 // 서체(고운바탕 · IBM Plex Sans KR)는 index.html 과 같은 구글 폰트 주소를 그대로 건다. 파일에
@@ -275,7 +281,8 @@ const shell = `<!doctype html>
   function load(key) {
     cur = key;
     // __PARAMS를 문서 맨 앞에 끼워 넣는다 (씬 코드가 location.search 대신 이걸 읽는다).
-    stage.srcdoc = html.replace("<body>", '<body><script>window.__PARAMS="time=' + key + '";<\\/script>');
+    // mock=1 — 시안은 늘 목업으로 돈다. DB 설정이 채워져도 srcdoc iframe 에서 실DB에 붙지 않게.
+    stage.srcdoc = html.replace("<body>", '<body><script>window.__PARAMS="mock=1&time=' + key + '";<\\/script>');
     [...bar.children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === key)));
   }
   TIMES.forEach(([k, label]) => {

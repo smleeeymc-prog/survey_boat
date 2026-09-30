@@ -6,7 +6,7 @@
   "scripts": {
     "rules": "node build-rules.mjs",
     "rules:check": "node build-rules.mjs --check",
-    "test:rules": "node build-rules.mjs --check && firebase emulators:exec --only firestore,auth --project demo-yeogi \"node --test test/rules.test.mjs test/record-store.test.mjs\"",
+    "test:rules": "node build-rules.mjs --check && firebase emulators:exec --only firestore,auth --project demo-yeogi \"node --test --test-concurrency=1 test/rules.test.mjs test/record-store.test.mjs\"",
     "test:e2e": "firebase emulators:exec --only firestore,auth --project demo-yeogi \"node test/e2e.mjs\"",
     "emu": "firebase emulators:start --only firestore,auth --project demo-yeogi"
   },

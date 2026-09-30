@@ -1,11 +1,12 @@
 /* =============================================================================
  * store.js — 기록 저장소.
  *
- * 지금까지의 코드는 전부 클라이언트 안에서만 도는 씬이었다. 여러 참여자의 제출을
- * 모아 실시간으로 뿌리는 부분은 아직 없다(인수인계 4장). 그래서 여기서는
- * "화면이 저장소에 요구하는 것"만 인터페이스로 못박고, 지금은 목업 구현을 쓴다.
- * 백엔드가 정해지면 SupabaseStore / FirestoreStore 를 채워 넣고 main.js에서
- * 한 줄만 갈아끼우면 된다 — 씬 쪽 코드는 전혀 손대지 않는다.
+ * "화면이 저장소에 요구하는 것"만 인터페이스로 못박아 두고, 구현은 둘이다.
+ *   · FirestoreStore — 실DB. 백엔드는 **Firebase(Firestore + 익명 인증)로 확정**됐다(09-30).
+ *     Firestore 호출은 전부 ../shared/record-store.js 에 있고(설문과 같이 쓴다), 여기서는
+ *     그 스냅샷을 아래 계약(onReady/onInsert/onRemove)으로 바꾸기만 한다.
+ *   · MockStore — DB 설정(../shared/db-config.js)이 비었거나 ?mock=1 일 때.
+ * 어느 쪽을 쓸지는 pickStore() 한 곳에서 정한다 — 씬 쪽 코드는 저장소를 모른다.
  *
  * ── 저장소가 지켜야 하는 계약 ─────────────────────────────────────────────
  *   store.subscribe({ onReady(records), onInsert(record), onRemove(recordId) })
@@ -15,16 +16,20 @@
  *
  * 화면은 이 셋 말고는 저장소에 대해 아무것도 모른다.
  *
- * ── 레코드 스키마 (기획 문서 기준) ────────────────────────────────────────
- *   record_id, created_at, region, state, text(≤80), keywords(≤2),
- *   display_name, consent_public, consent_archive, moderation_status
+ * ── 레코드 스키마 — 원본은 ../shared/record-schema.js (설문·보안 규칙과 같이 본다) ──
+ *   record_id, created_at(ISO 문자열), region, state, share, text(≤80), keywords(≤2),
+ *   display_name, consent_public, consent_archive, moderation_status, schema_version
+ * share(나눔 → 시간대)는 09-30 DB 연동 때 더해졌다. 지도는 안 써도 된다.
  * 화면에 띄우는 조건은 consent_public === true && moderation_status === "public".
- * 그 판정은 저장소 쪽(쿼리/보안규칙)에서 끝내는 게 맞다 — 비공개 문장이 브라우저까지
+ * 그 판정은 저장소 쪽(쿼리/보안규칙)에서 끝낸다 — 비공개 문장이 브라우저까지
  * 내려온 뒤 JS가 거르는 구조면, 개발자도구만 열면 다 보인다.
+ * 두 구현 모두 화면에 넘기기 전에 RECORD_SCHEMA.checkRecord 를 통과한 것만 넘긴다.
  * ========================================================================== */
 
 import { REGIONS, STATES, KEYWORDS } from "./config.js";
 import { makeRng } from "./motion.js";
+import { dbMode } from "../shared/db-config.js";
+import { dbListenPublic, dbSdkReachable } from "../shared/record-store.js";
 
 // 목업 문장 — 루트 index.html의 시연용 시드에서 가져왔고, 80척을 채우려고 늘렸다.
 const MOCK_TEXTS = [
@@ -84,9 +89,13 @@ export class MockStore {
       text: src[2],
       keywords: kws.filter((k) => KEYWORDS.includes(k)).slice(0, 2),
       display_name: src[4],
+      // share·schema_version 은 스키마 검사를 통과하려고 붙였다. share 는 난수를 쓰지 않고
+      // 순번에서 뽑는다 — rng 를 한 번 더 부르면 뒤따르는 목업 기록이 전부 달라진다.
+      share: globalThis.RECORD_SCHEMA.SHARE_IDS[this.n % globalThis.RECORD_SCHEMA.SHARE_IDS.length],
       consent_public: true,
       consent_archive: true,
       moderation_status: "public",
+      schema_version: globalThis.RECORD_SCHEMA.SCHEMA_VERSION,
     };
   }
 
@@ -107,35 +116,146 @@ export class MockStore {
 }
 
 /* -----------------------------------------------------------------------------
- * 실제 백엔드 어댑터 — 백엔드가 정해지면 이 자리를 채운다.
+ * FirestoreStore — 실DB (Firebase로 확정, 09-30).
  *
- * 어느 쪽이든 씬 코드는 안 바뀐다. main.js의 저장소 한 줄만 갈아끼우면 된다.
- * 아래 두 스텁은 "무엇을 구현해야 하는지"를 코드로 남겨둔 것이지 동작하는 코드가
- * 아니다 — SDK를 importmap에 추가하고 주석을 풀면 된다.
+ * record-store.js 의 dbListenPublic 이 스냅샷마다 "지금 공개된 기록 전부"를 준다.
+ * 여기서는 그걸 계약으로 바꾼다:
+ *   · 첫 서버 스냅샷 → onReady 한 번 (Firestore는 첫 스냅샷에서 기존 문서 전부를 "added"로
+ *     준다 — 그대로 onInsert 로 보내면 시작할 때 수십 척이 한 척씩 등장 연출을 한다)
+ *   · 그 뒤로는 "이미 화면에 준 id 집합"과 비교해 새 것 → onInsert, 빠진 것 → onRemove
+ *     (docChanges 대신 전체 비교를 쓰는 이유: 끊겼다 다시 붙거나 캐시로 먼저 띄운 뒤에도
+ *      같은 코드로 차이만 정확히 보낸다. 수천 건이라도 집합 비교는 순간이다)
+ *   · 캐시(fromCache) 스냅샷은 무시한다 — 오프라인일 때 SDK가 빈 목록을 "현재 상태"처럼 준다
  *
- * [Supabase] (추천 — 이유는 README 참고)
- *   const sb = createClient(URL, ANON_KEY);
- *   // 최초 적재: 공개 조건은 서버에서 건다(RLS 정책 + 뷰). 클라이언트가 거르지 않는다.
- *   const { data } = await sb.from("records_public").select("*").order("created_at");
- *   onReady(data);
- *   sb.channel("records")
- *     .on("postgres_changes", { event: "INSERT", schema: "public", table: "records" },
- *         (p) => { if (p.new.moderation_status === "public") onInsert(p.new); })
- *     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "records" },
- *         (p) => { if (p.new.moderation_status !== "public") onRemove(p.new.record_id); })
- *     .subscribe();
- *
- * [Firestore]
- *   const q = query(collection(db, "records"),
- *                   where("moderation_status", "==", "public"), orderBy("created_at"));
- *   onSnapshot(q, (snap) => snap.docChanges().forEach((c) => {
- *     if (c.type === "added")   onInsert(c.doc.data());
- *     if (c.type === "removed") onRemove(c.doc.id);
- *   }));
- *   // 주의: Firestore의 첫 스냅샷은 기존 문서 전부를 "added"로 준다.
- *   //       그대로 두면 시작할 때 46척이 한 척씩 등장 연출을 하며 쏟아진다.
- *   //       첫 스냅샷만 모아서 onReady로 넘길 것.
+ * 전시장 와이파이 대비
+ *   · 마지막으로 받은 공개 목록을 localStorage(yeogi.map.cache.v1)에 둔다. BOOT_WAIT_SEC 안에
+ *     서버가 답하지 않으면 캐시로 onReady를 부르고, 나중에 서버가 붙으면 차이만 보낸다.
+ *     캐시도 없으면(이 기기 첫 부팅) 서버를 계속 기다린다 — 빈 바다로 먼저 띄우면 붙는 순간
+ *     전부가 "새 기록"으로 쏟아진다.
+ *   · 구독 오류(onSnapshot 의 error 콜백)는 백오프(2·4·8…60초)로 다시 붙는다.
+ *     error 콜백이 없으면 끊긴 구독이 조용히 멈춘다.
+ *   · SDK 자체를 못 받았으면(부팅 때 와이파이가 없었다) 다시 import 해도 소용없다 — 브라우저가
+ *     실패한 모듈 주소를 문서가 살아 있는 동안 기억한다(크로미움 실측). 그래서 같은 백오프로
+ *     SDK 주소에 fetch 로 닿는지만 보고, 닿으면 새로고침한다. 새로고침은 2분에 한 번까지 —
+ *     그 사이 화면은 캐시로 돈다.
  * -------------------------------------------------------------------------- */
+const CACHE_KEY = "yeogi.map.cache.v1";
+const BOOT_WAIT_SEC = 8;
+const RELOAD_KEY = "yeogi.map.reloadAt";
+const RELOAD_MIN_GAP_SEC = 120;
+
+/** 새로고침해도 되나 — 연달아 새로고침하며 깜빡이지 않게 (sessionStorage 는 새로고침을 건너 남는다) */
+function mayReload() {
+  try {
+    const last = Number(sessionStorage.getItem(RELOAD_KEY) || 0);
+    if (Date.now() - last < RELOAD_MIN_GAP_SEC * 1000) return false;
+    sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+    return true;
+  } catch { return false; }
+}
+
+function readCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    return c && Array.isArray(c.records) ? c.records : [];
+  } catch { return []; }
+}
+function writeCache(records) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ saved_at: new Date().toISOString(), records })); }
+  catch { /* 용량 초과·사생활 보호 모드 — 캐시는 없어도 화면은 돈다 */ }
+}
+function validRecord(r) {
+  const problems = globalThis.RECORD_SCHEMA.checkRecord(r);
+  if (problems.length) console.warn(`[store] 스키마에 맞지 않아 건너뜀 (${problems.join(", ")}):`, r.record_id);
+  return problems.length === 0;
+}
+const byCreated = (a, b) => a.created_at.localeCompare(b.created_at);
+
+export class FirestoreStore {
+  subscribe({ onReady, onInsert, onRemove }) {
+    const shown = new Set();   // 화면에 넘긴 record_id
+    let ready = false, stopped = false, attempt = 0;
+    let unsub = null, retryTimer = null, bootTimer = null;
+
+    const markReady = (records) => {
+      ready = true;
+      clearTimeout(bootTimer);
+      const list = records.filter(validRecord).sort(byCreated);
+      for (const r of list) shown.add(r.record_id);
+      onReady(list);
+    };
+    const fromCacheIfAny = () => {
+      if (ready) return;
+      const cached = readCache();
+      if (cached.length) {
+        console.warn(`[store] 서버가 아직 답하지 않아 마지막으로 받은 공개 기록 ${cached.length}건으로 먼저 띄운다`);
+        markReady(cached);
+      }
+    };
+    bootTimer = setTimeout(fromCacheIfAny, BOOT_WAIT_SEC * 1000);
+
+    const apply = (records) => {
+      const list = records.filter(validRecord);
+      writeCache(list);
+      if (!ready) return markReady(list);
+      const now = new Set(list.map((r) => r.record_id));
+      for (const id of [...shown]) if (!now.has(id)) { shown.delete(id); onRemove(id); }
+      for (const r of list.filter((x) => !shown.has(x.record_id)).sort(byCreated)) {
+        shown.add(r.record_id);
+        onInsert(r);
+      }
+    };
+
+    const retry = (why, err) => {
+      console.warn(`[store] ${why} — 다시 붙는다`, err);
+      fromCacheIfAny();
+      if (stopped) return;
+      const sec = Math.min(60, 2 ** ++attempt) * (0.8 + Math.random() * 0.4);
+      const sdkGone = err && err.code === "sdk-unavailable";
+      retryTimer = setTimeout(sdkGone ? reloadWhenReachable : listen, sec * 1000);
+    };
+    const reloadWhenReachable = async () => {
+      if (stopped) return;
+      if (await dbSdkReachable() && mayReload()) {
+        console.warn("[store] SDK 주소에 다시 닿는다 — 새로고침해서 받는다");
+        location.reload();
+        return;
+      }
+      retry("SDK 주소에 아직 닿지 않는다", { code: "sdk-unavailable" });
+    };
+    const listen = async () => {
+      try {
+        const u = await dbListenPublic(
+          (snap) => { if (!snap.fromCache) { attempt = 0; apply(snap.records); } },
+          (err) => { unsub = null; retry("구독이 끊겼다", err); }
+        );
+        if (stopped) u(); else unsub = u;
+      } catch (err) {
+        retry("Firebase SDK를 받지 못했다", err);
+      }
+    };
+    listen();
+
+    return () => {
+      stopped = true;
+      clearTimeout(bootTimer);
+      clearTimeout(retryTimer);
+      if (unsub) unsub();
+    };
+  }
+}
+
+/**
+ * 저장소 고르기 — 설정이 채워져 있으면 Firestore, 비었거나 ?mock=1 이면 목업.
+ * ?emu=1 은 localhost 에서만 에뮬레이터 (db-config.js 의 dbMode).
+ * @param {URLSearchParams} qs  화면이 읽은 쿼리 (시안 파일은 location.search 가 없어 따로 받는다)
+ */
+export function pickStore(qs, seedCount, intervalSec) {
+  const mode = dbMode(qs.toString(), location.hostname);
+  if (mode === "mock") return new MockStore(seedCount, intervalSec);
+  console.info(`[store] Firestore (${mode})`);
+  return new FirestoreStore();
+}
 
 // ── 집계 ────────────────────────────────────────────────────────────────────
 /** [{label, count}] 를 많은 순으로. 같은 수면 label 사전순(전환할 때마다 순서가 튀지 않게). */
