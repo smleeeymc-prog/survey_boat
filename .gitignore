@@ -1,2 +1,4 @@
-node_modules/
+node_modules
 머무름의지도_시안.html
+# 에뮬레이터가 떨구는 로그 (firebase/ 에서 테스트를 돌리면 생긴다)
+*-debug.log

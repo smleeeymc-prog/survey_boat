@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// =============================================================================
+// 생성 파일 — 손으로 고치지 말 것. firebase/build-rules.mjs 가
+// statistics/shared/survey-taxonomy.js · record-schema.js · db-config.js 에서 만든다.
+// 분류값을 바꿨으면:  node firebase/build-rules.mjs  → 커밋 → 배포(HANDOFF.md 13장).
+// 배포를 빠뜨리면 새 값으로 낸 제출이 전부 거절된다.
+//
+// 요지
+//   records  읽기: moderation_status == "public" 인 문서만 누구나 (쿼리에도 같은 where가 있어야 한다)
+//            생성: 로그인(익명 포함) + 필드·타입·값 범위 전부 + 서버 시각 + 공개 상태 고정
+//            수정·삭제: 금지 — 운영자는 콘솔에서 moderation_status 를 "hidden" 으로 (콘솔은 규칙을 우회한다)
+//   thumbs   읽기: 짝이 되는 기록이 공개일 때만 / 생성: 기록이 먼저 있어야 / 수정·삭제 금지
+//   그 밖의 경로는 전부 거부
+//
+// 글자 수(size)는 UTF-16 코드 단위 — JS .length, textarea maxLength 와 같다.
+// trim()은 ASCII 공백만 깎는다 — 설문이 JS trim 으로 먼저 깎아 보낸다.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isPublic(data) {
+      return data.moderation_status == "public";
+    }
+
+    // 앞뒤 공백 없음 + 공백으로만 된 글도 아님(전각 공백·줄바꿈 포함)
+    function cleanText(s, maxLen) {
+      return s is string
+        && s.size() >= 1 && s.size() <= maxLen
+        && s == s.trim()
+        && !s.matches('(?s)[\\s\\pZ]*');
+    }
+
+    function validRecord(id, d) {
+      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
+        && d.keys().hasAll(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
+        && d.record_id == id
+        && id.matches('^[A-Za-z0-9]{20}$')
+        && d.created_at == request.time
+        && d.region in ["아산", "천안", "기타 충남", "충남 밖", "비공개"]
+        && d.state in ["stay", "leaving", "between", "returned", "unsure"]
+        && d.share in ["many", "close", "few", "none"]
+        && cleanText(d.text, 80)
+        && d.keywords is list
+        && d.keywords.size() <= 2
+        && d.keywords.toSet().size() == d.keywords.size()
+        && d.keywords.hasOnly(["일", "관계", "가족", "창작", "익숙함", "주거", "불안", "자유", "소속감", "우연"])
+        && cleanText(d.display_name, 12)
+        && d.consent_public == true
+        && d.consent_archive == true
+        && d.moderation_status == "public"
+        && d.schema_version == 1;
+    }
+
+    match /records/{id} {
+      // 없는 문서의 get은 허용한다 — 설문이 재전송 전에 "이미 들어갔나"를 확인할 때
+      // 없는 문서가 permission-denied 로 돌아오면 숨김 처리된 문서와 구별할 수 없다.
+      allow get: if resource == null || isPublic(resource.data);
+      allow list: if isPublic(resource.data);
+      allow create: if signedIn() && validRecord(id, request.resource.data);
+      allow update, delete: if false;
+    }
+
+    match /thumbs/{id} {
+      allow get: if isPublic(get(/databases/$(database)/documents/records/$(id)).data);
+      allow list: if false;
+      allow create: if signedIn()
+        && exists(/databases/$(database)/documents/records/$(id))
+        && request.resource.data.keys().hasOnly(["record_id", "data", "created_at"])
+        && request.resource.data.keys().hasAll(["record_id", "data", "created_at"])
+        && request.resource.data.record_id == id
+        && request.resource.data.created_at == request.time
+        && request.resource.data.data is string
+        && request.resource.data.data.size() <= 150000
+        && request.resource.data.data.matches('^data:image/(webp|jpeg);base64,[A-Za-z0-9+/=]+$');
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
