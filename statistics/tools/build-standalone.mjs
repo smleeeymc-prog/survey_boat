@@ -45,7 +45,7 @@ const OUT = process.argv[3] || path.join(ROOT, "머무름의지도_시안.html")
 const SHARED_ORDER = ["ocean-core.js", "palette.js", "ship-tokens.js", "glb-nodes.js", "deps.js", "look-tokens.js",
   "boat-look.js", "db-config.js", "record-store.js"];
 const MODULE_ORDER = [
-  "config.js", "motion.js", "style.js", "ocean.js",
+  "config.js", "motion.js", "style.js", "sea-variety.js", "ocean.js",
   // clover.js·boat-paint.js 는 fleet.js 보다 먼저 — fleet 생성자가 클로버 데칼을 만들고 배를 칠한다.
   // material-patch.js 는 boat-paint.js·surface-fx.js·fleet.js 가 쓰므로 그 앞.
   "clover.js", "material-patch.js", "boat-paint.js", "surface-fx.js", "fleet.js", "tilt-shift.js", "camera.js", "store.js",

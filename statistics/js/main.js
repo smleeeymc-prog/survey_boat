@@ -12,7 +12,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as C from "./config.js";
-import { buildWater, waveHeightAt, RIPPLE_MAX } from "./ocean.js";
+import { buildWater, seaHeightAt, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
 import { setSurfaceFxSky, setSurfaceFxViewport } from "./surface-fx.js";
 import { TiltShift } from "./tilt-shift.js";
@@ -614,9 +614,9 @@ class MapScene {
         const scale = b.phase ? b.renderScale : 1;
 
         // 파고와 기울기. 셋만 재서 기울기를 얻고(전진차분), 뱃머리 방향으로 투영한다.
-        const h0 = waveHeightAt(x, z, t, 0, this.ampScale);
-        const gxh = (waveHeightAt(x + d, z, t, 0, this.ampScale) - h0) / d;
-        const gzh = (waveHeightAt(x, z + d, t, 0, this.ampScale) - h0) / d;
+        const h0 = seaHeightAt(x, z, t, 0, this.ampScale);
+        const gxh = (seaHeightAt(x + d, z, t, 0, this.ampScale) - h0) / d;
+        const gzh = (seaHeightAt(x, z + d, t, 0, this.ampScale) - h0) / d;
         const ch = Math.cos(heading), sh = Math.sin(heading);
         // 뱃머리가 +X라 앞뒤 흔들림(피치)은 Z축 회전, 좌우 흔들림(롤)은 X축 회전이다.
         const pitch = -(gxh * ch + gzh * sh) * 1.5;

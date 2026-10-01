@@ -10,7 +10,9 @@
 import * as THREE from "three";
 import { THREE_VERSION, THREE_REVISION } from "../shared/deps.js";
 import * as C from "./config.js";
-import { waveHeightAt } from "./ocean.js";
+// 랩 검사는 공유 파도 표 자체를 본다 — 지도의 seaGain(월드 위치에 따라 다름)은 주기가 없어서 뺀다
+import { waveHeightAt } from "../shared/ocean-core.js";
+import { seaHeightAt } from "./ocean.js";
 import { SlotPool } from "./motion.js";
 
 export function runSelfChecks(scene) {
@@ -47,6 +49,17 @@ export function runSelfChecks(scene) {
   const bz = waveHeightAt(3.7, -2.1 + D, 12.5, 0, amp);
   console.assert(Math.abs(a - bx) < 1e-4, "[selfCheck] X축 랩에서 파고가 어긋남", a, bx);
   console.assert(Math.abs(a - bz) < 1e-4, "[selfCheck] Z축 랩에서 파고가 어긋남", a, bz);
+
+  // 2.5) 지도 바다의 진폭 배수(sea-variety.js)가 엉뚱한 값을 내지 않는가 — 배 들썩임이 쓰는 JS 식이다.
+  //      배수가 NaN이거나 폭주하면 배가 하늘로 튀거나 물속으로 사라진다.
+  {
+    const ampMax = C.GERSTNER_WAVES.reduce((m, w) => m + w.ampBase, 0) * amp * C.SEA_VARIETY.patch.max;
+    for (const [x, z] of [[0, 20], [-30, 35], [60, 120], [-120, 5]]) {
+      const h = seaHeightAt(x, z, 77.7, 0, amp);
+      console.assert(Number.isFinite(h) && Math.abs(h) <= ampMax + 1e-6,
+        `[selfCheck] 지도 파고 ${h}가 이상하다 (${x}, ${z}) — js/sea-variety.js seaGain 확인`);
+    }
+  }
 
   // 3) GLB에서 찾아야 할 노드를 다 찾았는가. 블렌더에서 다시 뽑으며 이름이 바뀌면
   //    씬은 멀쩡히 돌아가고 그 키워드의 요소만 조용히 사라진다.

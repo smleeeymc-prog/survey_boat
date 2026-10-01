@@ -55,32 +55,47 @@ export function wrapWave(x) {
 // 자기검증(온보딩 씬의 selfCheck)이 그대로 통한다.
 const f = (n) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
 
-export const GERSTNER_GLSL = `
+/**
+ * gerstnerSum 소스를 만든다. gain 을 주면 파도마다 진폭에 그 GLSL 함수 값을 곱한다 —
+ * gain(파장, worldXZ, t). 지도가 쓴다(멀리서 잔물결 줄이기·물결 센 곳/잔잔한 곳, statistics/js/sea-variety.js).
+ * gain 이 없으면 예전과 글자까지 같은 소스가 나온다 — 설문 selfCheck 가 문자열로 검사한다.
+ * JS 쪽 waveHeightAt 에도 같은 gain 을 JS 함수로 넘겨야 배가 수면과 맞는다.
+ * @param {string|null} gain GLSL 함수 이름 (float gain(float wavelength, vec2 p, float t))
+ */
+export function makeGerstnerGLSL(gain = null) {
+  const g = (w) => (gain ? ` * ${gain}(${f(w.wavelength)}, worldXZ, t)` : "");
+  return `
         vec3 gerstnerSum (vec2 worldXZ, float t) {
           vec3 r = vec3(0.0);
           float k; float theta; float amp; float c;
 ${GERSTNER_WAVES.map((w) => `
           k = 6.28318530718 / ${f(w.wavelength)};
           theta = k * (${f(w.dirX)} * worldXZ.x + ${f(w.dirZ)} * worldXZ.y) - (${f(w.speed)} * t + uFlowPhase);
-          amp = ${f(w.ampBase)} * uAmpScale; c = cos(theta);
+          amp = ${f(w.ampBase)} * uAmpScale${g(w)}; c = cos(theta);
           r.x += uChop * amp * ${f(w.dirX)} * c; r.z += uChop * amp * ${f(w.dirZ)} * c; r.y += amp * sin(theta);`).join("")}
 
           return r;
         }
 `;
+}
+
+export const GERSTNER_GLSL = makeGerstnerGLSL();
 
 /**
  * 임의 좌표의 파고. 위 GERSTNER_GLSL의 y성분과 값이 반드시 같다 (같은 표에서 나온다).
  * @param {number} flowPhase 이미 누적된 흐름 "위상" (세기가 아니다 — 셰이더 uFlowPhase와 동일)
  * @param {number} ampScale  바람 세기에서 나온 진폭 배수 (0.5 + 0.9 * windT)
+ * @param {(wavelength:number, x:number, z:number, t:number) => number} [gain] 파도마다 진폭 배수 —
+ *        makeGerstnerGLSL(gain) 의 GLSL 함수와 같은 식이어야 한다(지도만 쓴다). 없으면 1.
  */
-export function waveHeightAt(x, z, t, flowPhase, ampScale) {
+export function waveHeightAt(x, z, t, flowPhase, ampScale, gain) {
   let dy = 0;
   for (let w = 0; w < GERSTNER_WAVES.length; w++) {
     const wave = GERSTNER_WAVES[w];
     const k = (2 * Math.PI) / wave.wavelength;
     const theta = k * (wave.dirX * x + wave.dirZ * z) - (wave.speed * t + (flowPhase || 0));
-    dy += wave.ampBase * ampScale * Math.sin(theta);
+    const g = gain ? gain(wave.wavelength, x, z, t) : 1;
+    dy += wave.ampBase * ampScale * g * Math.sin(theta);
   }
   return dy;
 }

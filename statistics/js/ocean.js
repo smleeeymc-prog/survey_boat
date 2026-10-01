@@ -12,6 +12,8 @@
  *
  * 재질·색·파도 상수(파장 2.2/1.3/0.8, 진폭, 프레넬/램버트/스펙큘러 조합)는
  * 한 글자도 바꾸지 않았다 — 인수인계 문서의 "3D 시각 언어 유지" 원칙.
+ *  3) [10-01] 반복 무늬 끊기 — 파도마다 진폭 배수(seaGain)와 물빛 얼룩(seaTint). 파도 표는 그대로다.
+ *     지도는 깊이 150을 한 화면에 담아 같은 물결이 수백 번 되풀이됐다(sea-variety.js 머리말).
  * ========================================================================== */
 
 import * as THREE from "three";
@@ -23,8 +25,18 @@ import {
 // 파도 수식은 온보딩 씬과 같은 파일에서 온다 — 한쪽만 고쳐 두 화면이 갈라지는 걸 막는다.
 // GERSTNER_GLSL(정점 셰이더)과 waveHeightAt(JS 파고)은 같은 표에서 생성되므로
 // 손으로 두 벌을 맞출 일이 없다.
-import { GERSTNER_GLSL, waveHeightAt, wrapWave } from "../shared/ocean-core.js";
-export { waveHeightAt, wrapWave };
+import { makeGerstnerGLSL, waveHeightAt, wrapWave } from "../shared/ocean-core.js";
+// 지도만 파도마다 진폭 배수를 곱한다(멀리서 잔물결 줄이기·물결 센 곳/잔잔한 곳 — sea-variety.js).
+// 셰이더와 배 들썩임이 같은 배수를 써야 배가 수면과 맞는다 → 둘 다 여기서 같은 seaGain 을 건다.
+import { seaGain, SEA_GAIN_GLSL, SEA_TINT_GLSL } from "./sea-variety.js";
+// (이름을 따로 짓는 이유: 시안 빌드가 모든 모듈을 한 스코프에 이어붙여서 공유 파일의 이름과 겹치면 죽는다)
+export { wrapWave };
+const MAP_GERSTNER_GLSL = makeGerstnerGLSL("seaGain");
+
+/** 지도 바다의 파고 — 물 셰이더와 같은 식(공유 파도 표 × seaGain). 배 들썩임이 쓴다. */
+export function seaHeightAt(x, z, t, flowPhase, ampScale) {
+  return waveHeightAt(x, z, t, flowPhase, ampScale, seaGain);
+}
 
 export const RIPPLE_MAX = 8;   // 셰이더 루프 상한이라 상수여야 한다 (원본과 동일)
 
@@ -83,7 +95,8 @@ export function buildWaterMaterial() {
       uniform float uFlowPhase;
       varying vec3 vWorldPos;
 
-      ${GERSTNER_GLSL}
+      ${SEA_GAIN_GLSL}
+      ${MAP_GERSTNER_GLSL}
 
       void main () {
         // 파도 위상은 월드 좌표로 계산한다. 지도에서는 바다 자체가 월드에 고정이라
@@ -168,6 +181,8 @@ export function buildWaterMaterial() {
         return arm * exp(-behind * 0.55) * uWake.w;
       }
 
+      ${SEA_TINT_GLSL}
+
       vec3 hdr (vec3 color, float exposure) {
         return 1.0 - exp(-color * exposure);
       }
@@ -183,7 +198,8 @@ export function buildWaterMaterial() {
         float fresnel = 0.03 + 0.65 * pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
         vec3 sky = fresnel * uSkyColor;
         float diffuse = clamp(dot(normal, sunDir), 0.0, 1.0);
-        vec3 water = (1.0 - fresnel) * uOceanColor * diffuse;
+        // 물빛 얼룩 — 넓게 짙고 옅은 곳이 섞여야 먼 바다가 한 장의 벽지처럼 안 보인다(sea-variety.js)
+        vec3 water = (1.0 - fresnel) * uOceanColor * seaTint(vWorldPos.xz, uTime) * diffuse;
 
         // 반짝임만 별도의 태양 방향을 쓴다 — 수면 반사는 거울이라 확산광과 같은 방향에
         // 두면 반짝이는 띠가 화면 뒤로 빠져 보이지 않는다.
