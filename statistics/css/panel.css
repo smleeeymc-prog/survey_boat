@@ -26,10 +26,10 @@
  *   flat  backdrop-filter 없이 불투명 배경        (프레임이 계속 모자랄 때 최종 강등)
  * 실기기에서 파도를 켠 채 프레임타임을 재고 자동으로 내려간다 — main.js의 워치독 참고.
  *
- * ── 크기 단위 --u ─────────────────────────────────────────────────────────
- * 모든 크기를 --u 의 배수로 적는다. --u = min(1vw, .5625vh) — 9:16 세로 화면에서 1vw 와
- * 같고, 그보다 넓은 화면(3:4, 가로 모니터)에서는 높이 기준으로 바뀐다. 카드가 화면 높이에서
- * 차지하는 비율이 기기마다 같아서, 가로 모니터에서 카드가 화면을 다 덮는 일이 없다.
+ * ── 9:16 무대와 크기 단위 --u ───────────────────────────────────────────────
+ * 화면은 9:16 하나로 구성한다(10-03 사용자: "그냥 9:16 비율로"). #stage 가 창 안에서 가장 큰
+ * 9:16 상자로 가운데 서고, 남는 곳은 어둡게 비운다 — 가로 모니터에서 띄워도 전시 화면과 같은 그림이다.
+ * 모든 크기를 --u 의 배수로 적는다. --u = min(1vw, .5625vh) = 무대 폭의 1/100. 무대 높이는 177.78u.
  * ========================================================================== */
 
 :root {
@@ -44,7 +44,7 @@
   --u: min(1vw, .5625vh);
   --pad-x: calc(5 * var(--u));
   /* 통계 문단의 기준 글자 크기. 표시 방식들이 여기에 배수를 곱해 쓴다(js/stats/views.js). */
-  --stat-base: calc(6.4 * var(--u));
+  --stat-base: calc(7 * var(--u));   /* 10-03 카드를 세로로 키우며 6.4 → 7 */
 
   /* 모션 — 레퍼런스(dh-learning)는 GSAP power2.inOut 으로 1.5초에 걸쳐 카드를 올린다.
      cubic-bezier 로 옮긴 근사값이다. out 은 들어올 때, back 은 표식이 톡 튀어 앉을 때. */
@@ -57,13 +57,26 @@
 
 html, body {
   height: 100%;
-  /* 캔버스가 뜨기 전 한 프레임의 섬광을 막는다. 낮 팔레트의 안개색과 같은 값이라
-     씬이 떠도 바탕이 바뀐 티가 안 난다 (config.js TIME_OF_DAY.day.fog). */
-  background: #bfe9ef;
+  /* 무대 밖(9:16이 아닌 창의 남는 곳) — 어둡게 비운다 */
+  background: #05070b;
   color: var(--t1);
   font-family: var(--ui);
   overflow: hidden;                  /* 전시장 송출이라 스크롤이 있으면 안 된다 */
   -webkit-font-smoothing: antialiased;
+}
+
+/* 9:16 무대. transform 이 있어서 안의 position: fixed 층들이 화면이 아니라 무대를 기준으로 선다
+   (그래서 층마다 따로 고칠 것 없이 inset: 0 이 곧 무대 전체다). */
+#stage {
+  position: fixed;
+  left: 50%; top: 50%;
+  width: calc(100 * var(--u));
+  height: calc(177.78 * var(--u));
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  /* 캔버스가 뜨기 전 한 프레임의 섬광을 막는다. 낮 팔레트의 안개색과 같은 값이라
+     씬이 떠도 바탕이 바뀐 티가 안 난다 (config.js TIME_OF_DAY.day.fog). */
+  background: #bfe9ef;
 }
 
 /* 3D 씬은 화면 전체를 덮는다. 카드가 그 위에 얹혀야 backdrop-filter가
@@ -91,7 +104,7 @@ html, body {
    전에 다 풀린다 — 수평선과 먼 바다는 가리지 않는다. */
 .scrimTop {
   position: fixed; left: 0; right: 0; top: 0;
-  height: calc(46 * var(--u));
+  height: calc(64 * var(--u));   /* 제목을 내리고 키운 만큼(10-03) */
   z-index: 1;
   pointer-events: none;
   background: linear-gradient(180deg,
@@ -117,15 +130,16 @@ html, body {
    이 화면의 유일한 큰 숫자(누적 문장 수)는 숫자 서체(--ui)로. */
 .masthead {
   position: fixed;
-  left: var(--pad-x); top: calc(5 * var(--u));
+  /* 10-03 사용자: 위에 너무 붙어 있고 작다 — 조금 내리고 키웠다 */
+  left: var(--pad-x); top: calc(10 * var(--u));
   z-index: 3;
-  min-width: calc(56 * var(--u));
-  max-width: calc(100vw - 2 * var(--pad-x));
+  min-width: calc(70 * var(--u));
+  max-width: calc(100 * var(--u) - 2 * var(--pad-x));
   text-shadow: 0 2px 14px rgba(0, 0, 0, .35);
 }
 .m-title {
   font-family: var(--serif);
-  font-size: calc(3.5 * var(--u));
+  font-size: calc(4.6 * var(--u));
   line-height: 1.35;
   font-weight: 700;
   color: var(--t1);
@@ -133,7 +147,7 @@ html, body {
 .m-count {
   display: flex;
   align-items: flex-start;
-  font-size: calc(13 * var(--u));
+  font-size: calc(18 * var(--u));
   line-height: .9;
   font-weight: 600;
   letter-spacing: -.02em;
@@ -144,7 +158,7 @@ html, body {
 }
 /* 새 문장이 보이는 순간 숫자 옆에 잠깐 붙는 +1. 금색 알약에 짙은 글자(설문의 밝은 알약 버튼과 같은 결). */
 .p-plus {
-  font-size: calc(2.7 * var(--u));
+  font-size: calc(3.4 * var(--u));
   line-height: 1;
   font-weight: 600;
   letter-spacing: 0;
@@ -165,7 +179,7 @@ html, body {
   100% { opacity: 0; transform: translateY(-.9em); }
 }
 .m-sub {
-  font-size: calc(2.8 * var(--u));
+  font-size: calc(3.5 * var(--u));
   line-height: 1.4;
   font-weight: 400;
   color: var(--t2);
@@ -214,11 +228,11 @@ html, body {
   margin-top: calc(1.3 * var(--u));
   white-space: nowrap;
 }
-.m-next-num { font-family: var(--serif); font-size: calc(3.2 * var(--u)); font-weight: 700; color: var(--t1); }
-.m-next-name { font-size: calc(2.2 * var(--u)); font-weight: 500; letter-spacing: .08em; color: var(--t2); }
+.m-next-num { font-family: var(--serif); font-size: calc(4 * var(--u)); font-weight: 700; color: var(--t1); }
+.m-next-name { font-size: calc(2.9 * var(--u)); font-weight: 500; letter-spacing: .08em; color: var(--t2); }
 .m-next-tag {
   margin-left: auto;
-  font-size: calc(1.9 * var(--u));
+  font-size: calc(2.4 * var(--u));
   font-weight: 500;
   letter-spacing: .24em;
   color: var(--t3);
@@ -230,29 +244,40 @@ html, body {
    "01 / 09" · 흰 실선 위 금색 진행선), 결론은 설문의 질문처럼 명조 굵게.
    높이를 고정하고 세로 flex 로 차트(.r-chart)가 남는 높이를 전부 받는다 — 장마다 결론이
    한 줄이냐 두 줄이냐가 달라도 카드 테두리가 흔들리지 않는다.
-   가운데보다 조금 아래(56%)에 둔다: 위로는 수평선과 하늘이, 아래로는 가까운 바다가 남는다. */
+   가운데보다 조금 아래(58.5%)에 둔다: 위로는 제목과 수평선이, 아래로는 가까운 바다가 남는다.
+   10-03 사용자: 세로로 더 넉넉하게, 검은 네모는 살짝 바꿔도 좋다 — 높이 86u → 112u, 모서리를 더 둥글게,
+   위는 옅고 아래로 갈수록 짙은 유리(통째로 검은 상자처럼 보이지 않게), 위 가장자리에 금색 실선 한 줄. */
 .report {
   position: fixed;
-  left: 50%; top: 56%;
+  left: 50%; top: 58.5%;
   z-index: 2;
-  width: calc(100vw - 2 * var(--pad-x));
-  height: calc(86 * var(--u));
+  width: calc(100 * var(--u) - 2 * var(--pad-x));
+  height: calc(112 * var(--u));
   display: flex;
   flex-direction: column;
-  padding: calc(4.4 * var(--u)) calc(5 * var(--u));
-  border-radius: calc(2.4 * var(--u));
-  background: linear-gradient(180deg, rgba(var(--night), .62), rgba(var(--night), .74));
+  padding: calc(5.6 * var(--u)) calc(5.6 * var(--u)) calc(5 * var(--u));
+  border-radius: calc(4 * var(--u));
+  background: linear-gradient(180deg, rgba(var(--night), .34) 0%, rgba(var(--night), .52) 45%, rgba(var(--night), .66) 100%);
   backdrop-filter: blur(18px) saturate(1.05);
   -webkit-backdrop-filter: blur(18px) saturate(1.05);
-  border: 1px solid rgba(246, 242, 234, .12);
+  border: 1px solid rgba(246, 242, 234, .16);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .06),  /* 위쪽 가장자리의 가는 빛 */
-    0 24px 60px rgba(0, 0, 0, .34);          /* 유리가 바다 위에 떠 있게 하는 그림자 */
+    inset 0 1px 0 rgba(255, 255, 255, .10),  /* 위쪽 가장자리의 가는 빛 */
+    0 30px 80px rgba(0, 0, 0, .30);          /* 유리가 바다 위에 떠 있게 하는 그림자 */
   /* 통계 시간이 아니면 숨는다. 뜰 때는 살짝 아래에서 올라오고, 질 때는 가라앉는다. */
   opacity: 0;
   visibility: hidden;
   transform: translate(-50%, calc(-50% + 3 * var(--u))) scale(.985);
   transition: opacity .7s var(--ease-io), transform .8s var(--ease-io), visibility 0s linear .8s;
+}
+/* 위 가장자리 가운데에 금색 실선 — 설문 B′의 금색 진행선과 같은 색. 카드가 "검은 상자"가 아니라 패널로 읽히게 */
+.report::before {
+  content: "";
+  position: absolute; left: 18%; right: 18%; top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: .7;
+  pointer-events: none;
 }
 .report.show {
   opacity: 1;
@@ -326,7 +351,7 @@ html[data-glass="flat"] .report {
 .r-headline {
   flex: none;
   font-family: var(--serif);
-  font-size: calc(5.3 * var(--u));
+  font-size: calc(6 * var(--u));
   line-height: 1.45;
   font-weight: 700;
   color: var(--t1);
@@ -521,14 +546,6 @@ html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filte
 .arrival.on .log-row:nth-child(2) { animation-delay: 1.52s; }
 .arrival.on .log-row:nth-child(3) { animation-delay: 1.64s; }
 .arrival.on .log-row:nth-child(4) { animation-delay: 1.76s; }
-
-/* ── 가로 화면(리허설용 모니터) ────────────────────────────────────────────
-   통계 카드는 가로로 넓게(가로로 긴 그림이 커진다). 아래 자막은 화면 폭 어둠 위에
-   가운데 한 단(설문도 넓은 화면에서 520px 한 단)으로, 기록 넷은 한 줄로. */
-@media (min-aspect-ratio: 1/1) {
-  .report { width: min(64vw, calc(190 * var(--u))); }
-  .log-rows { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
 
 /* 움직임을 줄이도록 설정한 환경 — 전부 끄고 마지막 모습만 보여준다 */
 @media (prefers-reduced-motion: reduce) {

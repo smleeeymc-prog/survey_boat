@@ -42,6 +42,12 @@ if (GLASS_PIN) document.documentElement.dataset.glass = GLASS_PIN;
 // 0.35 = 잔잔하되 죽지는 않은 정도 (ampScale 0.82, chop 0.20).
 const WIND_T = 0.35;
 
+/** 9:16 무대(#stage)의 크기 — 캔버스·카메라 비율은 창이 아니라 무대를 따른다(css/panel.css #stage). */
+function stageSize() {
+  const el = document.getElementById("stage");
+  return el ? { w: el.clientWidth, h: el.clientHeight } : { w: window.innerWidth, h: window.innerHeight };
+}
+
 class MapScene {
   constructor(canvas) {
     const P = C.TIME_OF_DAY[TIME_KEY];
@@ -112,7 +118,7 @@ class MapScene {
     wu.fogNear.value = C.FOG_NEAR;
     wu.fogFar.value = C.FOG_FAR;
 
-    this.cam = new TourCamera(window.innerWidth / window.innerHeight, qs.get("interactive") === "1");
+    this.cam = new TourCamera(stageSize().w / stageSize().h, qs.get("interactive") === "1");
     this.cam.attachPointer(canvas);
 
     this.panel = new Panel(document);
@@ -144,7 +150,7 @@ class MapScene {
   }
 
   _resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const { w, h } = stageSize();
     this.renderer.setSize(w, h, false);
     this._syncFxViewport();
     this.cam.setAspect(w / h);
@@ -209,10 +215,11 @@ class MapScene {
     // 방향으로 격자가 밀리므로, 얼어 있는 자리가 곧 "연출이 끝났을 때의 격자 자리"다.
     // 배가 얼어 있는 시간은 카메라 이동 시간 + 머무는 시간이다. 이동 시간은 거리에서
     // 나오므로 자리를 정하기 전에는 모른다 — 겹침 검사에는 상한을 쓴다(길게 잡을수록 안전).
+    // 보여주는 동안 흐름은 ARRIVAL_FLOW_MUL 로 늦춰진다(늦춰지고 돌아오는 데 1초 남짓 — 여유로 1.5초 몫을 더한다).
     const freeze = C.ARRIVAL_ZOOM_SEC + C.ARRIVAL_HOLD_SEC;
-    const lead = C.FLOW_DIR * this.flowSpeed * freeze;
+    const lead = C.FLOW_DIR * this.flowSpeed * (freeze * C.ARRIVAL_FLOW_MUL + 1.5);
     let best = null, bestClear = -Infinity;
-    for (let n = 0; n < 64; n++) {
+    for (let n = 0; n < 160; n++) {   // 배가 촘촘해서(FLEET_MIN_GAP 2.7) 넉넉한 빈 곳을 찾으려면 더 많이 본다
       const depth = C.ARRIVAL_DEPTH_MIN + rng() * (C.ARRIVAL_DEPTH_MAX - C.ARRIVAL_DEPTH_MIN);
       const hw = this.cam.frameHalfWidthAt(depth);
       const spawnX = hw * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN));
@@ -224,13 +231,15 @@ class MapScene {
       for (let k = 0; k <= 6; k++) {
         const x = spawnX - lead * (k / 6);
         for (const o of this.boats) {
-          const d = Math.hypot(wrapCorridor(x - o.x), depth - o.z);
+          // 타원 거리 — 1이면 ARRIVAL_CLEAR 타원 가장자리(옆은 좁게, 앞뒤는 넓게 비운다)
+          const d = Math.hypot(wrapCorridor(x - o.x) / C.ARRIVAL_CLEAR.x, (depth - o.z) / C.ARRIVAL_CLEAR.z);
           if (d < clear) clear = d;
         }
       }
       if (clear > bestClear) { bestClear = clear; best = { spawnX, depth }; }
-      if (clear >= C.FLEET_MIN_GAP) break;   // 넉넉하면 더 볼 것 없다
+      if (clear >= 1) break;   // 타원 안에 아무도 없으면(줌 화면에 이웃이 안 잡힌다) 더 볼 것 없다
     }
+    this._lastArrivalClear = bestClear;   // 확인용(?debug)
     return best;
   }
 
@@ -338,11 +347,10 @@ class MapScene {
     const tanHalf = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
     this.cam.setZoomTarget(boat.x, y, boat.z, tanHalf, C.ARRIVAL_FRAME_Y);
     boat.camSec = C.ARRIVAL_ZOOM_SEC;
-    // 이 배는 지금부터 줌 + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 흘러간다.
-    // 연출이 끝나는 순간의 격자 좌표를 역산해 자리에 적어 둔다 — 그래야 이후 이 배도
-    // 나머지와 똑같은 한 격자 위에서 흐른다 (_latticeX).
-    const frozen = boat.camSec + C.ARRIVAL_HOLD_SEC;
-    boat.slot.x0 = wrapCorridor(boat.x - this.flowDist - C.FLOW_DIR * this.flowSpeed * frozen);
+    // 이 배는 지금부터 줌 + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 (늦춰진 속도로) 흘러간다.
+    // 격자 좌표(x0)는 이 배가 다시 흐르기 시작하는 순간(return)에 그때의 흐름 거리로 정한다 — 흐름이
+    // 늦춰졌다 돌아오는 모양과 상관없이 정확하다. 예전엔 일정한 속도를 가정해 여기서 미리 역산했다.
+    boat.slot.x0 = wrapCorridor(boat.x - this.flowDist);
     this.arriving = boat;
     // 카메라가 먼저 움직인다. 화면의 통계 카드는 지금 바로 비켜서고(panel.js), 줌이 끝나
     // 배가 선 뒤에(hold) 문장 카드가 뜬다 — 레퍼런스의 순서.
@@ -373,6 +381,7 @@ class MapScene {
       b.renderScale = C.ARRIVAL_SCALE;
       if (b.phaseT >= C.ARRIVAL_HOLD_SEC) {
         b.phase = "return"; b.phaseT = 0;
+        b.slot.x0 = wrapCorridor(b.x - this.flowDist);   // 지금부터 격자와 함께 흐른다(_beginArrival 주석)
         this.panel.hideArrival();
       }
       return;
@@ -412,7 +421,7 @@ class MapScene {
     const layer = document.createElement("div");
     layer.id = "calibLayer";
     layer.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:40";
-    document.body.appendChild(layer);
+    (document.getElementById("stage") || document.body).appendChild(layer);   // 무대 안 — 위치를 무대 기준 px로 적는다
 
     for (const depth of depths) {
       // 화면 왼쪽 절반의 한가운데. 깊이마다 화면 반폭이 다르므로 월드 좌표도 달라진다.
@@ -448,7 +457,7 @@ class MapScene {
   _updateCalibLabels() {
     if (!this.calibLabels) return;
     const v = new THREE.Vector3();
-    const w = window.innerWidth, h = window.innerHeight;
+    const { w, h } = stageSize();
     for (const { boat, tag } of this.calibLabels) {
       v.set(boat.x, 0.35, boat.z).project(this.cam.camera);
       // 카메라 뒤로 넘어간 점은 투영이 뒤집힌다. 그냥 감춘다.
@@ -558,7 +567,11 @@ class MapScene {
       const d = 0.5;   // 파도 기울기를 재는 간격
       // 보정 화면(?depths=1)에서는 흐름을 세운다 — 깊이마다 어떻게 보이는지 재는 게
       // 목적이라 배가 지나가 버리면 볼 수가 없다.
-      const speed = CALIB ? 0 : this.flowSpeed;
+      // 새 배를 보여주는 동안(줌·머묾)은 흐름을 늦춘다 — 이웃이 줌 화면을 쓸고 지나가지 않게(ARRIVAL_FLOW_MUL)
+      const a = this.arriving;
+      const mulTo = a && (a.phase === "approach" || a.phase === "hold") ? C.ARRIVAL_FLOW_MUL : 1;
+      this._flowMul = (this._flowMul ?? 1) + (mulTo - (this._flowMul ?? 1)) * Math.min(1, dt * 2.5);
+      const speed = CALIB ? 0 : this.flowSpeed * this._flowMul;
       this.flowDist = wrapCorridor(this.flowDist + C.FLOW_DIR * speed * dt);
       for (let i = 0; i < this.boats.length; i++) {
         const b = this.boats[i];

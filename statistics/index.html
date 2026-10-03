@@ -41,6 +41,9 @@
   ===========================================================================
 -->
 
+<!-- 9:16 무대 — 전시 화면 비율 하나로 구성한다. 다른 비율의 창에서는 무대가 가운데 서고 양옆(위아래)은 어둡게 비운다.
+     아래 층들(position: fixed)은 무대의 transform 때문에 화면이 아니라 이 무대를 기준으로 선다. css/panel.css #stage -->
+<div id="stage">
 <canvas id="scene"></canvas>
 <!-- 틸트시프트 띠 — 캔버스 바로 위(캔버스만 흐리고 글자·카드는 또렷하게). css/tilt-shift.css -->
 <div class="tiltBlur top" aria-hidden="true"></div>
@@ -122,6 +125,7 @@
 </div></aside>
 
 <div id="hud"></div>
+</div><!-- /#stage -->
 
 <!--
   설문 분류값(지역·상태·키워드). 온보딩 씬의 설문 UI와 같은 파일을 읽는다.

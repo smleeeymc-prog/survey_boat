@@ -106,18 +106,25 @@ export const FLOW_DIR = -1;            // 화면에서 왼→오른쪽으로 흐
 // [변경] 예전엔 80으로 박고 "가로 화면(비율 1.6)"을 기준으로 삼았는데, 전시장 가로 화면은
 //   16:9(1.78)라 가장 먼 배 깊이에서 화면 반폭이 40.3 — 띠 반폭 40보다 넓어서 배가 화면
 //   안에서 감겼다(selfcheck 7). 기준 화면비만 적어 두면 카메라를 고쳐도 폭이 따라온다.
-// 지원하는 가장 넓은 화면비. 이보다 넓은 화면에서 띄우면 selfcheck 7이 알려 준다.
-// 더 넓게 잡으면 같은 80척이 더 긴 띠에 퍼져 화면에 보이는 배가 그만큼 준다 —
-// 21:9(2.33)면 띠가 112로 길어져 화면 속 배가 3/4 남짓이 된다. 쓸 화면에 맞춰 올릴 것.
-export const FLOW_ASPECT_MAX = 16 / 9;
+// 화면비. 10-03부터 화면은 9:16 무대 하나다(css/panel.css #stage — 다른 창에서도 9:16으로 선다).
+// 예전엔 16:9 가로 화면까지 받느라 띠가 86으로 넓어서, 세로 화면에서는 배의 2/3가 화면 밖을 돌았다
+// (사용자: "바다가 휑하다, 더 빽빽하게"). 9:16으로 역산하면 띠가 30 남짓 — 같은 배가 화면 안에 모인다.
+export const FLOW_ASPECT_MAX = 9 / 16;
 // 화면 가장자리 너머로 이만큼 더 가서 감긴다. 좌우 시선 흔들림(CAM_SWAY 0.035rad)이
 // 깊이 48에서 1.7, 배 반 길이가 1 남짓 — 합쳐도 3이면 감기는 배가 화면에 걸리지 않는다.
 export const FLOW_WRAP_MARGIN = 3;
-export const FLOW_DEPTH_MIN = 10;      // 이보다 가까우면 화면 아래로 잘려 나간다
-export const FLOW_DEPTH_MAX = 48;      // 이보다 멀면 안개에 잠긴다
-// 배끼리 최소 이 만큼 떨어뜨린다 (푸아송 디스크). 배 길이 약 1.5의 3배 가까이라
-// 어느 각도에서 봐도 실루엣이 서로 먹히지 않는다.
-export const FLEET_MIN_GAP = 4.4;
+// 깊이 띠도 조금 좁혔다(10~48 → 12~44, 10-03): 맨 아래 잘려 나가던 배와 수평선에 붙어 점이던 배를 덜어
+// 같은 배가 화면 가운데 바다에 더 촘촘히 모인다.
+export const FLOW_DEPTH_MIN = 12;      // 이보다 가까우면 화면 아래로 잘려 나간다
+export const FLOW_DEPTH_MAX = 44;      // 이보다 멀면 안개에 잠기고 점이 된다
+// 배끼리 최소 이 만큼 떨어뜨린다 (푸아송 디스크). 띠가 좁아진 만큼(위 화면비) 줄여서 80척 자리가 나오게 했다
+// (4.4 → 2.7, 배 길이 약 1.3의 2배). 멀리 있는 배가 가까운 배 뒤로 조금 겹쳐 보이는 건 깊이감이라 둔다.
+export const FLEET_MIN_GAP = 2.7;
+// 새 배가 등장할 자리 둘레에 비워 둘 타원(옆 x · 앞뒤 z, 월드). 9:16에서 3배 줌 화면은 배 자리에서 옆으로 ±1.2밖에
+// 안 되지만, 내려다보는 각도라 앞뒤로는 깊이 ±5.7이 한 화면에 들어온다 — 촘촘한 간격(2.7)이면 앞뒤 배가
+// 주인공 배 위아래로 겹쳐 잡혔다. 옆은 띠 간격보다 조금 넓게, 앞뒤는 줌 화면 높이만큼(main.js _pickArrivalSpot).
+// 배가 꽉 찼을 때는 이만큼 빈 곳이 없을 수 있어, 그때는 찾은 것 중 가장 넓은 곳에 선다.
+export const ARRIVAL_CLEAR = { x: 2.8, z: 5.5 };
 // 띠에 동시에 띄우는 배의 상한. 넘으면 오래된 기록부터 자리를 물려준다.
 // (인스턴스 버퍼를 매번 다시 만들지 않으려고 처음부터 이 크기로 잡아 둔다)
 export const FLEET_CAPACITY = 80;
@@ -130,13 +137,13 @@ export const FLEET_CAPACITY = 80;
 //                   온보딩은 셀 0.44에 배 3.38이고, 지도는 배가 1.5라 셀도 그만큼 작다.
 //   WATER_CELL_MAX  먼 바다 칸의 상한. 원근으로 작아 보이므로 화면에서는 가까운 칸과 비슷하다.
 //   범위            수평선 가까이까지 바다가 이어져야 한다 — 거리 페이드(아래)보다 넉넉히.
-//                   가로 ±140 은 가로 화면(16:9)에서 먼 바다 양끝까지 덮는 폭이다.
+//                   가로 ±70 은 9:16 무대에서 먼 바다(160) 양끝(±42)보다 넉넉한 폭이다(예전 16:9용 ±140).
 export const WATER_CELL = 0.32;
 export const WATER_CELL_GROWTH = 1.045;
 export const WATER_CELL_MAX = 2.6;
 export const WATER_CORE_X = 16;
 export const WATER_CORE_Z = [8, 46];
-export const WATER_EXTENT_X = 140;
+export const WATER_EXTENT_X = 70;
 export const WATER_Z_MIN = 0;
 export const WATER_Z_MAX = 170;
 
@@ -145,31 +152,31 @@ export const WATER_Z_MAX = 170;
 //   coast   먼 해안선 실루엣 — far 는 안개에 더 녹은 먼 산, near 는 그 앞 산. 안개색보다 조금만 짙게(공기 원근)
 //   clouds  lit 빛 받는 면 · shade 그늘 · amount 덮는 정도(0이면 없음)
 //   sun     해(밤엔 달) — az 방위(도, +가 화면 왼쪽), el 고도(도), glow 빛무리 세기, disc 원반 세기.
-//           오른쪽 낮은 하늘(제목 카드가 있는 왼쪽 위를 피해서). az −12 는 세로 화면(좌우 ±14.7°)에서도 보이는 자리. glint 는 그 아래 물 위 반짝이는 길(윤슬) 세기.
+//           오른쪽 수평선 바로 위(제목과 그 뒤 어두운 띠를 피해서 낮게). az −12 는 세로 화면(좌우 ±14.7°)에서도 보이는 자리. glint 는 그 아래 물 위 반짝이는 길(윤슬) 세기.
 export const SKY_LOOK = {
   day: {
     haze: 0.75,
     coast: { far: "#a9d6df", near: "#8cbfcb" },
     clouds: { lit: "#ffffff", shade: "#cfe6ee", amount: 0.75 },
-    sun: { az: -12, el: 6, color: "#fff4d6", glow: 0.8, disc: 0.6, glint: 0.8 },
+    sun: { az: -12, el: 3.5, color: "#fff4d6", glow: 0.8, disc: 0.6, glint: 0.8 },
   },
   afternoon: {
     haze: 0.7,
     coast: { far: "#d6cfc6", near: "#bdb5b2" },
     clouds: { lit: "#fff4e2", shade: "#dccfc6", amount: 0.8 },
-    sun: { az: -12, el: 4, color: "#ffdca0", glow: 0.75, disc: 0.75, glint: 1.0 },
+    sun: { az: -12, el: 2.8, color: "#ffdca0", glow: 0.75, disc: 0.75, glint: 1.0 },
   },
   evening: {
     haze: 0.6,
     coast: { far: "#c48a84", near: "#9a6c78" },
     clouds: { lit: "#ffc49a", shade: "#8e6a8f", amount: 0.85 },
-    sun: { az: -12, el: 2, color: "#ffad6a", glow: 1.0, disc: 0.9, glint: 1.2 },
+    sun: { az: -12, el: 1.5, color: "#ffad6a", glow: 1.0, disc: 0.9, glint: 1.2 },
   },
   night: {
     haze: 0.5,
     coast: { far: "#24375c", near: "#1a2a4a" },
     clouds: { lit: "#3c5180", shade: "#1e2c4c", amount: 0.6 },
-    sun: { az: -12, el: 12, color: "#d6e2ff", glow: 0.35, disc: 0.8, glint: 0.6 },   // 달
+    sun: { az: -12, el: 7, color: "#d6e2ff", glow: 0.35, disc: 0.8, glint: 0.6 },   // 달
   },
 };
 
@@ -177,8 +184,8 @@ export const SKY_LOOK = {
 // 흐르는 배들(깊이 10~48)보다 훨씬 멀리 — 안개가 반쯤 덮어 공기 원근이 생기고 배와 겹치지 않는다.
 // x 는 세로 화면(1080×1920)에서도 보이게 그 깊이의 화면 반폭(약 21) 안쪽으로. +x 가 화면 왼쪽이다(카메라가 +Z를 본다).
 export const LANDMARK = {
-  x: 6, y: 0, z: 84,   // 섬 덩어리 가운데
-  width: 13,            // 섬 가로 폭(월드). 배 길이(약 1.3)의 10배 — 멀어도 한 덩어리로 읽히게
+  x: 5, y: 0, z: 112,  // 섬 덩어리 가운데. 10-03 제목을 키우며 84 → 112(더 멀리 = 더 낮고 작게, 제목 줄에 안 닿게)
+  width: 16,            // 섬 가로 폭(월드). 배 길이(약 1.3)의 12배 — 멀어도 한 덩어리로 읽히게
                         // (세로 화면에서 등대 꼭대기가 제목 카드에 안 닿는 크기)
   rotY: 0,              // 오두막·등대가 카메라 쪽을 보게
   lighthouseRock: 0.3,  // 등대 받침 바위 높이 = 등대 높이의 이만큼
@@ -276,6 +283,10 @@ export const ARRIVAL_FRAME_Y = 0.42;
 // 6.5 → 8.0: 카드가 문장 한 줄에서 항해일지(문장 + 출발한 곳·지금의 자리·싣고 온 것·기록 시각)로
 // 늘었다. 카드가 뜨는 데만 1.6초(css .arrival.on)가 쓰인다.
 export const ARRIVAL_HOLD_SEC = 8.0;     // 문장을 보여주는 시간 (이 동안 배는 정지)
+// 새 배를 보여주는 동안(줌 + 머무는 시간) 나머지 배들의 흐름을 이만큼으로 늦춘다. 배가 촘촘해서(FLEET_MIN_GAP)
+// 제 속도로 흐르면 멈춰 선 주인공 배 옆을 이웃들이 11초 동안 3 남짓 쓸고 지나가며 줌 화면에 겹쳐 잡혔다.
+// 바다가 숨을 고르는 정도로만 — 0이면 화면이 멎은 것처럼 보인다.
+export const ARRIVAL_FLOW_MUL = 0.15;
 export const ARRIVAL_APPEAR_LEAD = 0.3;  // 줌이 끝나기 몇 초 전에 배가 나타나는가
 // 제시 중 배 크기 배수. 1 — 크게 보이는 건 렌즈(줌)의 일이지 배를 부풀릴 일이 아니다.
 export const ARRIVAL_SCALE = 1.0;

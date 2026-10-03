@@ -112,7 +112,7 @@ export function makeSkyDome(P, timeKey) {
 
         // 구름 — 수평선 위 2~25도, 가로로 길게. 윗면은 밝게(빛을 받는 쪽), 아랫면은 그늘색
         // 수평선 위 낮은 하늘만 — 제목 카드 뒤 어두운 띠에 걸리면 탁해진다. 띠 밖은 잡음을 아예 안 잰다(픽셀마다 비싸다)
-        float band = smoothstep(0.015, 0.05, el) * (1.0 - smoothstep(0.09, 0.17, el));
+        float band = smoothstep(0.008, 0.03, el) * (1.0 - smoothstep(0.06, 0.11, el));   // 수평선 위 0.5~6° — 제목 뒤 어두운 띠(위 36%) 아래
         if (uCloudAmt > 0.0 && band > 0.0) {
           vec2 q = vec2(az * 5.5 + uTime * 0.0035, el * 26.0);
           float n = fbm(q);
