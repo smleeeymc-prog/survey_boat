@@ -190,6 +190,64 @@
 /* 점선은 막대가 다 자란 뒤에 — 먼저 서 있으면 막대보다 기준이 먼저 읽힌다 */
 .report.in .sv-sp-cap, .report.in .sv-sp-even { animation: sv-in .8s var(--ease-out) calc(var(--sv-d0) + 1s) both; }
 
+/* ── places — 지역마다 다른 이유 ───────────────────────────────────────────── */
+.sv-places {
+  display: grid;
+  grid-template-rows: repeat(var(--rows, 4), minmax(0, 1fr));
+  height: 100%;
+  font-size: calc(var(--stat-base) * .6);
+  line-height: 1.15;
+}
+.sv-pl-row {
+  display: grid;
+  /* 줄마다 grid 가 따로다 — 열 폭을 em 으로 고정해야 막대 시작점이 줄마다 같다 */
+  /* 지역 이름(가장 긴 "기타 충남")과 2·3위 열은 내용에 맞춰 좁게 — 가운데 1위 낱말("소속감 32%")이 잘리지 않게 */
+  grid-template-columns: 4.5em minmax(0, 1fr) 4.4em;
+  align-items: center;
+  column-gap: .7em;
+  border-top: max(1px, calc(.15 * var(--u))) solid rgba(246, 242, 234, .09);
+}
+.sv-pl-row:first-child { border-top: 0; }
+.sv-pl-place { display: flex; flex-direction: column; color: var(--t2); font-weight: 700; white-space: nowrap; }
+.sv-pl-place small { margin-top: .25em; font-size: .7em; color: var(--t3); font-weight: 600; }
+.sv-pl-main { display: flex; flex-direction: column; gap: .4em; min-width: 0; }
+/* 1위 낱말 — 이 그림의 주인공. 설문 선택지처럼 명조, 크게 */
+.sv-pl-top {
+  font-family: var(--serif); font-size: 1.9em; font-weight: 700; color: var(--t2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sv-pl-row.tie .sv-pl-top { font-size: .95em; }   /* 동점 둘("익숙함 · 소속감")이 한 줄에 들게 */
+.sv-pl-top b, .sv-pl-rest b {
+  font-family: var(--ui); font-weight: 600; color: var(--t3); font-variant-numeric: tabular-nums;
+}
+.sv-pl-top b { margin-left: .4em; font-size: .42em; }
+.sv-pl-row.tie .sv-pl-top b { font-size: .8em; }
+.sv-pl-top i, .sv-pl-rest i { font-style: normal; font-size: .74em; opacity: .75; }
+/* 막대 = 그 지역 표 전체. 조각 사이 2px 틈, 기준선 쪽은 각지고 마지막 조각 끝만 둥글다 */
+.sv-pl-bar {
+  display: flex; gap: max(1px, calc(.3 * var(--u)));
+  height: .5em; background: var(--sv-track);
+  border-left: max(1px, calc(.2 * var(--u))) solid var(--sv-base);
+}
+.sv-pl-bar i { display: block; height: 100%; background: var(--sv-rest); transform-origin: left center; }
+.sv-pl-bar i.s1 { background: rgba(98, 102, 108, .62); }
+.sv-pl-bar i.s2 { background: rgba(98, 102, 108, .4); }
+.sv-pl-bar i:last-child { border-radius: 0 max(3px, calc(.6 * var(--u))) max(3px, calc(.6 * var(--u))) 0; }
+.sv-pl-rest { display: flex; flex-direction: column; gap: .3em; font-size: .8em; color: var(--t3); }
+.sv-pl-rest span { display: flex; justify-content: space-between; gap: .4em; font-family: var(--serif); font-weight: 600; white-space: nowrap; }
+.sv-pl-row.lead .sv-pl-place { color: var(--t1); }
+.sv-pl-row.lead .sv-pl-top { color: var(--t1); }
+.sv-pl-row.lead .sv-pl-top b { color: var(--t2); }
+.sv-pl-row.lead .sv-pl-bar i.top { background: var(--sv-lead); }
+.sv-pl-row.thin .sv-pl-top { font-family: var(--ui); font-size: 1em; font-weight: 600; color: var(--t3); }
+.sv-pl-row.thin .sv-pl-bar { background: none; border-left-color: var(--sv-track); }
+.sv-pl-row.thin .sv-pl-place { opacity: .6; }
+.report.in .sv-pl-place,
+.report.in .sv-pl-top,
+.report.in .sv-pl-rest { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .12s) both; }
+/* 조각은 왼쪽부터 차례로 — 1위가 먼저 자라고 2·3위가 뒤따른다 */
+.report.in .sv-pl-bar i { animation: sv-grow-x .7s var(--ease-out) calc(var(--sv-d0) + .15s + var(--i, 0) * .12s + var(--k, 0) * .12s) both; }
+
 /* ── bubble — 강조한 것을 먹색으로, 나머지는 옅은 회색으로 한 줄에 ─────────── */
 .sv-bubble { display: block; height: 100%; }
 .sv-bubble svg { display: block; width: 100%; height: 100%; overflow: visible; }

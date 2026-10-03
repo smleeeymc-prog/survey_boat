@@ -195,6 +195,40 @@ export const VIEWS = {
     },
   },
 
+  /**
+   * 지역마다 다른 이유 — 지역 한 줄마다 그곳의 1위 이유를 크게 적고, 그 아래 막대는 그 지역 표 전체(트랙 끝 = 100%)를
+   * 1·2·3위 조각으로 나눈 것이다. 1위 낱말이 한 열로 서서 "지역마다 다른 낱말"이 먼저 읽히고, 막대로 그 낱말이
+   * 그 지역에서 얼마나 큰 몫인지 견준다(1위가 같은 낱말이어도 몫이 다르면 길이가 다르다).
+   * 줄마다 따로 grid 라 열 폭은 em 으로 고정한다(css) — 막대 시작점이 줄마다 같아야 길이를 비교한다.
+   * 강조형: 결론이 가리키는 지역의 1위 조각만 금색. 1위가 동점이면 둘 다 1위로 적고 둘 다 1위 조각으로 칠한다.
+   * 문장이 적은 지역(3명 미만)은 막대 대신 "적음" — 한두 명의 고름이 다른 지역과 같은 무게로 읽히면 안 된다.
+   */
+  places: {
+    accepts: "groups",
+    render({ groups }, ctx = {}) {
+      const hl = asSet(ctx.highlight);
+      const html = groups.map((g, i) => {
+        const items = g.items || [];
+        const thin = g.n < 3 || !items.length;
+        const tops = items.filter((r) => r.count === items[0]?.count).slice(0, 2);
+        const rest = items.slice(tops.length, tops.length + 2);
+        const p100 = (r) => `${Math.round(r.share * 100)}<i>%</i>`;
+        const segs = [...tops, ...rest].map((r, k) =>
+          `<i class="${k < tops.length ? "top" : `s${k - tops.length + 1}`}" style="--k:${k};width:${(r.share * 100).toFixed(1)}%"></i>`).join("");
+        return `
+        <span class="sv-pl-row${hl.has(g.key) ? " lead" : ""}${thin ? " thin" : ""}${tops.length > 1 ? " tie" : ""}" style="--i:${i}">
+          <span class="sv-pl-place">${esc(g.label)}<small>${num(g.n)}명</small></span>
+          <span class="sv-pl-main">
+            <span class="sv-pl-top">${thin ? "<i>적음</i>" : `${tops.map((r) => esc(r.label)).join(" · ")}<b>${p100(tops[0])}</b>`}</span>
+            <span class="sv-pl-bar">${thin ? "" : segs}</span>
+          </span>
+          <span class="sv-pl-rest">${thin ? "" : rest.map((r) => `<span>${esc(r.label)}<b>${p100(r)}</b></span>`).join("")}</span>
+        </span>`;
+      }).join("");
+      return `<span class="sv-places" style="--rows:${groups.length}">${html}</span>`;
+    },
+  },
+
   /* ── matrix ────────────────────────────────────────────────────────────── */
 
   /**

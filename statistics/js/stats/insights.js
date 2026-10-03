@@ -20,7 +20,7 @@
  * ========================================================================== */
 
 import { esc, q, josa, pick, pct, num } from "./text.js";
-import { MOTIVE_OF, MOTIVES } from "./metrics.js";
+import { MOTIVE_OF, MOTIVES, NOT_A_PLACE } from "./metrics.js";
 
 /** 경향을 말하기 시작하는 최소 문장 수 */
 export const MIN_N = 5;
@@ -28,8 +28,6 @@ export const MIN_N = 5;
 export const MIN_GROUP = 3;
 /** 지역색이라 부를 만한 최소 배율. 1.3배 미만은 "비슷하다"로 본다 */
 export const MIN_LIFT = 1.3;
-/** '비공개'는 지역이 아니라 "안 밝힘"이다 — 지역색·정착 온도의 결론에서는 뺀다(차트엔 남는다) */
-const NOT_A_PLACE = "비공개";
 
 const em = (s) => `<em>${esc(s)}</em>`;
 const qe = (s) => `<em>${esc(q(s))}</em>`;
@@ -78,6 +76,40 @@ export const INSIGHTS = {
       headline,
       extra: ok.map((g) => `${short(g.label)} ${num(g.n)}명`).join(" · "),
       highlight: [g1.key, g2.key],
+    };
+  },
+
+  /**
+   * 지역마다 다른 이유 — 지역별 1위가 갈리는가. 가장 큰 지역과, 그와 1위가 다른 다음 큰 지역 둘을 말한다.
+   * 1위가 동점인 지역은 결론에서 뺀다(하나를 골라 말하면 지어낸 결론이다). 비율은 그 지역 "사람" 기준.
+   */
+  placeTop(d, ctx) {
+    if (ctx.n < MIN_N) return early(ctx.n);
+    const ok = d.groups.filter((g) => g.n >= MIN_GROUP && g.items.length);
+    if (ok.length < 2) return { value: "—", headline: "지역끼리 견주기에는 아직 문장이 적습니다." };
+    const clear = ok.filter((g) => !g.items[1] || g.items[1].count < g.items[0].count)
+      .sort((x, y) => y.n - x.n);
+    if (clear.length < 2) return { value: "—", headline: "지역마다 1위 이유가 아직 뚜렷하지 않습니다.", highlight: [] };
+    const top = (g) => g.items[0].label;
+    const share = (g) => pct(peopleWith(ctx.records.filter((r) => r.region === g.key), top(g)) / g.n);
+    const A = clear[0];
+    const B = clear.find((g) => top(g) !== top(A));
+    if (!B) {
+      const t = top(A);
+      // 동점 지역이 끼어 있으면 "어느 지역에서나"라고 하지 않는다
+      return {
+        value: t,
+        headline: `${clear.length === ok.length ? "어느 지역에서나" : "여러 지역에서"} ${qe(t)}${josa(t, "을를")} 가장 많이 골랐습니다.`,
+        extra: clear.map((g) => `${g.label} ${num(g.n)}명 중 ${share(g)}`).join(" · "),
+        highlight: clear.map((g) => g.key),
+      };
+    }
+    const a = top(A), b = top(B), sa = share(A), sb = share(B);
+    return {
+      value: `${A.label} ${a} · ${B.label} ${b}`,
+      headline: `${em(A.label)}${josa(A.label, "은는")} ${qe(a)}, ${em(B.label)}${josa(B.label, "은는")} ${qe(b)}${josa(b, "을를")} 가장 많이 골랐습니다.`,
+      extra: `${A.label} ${num(A.n)}명 중 ${sa} · ${B.label} ${num(B.n)}명 중 ${sb}${josa(sb, "이가")} 골랐습니다`,
+      highlight: [A.key, B.key],
     };
   },
 

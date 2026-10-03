@@ -54,6 +54,8 @@ export const MOTIVES = (() => {
 export const MOTIVE_OF = Object.fromEntries(MOTIVES.flatMap((m) => m.states.map((s) => [s, m])));
 /** "머무르게 하는 것" 묶음 — 머무는 이유를 셀 때 쓴다 */
 const STAY_MOTIVE = MOTIVE_OF.stay;
+/** '비공개'는 지역이 아니라 "안 밝힘"이다 — 지역끼리 견주는 지표·결론에서는 뺀다 */
+export const NOT_A_PLACE = "비공개";
 
 /**
  * 정착 온도 점수 — 머무름 +2 · 돌아온 사람 +1 · 오가는 중/아직 모르겠음 0 · 떠날 준비 −2.
@@ -87,6 +89,26 @@ export const METRICS = [
     id: "reason", label: "사람들이 고른 이유", shape: "rows", votes: true,
     // 선택지 전체를 같이 넘긴다 — 퍼짐 그림이 아무도 안 고른 키워드까지 세우고 "고르게 나뉘면" 기준을 1/선택지 수로 잡는다
     build: (rs) => ({ ...rowsOf(rs, (r) => r.keywords, KEYWORDS.length), options: KEYWORDS }),
+  },
+  {
+    // 지역마다 고른 이유가 다른가 — 지역 하나가 한 묶음(groups, 동기별 이유와 같은 모양).
+    // 전체로는 고르게 퍼진 이유가 사실 지역마다 다른 낱말로 갈려 있을 수 있다(3장 다음에 선다).
+    // '비공개'는 장소가 아니라 뺀다. 줄 순서는 설문 선택지 그대로 — 새 문장이 와도 줄이 자리를 안 바꾼다.
+    // 한 지역 안에서 1위가 동점이면 그 지역에서 유난히 많이 고른(전체 평균 대비 배율이 큰) 쪽을 앞에 세운다.
+    // 결론은 동점인 지역을 말하지 않는다(insights.js placeTop) — 그림에는 둘 다 선다.
+    id: "regionReason", label: "지역마다 다른 이유", shape: "groups", votes: true,
+    build: (rs) => {
+      const avg = new Map(rowsOf(rs, (r) => r.keywords, KEYWORDS.length).items.map((r) => [r.label, r.share]));
+      const lift = (r) => r.share / (avg.get(r.label) || 1);
+      return {
+        groups: REGIONS.filter((p) => p !== NOT_A_PLACE).map((p) => {
+          const sub = rs.filter((r) => r.region === p);
+          const rows = rowsOf(sub, (r) => r.keywords, KEYWORDS.length);
+          rows.items.sort((a, b) => b.count - a.count || lift(b) - lift(a));
+          return { key: p, label: p, ...rows };
+        }),
+      };
+    },
   },
   {
     // 개인은 몰라도 집단에서 발견되는 패턴. "일+가족"이 묶이는지 "불안+주거"가 묶이는지.

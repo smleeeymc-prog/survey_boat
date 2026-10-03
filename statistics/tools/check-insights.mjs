@@ -166,6 +166,31 @@ const run = (metricId, insightId, records) => {
   eq("동률이면 가장 최근 문장", strip(run("inflow", "inflow", flat).extra), "가장 최근 문장은 12분 전에 도착했습니다");
 }
 
+// ── 지역마다 다른 이유 ─────────────────────────────────────────────────────
+{
+  const many = (n, state, region, kws) => Array.from({ length: n }, () => rec(state, region, kws));
+  const rs = [...many(6, "stay", "아산", ["가족"]), ...many(5, "leaving", "천안", ["일"])];
+  const r = run("regionReason", "placeTop", rs);
+  eq("지역마다 1위가 다르다", strip(r.headline), "아산은 “가족”, 천안은 “일”을 가장 많이 골랐습니다.");
+  eq("근거는 그 지역 사람 기준", strip(r.extra), "아산 6명 중 100% · 천안 5명 중 100%가 골랐습니다");
+  const same = [...many(5, "stay", "아산", ["가족"]), ...many(4, "stay", "천안", ["가족", "일"]), rec("stay", "천안", ["가족"])];
+  eq("어디서나 같은 1위", strip(run("regionReason", "placeTop", same).headline),
+     "어느 지역에서나 “가족”을 가장 많이 골랐습니다.");
+  // 아산은 가족·일 동점 → 결론에서 빠지고, 뚜렷한 천안·기타 충남을 말한다
+  const tie = [...many(3, "stay", "아산", ["가족"]), ...many(3, "stay", "아산", ["일"]),
+               ...many(5, "stay", "천안", ["관계"]), ...many(4, "stay", "기타 충남", ["가족"])];
+  eq("동점 지역은 말하지 않는다", strip(run("regionReason", "placeTop", tie).headline),
+     "천안은 “관계”, 기타 충남은 “가족”을 가장 많이 골랐습니다.");
+  // 동점이면 그 지역에서 유난히 많이 고른 쪽이 앞에 선다 — '일'은 천안에 흔하고 '가족'은 드물다
+  const m = METRIC.regionReason;
+  const asan = m.build([...tie, ...many(6, "stay", "천안", ["일"])], m).groups.find((g) => g.key === "아산");
+  eq("동점은 지역색 쪽이 먼저", asan.items[0].label, "가족");
+  const hidden = [...many(10, "stay", "비공개", ["일"]), ...many(5, "stay", "아산", ["가족"])];
+  ok("'비공개'는 묶음에도 결론에도 없다",
+     !m.build(hidden, m).groups.some((g) => g.key === "비공개") &&
+     !/비공개/.test(strip(run("regionReason", "placeTop", hidden).headline)));
+}
+
 ok("MIN_N 은 양수", MIN_N > 0);
 console.log(`\n[check-insights] 통과 ${pass} / 실패 ${fail}`);
 process.exit(fail ? 1 : 0);
