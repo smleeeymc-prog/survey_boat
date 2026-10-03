@@ -58,7 +58,7 @@
 
 /* 고른 것(키워드·자리·지역)과 사람의 문장은 명조 — 설문에서 선택지와 문장을 명조로 적는 것과 같다.
    숫자·축·비율은 숫자 서체(--ui, 카드에서 물려받는다). */
-.sv-bar-label, .sv-mo-top, .sv-net-node b, .sv-th-label, .sv-tw-text { font-family: var(--serif); }
+.sv-bar-label, .sv-sp-label, .sv-mo-top, .sv-net-node b, .sv-th-label, .sv-tw-text { font-family: var(--serif); }
 
 /* 표식 등장 — 이름은 움직임, 순번은 --i */
 @keyframes sv-grow-x { from { transform: scaleX(0); } }
@@ -145,6 +145,50 @@
 .report.in .sv-bar-label,
 .report.in .sv-bar-track,
 .report.in .sv-bar-pct { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .08s) both; }
+
+/* ── spread — 선택지 전부 + "고르게 나뉘면" 점선 ─────────────────────────────── */
+.sv-spread {
+  /* 막대와 같은 한 grid(열 폭이 모든 줄에서 같아야 길이를 비교한다). 맨 윗줄은 점선 이름표 자리,
+     그 아래 선택지 수만큼 줄이 카드 높이를 나눠 가진다. 줄 자리(--r)를 직접 준다 —
+     자동 배치에 맡기면 첫 라벨이 이름표 줄의 빈 칸으로 들어간다. */
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr 2.6em;
+  grid-template-rows: auto repeat(var(--rows, 10), minmax(0, 1fr));
+  align-items: center;
+  column-gap: .7em;
+  height: 100%;
+  font-size: calc(var(--stat-base) * .64);
+  line-height: 1.15;   /* 줄 높이가 칸(카드 높이/열 줄)보다 크면 맨 아래 줄이 카드 밖으로 밀린다 */
+}
+.sv-sp-row { display: contents; }
+.sv-sp-row > * { grid-row: var(--r); }
+.sv-sp-label { grid-column: 1; color: var(--t2); font-weight: 600; white-space: nowrap; }
+.sv-spread .sv-bar-track { grid-column: 2; height: .5em; }
+.sv-spread .sv-bar-pct { grid-column: 3; }
+.sv-sp-row.lead .sv-sp-label, .sv-sp-row.lead .sv-bar-pct { color: var(--t1); font-weight: 700; }
+.sv-sp-row.lead .sv-bar-fill { background: var(--sv-lead); }
+/* 아무도 안 고른 선택지 — 빠뜨리지 않고 세우되 한 단 옅게 */
+.sv-sp-row.none .sv-sp-label, .sv-sp-row.none .sv-bar-pct { color: var(--t3); font-weight: 400; }
+/* 기준 점선 — 막대 위에 겹친다(나중 요소). 이름표는 점선 바로 위 가운데 */
+.sv-sp-cap { grid-column: 2; grid-row: 1; position: relative; height: 1.5em; font-size: .7em; }
+.sv-sp-cap span {
+  position: absolute; left: var(--even); bottom: .25em; transform: translateX(-50%);
+  white-space: nowrap; color: var(--t2); font-weight: 600; letter-spacing: .02em;
+}
+.sv-sp-even { grid-column: 2; grid-row: 2 / -1; align-self: stretch; position: relative; pointer-events: none; }
+.sv-sp-even::before {
+  content: ""; position: absolute; left: var(--even); top: 0; bottom: 0; transform: translateX(-50%);
+  border-left: max(1px, calc(.28 * var(--u))) dashed rgba(246, 242, 234, .55);
+}
+.sv-spread.even-lead .sv-sp-even::before { border-left-color: var(--sv-lead); border-left-width: max(1.5px, calc(.4 * var(--u))); }
+.sv-spread.even-lead .sv-sp-cap span { color: var(--t1); font-weight: 700; }
+.report.in .sv-spread .sv-bar-fill { animation: sv-grow-x .9s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .06s) both; }
+.report.in .sv-sp-label,
+.report.in .sv-spread .sv-bar-track,
+.report.in .sv-spread .sv-bar-pct { animation: sv-in .6s var(--ease-out) calc(var(--sv-d0) + var(--i, 0) * .06s) both; }
+/* 점선은 막대가 다 자란 뒤에 — 먼저 서 있으면 막대보다 기준이 먼저 읽힌다 */
+.report.in .sv-sp-cap, .report.in .sv-sp-even { animation: sv-in .8s var(--ease-out) calc(var(--sv-d0) + 1s) both; }
 
 /* ── bubble — 강조한 것을 먹색으로, 나머지는 옅은 회색으로 한 줄에 ─────────── */
 .sv-bubble { display: block; height: 100%; }

@@ -79,6 +79,42 @@ export const VIEWS = {
   },
 
   /**
+   * 퍼짐 — "고르게 나뉘었는가"를 보이는 그림. 선택지 전부(아무도 안 고른 것까지)를 한 줄씩 세우고,
+   * 모두가 똑같이 골랐다면 막대가 닿을 자리(1/선택지 수)에 점선을 세운다. 막대가 점선 언저리에 모여
+   * 있으면 고르게 퍼진 것이고, 몇 개만 멀리 넘어가면 쏠린 것이다 — 결론 문장이 어느 쪽이든 같은 그림이 답한다.
+   * 예전 랭킹 문단은 낱말 크기로만 말해서 "얼마나 고른가"가 안 읽혔고, 카드 가운데 두 줄만 차지해
+   * 위아래가 비었다(10-03 사용자). 줄이 선택지 수만큼이라 카드 높이를 다 쓴다.
+   * 축 끝 = max(1위 비율, 기준의 두 배) — 점선이 늘 트랙 절반 안쪽에 와서 넘고 못 미침이 양쪽으로 다 보인다.
+   */
+  spread: {
+    accepts: "rows",
+    render({ items, options }, ctx = {}) {
+      const rows = [...items];
+      for (const o of options || []) if (!rows.some((r) => r.label === o)) rows.push({ label: o, count: 0, share: 0 });
+      if (!rows.length) return `<span class="sv-spread"></span>`;
+      const hl = asSet(ctx.highlight);
+      // 결론이 빈 강조를 넘기면("고르게 퍼져 있다") 막대는 전부 회색, 기준 점선이 강조색을 입는다
+      const evenLead = Array.isArray(ctx.highlight) && !ctx.highlight.length;
+      const even = 1 / rows.length;
+      const axis = Math.max(even * 2, ...rows.map((r) => r.share));
+      const at = (v) => `${((v / axis) * 100).toFixed(1)}%`;
+      const html = rows.map((r, i) => {
+        const on = Array.isArray(ctx.highlight) ? hl.has(r.label) : i === 0;
+        return `
+        <span class="sv-sp-row${on ? " lead" : ""}${r.count ? "" : " none"}" style="--i:${i};--r:${i + 2}">
+          <span class="sv-sp-label">${esc(r.label)}</span>
+          <span class="sv-bar-track"><span class="sv-bar-fill" style="width:${at(r.share)}"></span></span>
+          <span class="sv-bar-pct">${Math.round(r.share * 100)}<i>%</i></span>
+        </span>`;
+      }).join("");
+      return `<span class="sv-spread${evenLead ? " even-lead" : ""}" style="--even:${at(even)};--rows:${rows.length}">
+        <span class="sv-sp-cap"><span>고르게 나뉘면 ${Math.round(even * 100)}%</span></span>${html}
+        <span class="sv-sp-even" aria-hidden="true"></span>
+      </span>`;
+    },
+  },
+
+  /**
    * 버블 — 강조한 것(결론이 가리키는 이유)을 가운데 먹색으로, 나머지는 옅은 회색으로 둘러싼다
    * (레퍼런스 2장: 최다 이유를 가운데 검게). 넓이가 빈도에 비례한다.
    *

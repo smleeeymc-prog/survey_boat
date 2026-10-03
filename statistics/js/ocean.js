@@ -28,14 +28,14 @@ import {
 import { makeGerstnerGLSL, waveHeightAt, wrapWave } from "../shared/ocean-core.js";
 // 지도만 파도마다 진폭 배수를 곱한다(멀리서 잔물결 줄이기·물결 센 곳/잔잔한 곳 — sea-variety.js).
 // 셰이더와 배 들썩임이 같은 배수를 써야 배가 수면과 맞는다 → 둘 다 여기서 같은 seaGain 을 건다.
-import { seaGain, SEA_GAIN_GLSL, SEA_TINT_GLSL } from "./sea-variety.js";
+import { seaGain, seaWarp, SEA_GAIN_GLSL, SEA_WARP_GLSL, SEA_TINT_GLSL } from "./sea-variety.js";
 // (이름을 따로 짓는 이유: 시안 빌드가 모든 모듈을 한 스코프에 이어붙여서 공유 파일의 이름과 겹치면 죽는다)
 export { wrapWave };
-const MAP_GERSTNER_GLSL = makeGerstnerGLSL("seaGain");
+const MAP_GERSTNER_GLSL = makeGerstnerGLSL("seaGain", "seaWarp");
 
-/** 지도 바다의 파고 — 물 셰이더와 같은 식(공유 파도 표 × seaGain). 배 들썩임이 쓴다. */
+/** 지도 바다의 파고 — 물 셰이더와 같은 식(공유 파도 표 × seaGain, 위상 + seaWarp). 배 들썩임이 쓴다. */
 export function seaHeightAt(x, z, t, flowPhase, ampScale) {
-  return waveHeightAt(x, z, t, flowPhase, ampScale, seaGain);
+  return waveHeightAt(x, z, t, flowPhase, ampScale, seaGain, seaWarp);
 }
 
 export const RIPPLE_MAX = 8;   // 셰이더 루프 상한이라 상수여야 한다 (원본과 동일)
@@ -101,6 +101,7 @@ export function buildWaterMaterial() {
       varying vec3 vWorldPos;
 
       ${SEA_GAIN_GLSL}
+      ${SEA_WARP_GLSL}
       ${MAP_GERSTNER_GLSL}
 
       void main () {

@@ -11,10 +11,14 @@
  * 둘 다 지도 월드 좌표(카메라가 원점에 서 있다)로 계산한다 — 바다가 월드에 고정이라 정점마다 값이 늘 같다.
  *
  * 조각 셰이더 쪽 물빛 얼룩(SEA_TINT_GLSL)은 색만 바꾸므로 JS 짝이 없다.
+ *
+ * [10-03] 위상 휨(seaWarp) — 진폭만 바꿔서는 무늬 모양이 그대로라 "같은 타일을 깐" 느낌이 남았다
+ * (사용자). 파도마다 따로 노는 느린 휨을 위상에 더해 마루가 곳곳에서 다르게 휘게 한다 —
+ * 세 파도가 겹친 마름모 격자가 자리마다 모양이 달라진다. 배도 같은 휨을 타야 하므로 JS 짝이 있다.
  * ========================================================================== */
 
 import {
-  SEA_VARIETY, WATER_CELL, WATER_CELL_GROWTH, WATER_CELL_MAX, WATER_CORE_X, WATER_CORE_Z,
+  SEA_VARIETY, WATER_CELL, WATER_CELL_GROWTH, WATER_CELL_MAX, WATER_CORE_X, WATER_CORE_Z, GERSTNER_WAVES,
 } from "./config.js";
 
 const V = SEA_VARIETY;
@@ -23,6 +27,9 @@ const V = SEA_VARIETY;
 const GROW = (WATER_CELL_GROWTH - 1) / WATER_CELL_GROWTH;
 // 물결 센 곳/잔잔한 곳 — [방향 x, 방향 z, 길이(월드), 무게]. 길이가 서로 나누어떨어지지 않게 골랐다.
 const PATCH = [[0.83, 0.56, 23, 0.5], [-0.42, 0.91, 37, 0.3], [0.97, -0.24, 61, 0.2]];
+// 칸이 커서 줄이는 기준은 가장 짧은 파도 하나로 모두 같이 — 파장마다 따로 줄였더니 짧은 파도(방향 −0.7, 0.4)가
+// 먼저 사라지는 깊이 46 즈음에서 남은 두 파도의 결로 바뀌어 바다가 "한 번 꺾여" 보였다(10-03 사용자).
+const MIN_WL = Math.min(...GERSTNER_WAVES.map((w) => w.wavelength));
 // 물빛 얼룩 — 같은 방식, 다른 방향·길이(물결 얼룩과 겹치지 않게)
 const TINT = [[0.31, 0.95, 29, 0.5], [-0.88, 0.47, 47, 0.3], [0.64, -0.77, 83, 0.2]];
 
@@ -52,7 +59,7 @@ export function seaGain(wl, x, z, t) {
   const lod = 1 - (1 - V.lod.floor) * smoothJS(V.lod.start, V.lod.end, r);
   const out = Math.max(Math.abs(x) - WATER_CORE_X, WATER_CORE_Z[0] - z, z - WATER_CORE_Z[1], 0);
   const cell = Math.min(WATER_CELL_MAX, WATER_CELL + out * GROW);
-  const coarse = 1 - (1 - V.coarse.floor) * smoothJS(wl * V.coarse.from, wl * V.coarse.to, cell);
+  const coarse = 1 - (1 - V.coarse.floor) * smoothJS(MIN_WL * V.coarse.from, MIN_WL * V.coarse.to, cell);
   const k = 0.5 + 0.5 * wavesJS(PATCH, x, z, t, V.patch.drift);
   const patch = V.patch.min + (V.patch.max - V.patch.min) * k;
   return Math.min(lod, coarse) * patch;
@@ -65,10 +72,33 @@ export const SEA_GAIN_GLSL = `
           float lod = 1.0 - ${glslNum(1 - V.lod.floor)} * smoothstep(${glslNum(V.lod.start)}, ${glslNum(V.lod.end)}, r);
           float outside = max(max(abs(p.x) - ${glslNum(WATER_CORE_X)}, ${glslNum(WATER_CORE_Z[0])} - p.y), max(p.y - ${glslNum(WATER_CORE_Z[1])}, 0.0));
           float cell = min(${glslNum(WATER_CELL_MAX)}, ${glslNum(WATER_CELL)} + outside * ${glslNum(GROW)});
-          float coarse = 1.0 - ${glslNum(1 - V.coarse.floor)} * smoothstep(wl * ${glslNum(V.coarse.from)}, wl * ${glslNum(V.coarse.to)}, cell);
+          float coarse = 1.0 - ${glslNum(1 - V.coarse.floor)} * smoothstep(${glslNum(MIN_WL * V.coarse.from)}, ${glslNum(MIN_WL * V.coarse.to)}, cell);
           float k = 0.5 + 0.5 * (${wavesGLSL(PATCH, V.patch.drift)});
           float calm = ${glslNum(V.patch.min)} + ${glslNum(V.patch.max - V.patch.min)} * k;
           return min(lod, coarse) * calm;
+        }
+`;
+
+/**
+ * 파도 하나의 위상 휨(라디안, JS). 아래 SEA_WARP_GLSL 과 같은 식이다.
+ * 파도마다 다른 방향의 긴 사인 둘 — 방향은 파장에서 뽑아(seed) 세 파도가 서로 다르게 휜다.
+ * 길이(lens)가 파장보다 훨씬 길어 마루는 끊기지 않고 휘기만 한다.
+ */
+export function seaWarp(wl, x, z, t) {
+  const W = V.warp;
+  const s = wl * W.seed, s2 = s * 1.7;
+  const a = (2 * Math.PI * (Math.cos(s) * x + Math.sin(s) * z)) / W.lens[0] + W.drift * t;
+  const b = (2 * Math.PI * (-Math.sin(s2) * x + Math.cos(s2) * z)) / W.lens[1] - W.drift * 1.3 * t;
+  return W.amp * (0.6 * Math.sin(a) + 0.4 * Math.sin(b));
+}
+
+/** 물 정점 셰이더에 넣는 같은 식 — float seaWarp(float wl, vec2 p, float t) */
+export const SEA_WARP_GLSL = `
+        float seaWarp (float wl, vec2 p, float t) {
+          float s = wl * ${glslNum(V.warp.seed)}, s2 = s * 1.7;
+          float a = 6.28318530718 * (cos(s) * p.x + sin(s) * p.y) / ${glslNum(V.warp.lens[0])} + ${glslNum(V.warp.drift)} * t;
+          float b = 6.28318530718 * (-sin(s2) * p.x + cos(s2) * p.y) / ${glslNum(V.warp.lens[1])} - ${glslNum(V.warp.drift * 1.3)} * t;
+          return ${glslNum(V.warp.amp)} * (0.6 * sin(a) + 0.4 * sin(b));
         }
 `;
 

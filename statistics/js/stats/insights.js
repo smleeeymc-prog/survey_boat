@@ -93,7 +93,9 @@ export const INSIGHTS = {
         ? `${num(k)}가지 이유 가운데 세 가지가 전체의 ${em(p)}${josa(p, "을를")} 차지합니다.`
         : `이유가 한쪽으로 모이지 않고 고르게 퍼져 있습니다.`,
       extra: `키워드 ${num(d.total)}표 기준 — 한 문장이 여러 개를 고를 수 있습니다`,
-      highlight: d.items.slice(0, 3).map((r) => r.label),
+      // 고르게 퍼졌다고 말할 때는 아무것도 금색으로 세우지 않는다 — 상위 셋만 칠하면 4위와 같은 값이어도
+      // 셋이 튀어 보여 문장과 그림이 반대로 말한다. 그때는 "고르게 나뉘면" 기준선이 주인공이다(views.js spread).
+      highlight: top3 >= 0.5 ? d.items.slice(0, 3).map((r) => r.label) : [],
     };
   },
 

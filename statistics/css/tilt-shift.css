@@ -4,6 +4,8 @@
  * 값은 shared/look-tokens.js TILT_SHIFT 에서 js/tilt-shift.js 가 변수로 넣는다(아래 기본값은 같은 값 —
  * JS가 돌기 전 한 프레임용). 띠 경계는 구도를 따라간다: --view-shift 는 초점 띠를 화면 가운데에서
  * 위로 민 비율이다. 위 띠는 그만큼 줄고 아래 띠는 는다(설문 --view-shift 와 같은 뜻).
+ * --tilt-top-extra·--tilt-top-hold·--tilt-top-mid-at 은 지도 전용 — 위 띠만 더 내리고 위쪽을 진하게 둔다
+ * (먼 바다 등대 섬까지 흐림이 닿게, config.js TILT_TOP). 없으면 설문과 같은 모양이다.
  *
  * 층 순서: 캔버스(0) → 이 띠 → 비네트 → 글자·카드. 캔버스만 흐리고 UI는 또렷해야 해서 캔버스 바로 위.
  * WebGL 후처리가 아니라 CSS인 이유는 HANDOFF-map 5.4 답신(재 본 비용 · 색 공간).
@@ -22,9 +24,11 @@
 }
 .tiltBlur.top {
   top: 0;
-  height: calc((var(--tilt-band) - var(--view-shift, 0)) * 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,var(--tilt-mid)) var(--tilt-mid-at), transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,var(--tilt-mid)) var(--tilt-mid-at), transparent 100%);
+  height: calc((var(--tilt-band) - var(--view-shift, 0) + var(--tilt-top-extra, 0)) * 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 var(--tilt-top-hold, 0%),
+    rgba(0,0,0,var(--tilt-mid)) var(--tilt-top-mid-at, var(--tilt-mid-at)), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 var(--tilt-top-hold, 0%),
+    rgba(0,0,0,var(--tilt-mid)) var(--tilt-top-mid-at, var(--tilt-mid-at)), transparent 100%);
 }
 .tiltBlur.bottom {
   bottom: 0;

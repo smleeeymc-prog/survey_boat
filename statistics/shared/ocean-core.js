@@ -58,19 +58,23 @@ const f = (n) => (Number.isInteger(n) ? n.toFixed(1) : String(n));
 /**
  * gerstnerSum 소스를 만든다. gain 을 주면 파도마다 진폭에 그 GLSL 함수 값을 곱한다 —
  * gain(파장, worldXZ, t). 지도가 쓴다(멀리서 잔물결 줄이기·물결 센 곳/잔잔한 곳, statistics/js/sea-variety.js).
- * gain 이 없으면 예전과 글자까지 같은 소스가 나온다 — 설문 selfCheck 가 문자열로 검사한다.
- * JS 쪽 waveHeightAt 에도 같은 gain 을 JS 함수로 넘겨야 배가 수면과 맞는다.
+ * warp 를 주면 파도마다 위상에 그 값을 더한다 — warp(파장, worldXZ, t). 마루가 곳곳에서 조금씩 휘어
+ * 세 파도가 겹친 격자 무늬가 화면 가득 똑같이 되풀이되지 않는다(지도만 쓴다).
+ * 둘 다 없으면 예전과 글자까지 같은 소스가 나온다 — 설문 selfCheck 가 문자열로 검사한다.
+ * JS 쪽 waveHeightAt 에도 같은 gain·warp 를 JS 함수로 넘겨야 배가 수면과 맞는다.
  * @param {string|null} gain GLSL 함수 이름 (float gain(float wavelength, vec2 p, float t))
+ * @param {string|null} warp GLSL 함수 이름 (float warp(float wavelength, vec2 p, float t)) — 위상(라디안)
  */
-export function makeGerstnerGLSL(gain = null) {
+export function makeGerstnerGLSL(gain = null, warp = null) {
   const g = (w) => (gain ? ` * ${gain}(${f(w.wavelength)}, worldXZ, t)` : "");
+  const p = (w) => (warp ? ` + ${warp}(${f(w.wavelength)}, worldXZ, t)` : "");
   return `
         vec3 gerstnerSum (vec2 worldXZ, float t) {
           vec3 r = vec3(0.0);
           float k; float theta; float amp; float c;
 ${GERSTNER_WAVES.map((w) => `
           k = 6.28318530718 / ${f(w.wavelength)};
-          theta = k * (${f(w.dirX)} * worldXZ.x + ${f(w.dirZ)} * worldXZ.y) - (${f(w.speed)} * t + uFlowPhase);
+          theta = k * (${f(w.dirX)} * worldXZ.x + ${f(w.dirZ)} * worldXZ.y) - (${f(w.speed)} * t + uFlowPhase)${p(w)};
           amp = ${f(w.ampBase)} * uAmpScale${g(w)}; c = cos(theta);
           r.x += uChop * amp * ${f(w.dirX)} * c; r.z += uChop * amp * ${f(w.dirZ)} * c; r.y += amp * sin(theta);`).join("")}
 
@@ -87,13 +91,16 @@ export const GERSTNER_GLSL = makeGerstnerGLSL();
  * @param {number} ampScale  바람 세기에서 나온 진폭 배수 (0.5 + 0.9 * windT)
  * @param {(wavelength:number, x:number, z:number, t:number) => number} [gain] 파도마다 진폭 배수 —
  *        makeGerstnerGLSL(gain) 의 GLSL 함수와 같은 식이어야 한다(지도만 쓴다). 없으면 1.
+ * @param {(wavelength:number, x:number, z:number, t:number) => number} [warp] 파도마다 위상에 더하는 값 —
+ *        makeGerstnerGLSL(gain, warp) 의 warp 와 같은 식(지도만 쓴다). 없으면 0.
  */
-export function waveHeightAt(x, z, t, flowPhase, ampScale, gain) {
+export function waveHeightAt(x, z, t, flowPhase, ampScale, gain, warp) {
   let dy = 0;
   for (let w = 0; w < GERSTNER_WAVES.length; w++) {
     const wave = GERSTNER_WAVES[w];
     const k = (2 * Math.PI) / wave.wavelength;
-    const theta = k * (wave.dirX * x + wave.dirZ * z) - (wave.speed * t + (flowPhase || 0));
+    let theta = k * (wave.dirX * x + wave.dirZ * z) - (wave.speed * t + (flowPhase || 0));
+    if (warp) theta += warp(wave.wavelength, x, z, t);
     const g = gain ? gain(wave.wavelength, x, z, t) : 1;
     dy += wave.ampBase * ampScale * g * Math.sin(theta);
   }

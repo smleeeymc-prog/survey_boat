@@ -11,7 +11,8 @@
  * 지표는 자기 shape 을 선언하고, 그리는 쪽은 받을 수 있는 shape 을 선언한다.
  * index.js가 짝을 지을 때 맞는지 검사하므로, 안 맞는 조합은 켜는 순간 콘솔에서 걸린다.
  *
- *   rows    {items:[{label,count,share}], total, n}          랭킹 · 막대 · 버블
+ *   rows    {items:[{label,count,share}], total, n, options?}  랭킹 · 막대 · 버블 · 퍼짐
+ *           options = 선택지 전체(아무도 안 고른 것까지). "고르게"를 말하려면 분모가 선택지 수다.
  *   groups  {groups:[{key,label,n,items:[…rows]}]}           동기별 이유
  *   matrix  {rows, cols, cells, colTotals, max, total}       히트맵
  *   pairs   {nodes:[{label,count}], links:[{a,b,count}]}     동시출현
@@ -27,7 +28,7 @@
  * 머무는 이유로 둔갑한다(예전 화면이 그랬다).
  * ========================================================================== */
 
-import { STATE_LABEL, STATES, REGIONS, SENTENCE_Q } from "../config.js";
+import { STATE_LABEL, STATES, REGIONS, SENTENCE_Q, KEYWORDS } from "../config.js";
 import { tally } from "../store.js";
 
 /**
@@ -84,7 +85,8 @@ export const METRICS = [
     // 동기를 가리지 않은 전체 분포. 방향(머묾/떠남)이 아니라 "무엇이 사람들의 자리를
     // 정하는가"를 본다 — 그래서 제목도 '머무는 이유'가 아니라 '이유'다.
     id: "reason", label: "사람들이 고른 이유", shape: "rows", votes: true,
-    build: (rs) => rowsOf(rs, (r) => r.keywords),
+    // 선택지 전체를 같이 넘긴다 — 퍼짐 그림이 아무도 안 고른 키워드까지 세우고 "고르게 나뉘면" 기준을 1/선택지 수로 잡는다
+    build: (rs) => ({ ...rowsOf(rs, (r) => r.keywords, KEYWORDS.length), options: KEYWORDS }),
   },
   {
     // 개인은 몰라도 집단에서 발견되는 패턴. "일+가족"이 묶이는지 "불안+주거"가 묶이는지.

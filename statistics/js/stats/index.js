@@ -36,7 +36,7 @@ import { STAT_ROTATE_SEC } from "../config.js";
 export const SLIDES = [
   { metric: "stayReason", insight: "stayTop", view: "bubble", tagline: "Why people stay" },
   { metric: "motives", insight: "motiveContrast", view: "motives", tagline: "Same word, other reasons" },
-  { metric: "reason", insight: "concentration", view: "ranking", tagline: "What people chose" },
+  { metric: "reason", insight: "concentration", view: "spread", tagline: "What people chose" },
   { metric: "keywordPairs", insight: "strongestPair", view: "network", sec: 10, tagline: "Chosen together" },
   { metric: "state", insight: "topState", view: "bars", tagline: "Where people stand" },
   { metric: "regionState", insight: "regionalColor", view: "heatmap", sec: 11, tagline: "Place and position" },

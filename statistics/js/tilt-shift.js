@@ -7,10 +7,11 @@
  *          수평선 위 하늘과 화면 맨 아래 가까운 바다가 흐려진다
  *   도착 제시 — 줌하는 만큼 그 배의 몸통 높이로 옮긴다(카메라가 배를 ARRIVAL_FRAME_Y 에 둔다)
  * 값(띠 높이·흐림·마스크)은 shared/look-tokens.js TILT_SHIFT — 설문과 같다.
+ * 위 띠만 TILT_TOP 만큼 더 내리고 진하게 둔다(지도 전용) — 먼 바다 등대 섬이 흐림 안에 들어오게.
  * ========================================================================== */
 
 import * as THREE from "three";
-import { TILT_SHIFT, FLOW_DEPTH_MIN, FLOW_DEPTH_MAX } from "./config.js";
+import { TILT_SHIFT, TILT_TOP, FLOW_DEPTH_MIN, FLOW_DEPTH_MAX } from "./config.js";
 
 const FOCUS_DEPTH = (FLOW_DEPTH_MIN + FLOW_DEPTH_MAX) / 2;
 const BOAT_MID_Y = 0.35;   // 배 몸통 가운데 높이(배 좌표, 흘수선 위) — 갑판·캐빈쯤
@@ -30,6 +31,7 @@ export class TiltShift {
     }
     this.enabled = this.layers.length > 0;
     this._shift = null;
+    this._extra = null;
     this._v = new THREE.Vector3();
   }
 
@@ -50,6 +52,8 @@ export class TiltShift {
   update(camera, boat, zoomT, shipScale) {
     if (!this.enabled) return;
     let y = this._screenY(camera, 0, 0, FOCUS_DEPTH, true);
+    const z = boat ? zoomT : 0;
+    const extra = TILT_TOP.extra * (1 - z);   // 위 띠만 더 내린다 — 줌하는 만큼 설문 모양으로 돌아간다
     if (boat && zoomT > 0) {
       const s = shipScale * (boat.renderScale || 1);
       const yb = this._screenY(camera, boat.x, BOAT_MID_Y * s, boat.z, false);
@@ -57,9 +61,17 @@ export class TiltShift {
     }
     // 초점 띠 가운데 = 0.5 − shift  →  shift = 0.5 − y
     const shift = Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, 0.5 - y));
-    if (this._shift !== null && Math.abs(shift - this._shift) < 0.002) return;
+    if (this._shift !== null && Math.abs(shift - this._shift) < 0.002 && Math.abs(extra - this._extra) < 0.002) return;
     this._shift = shift;
-    for (const el of this.layers) el.style.setProperty("--view-shift", shift.toFixed(4));
+    this._extra = extra;
+    for (const el of this.layers) {
+      el.style.setProperty("--view-shift", shift.toFixed(4));
+      el.style.setProperty("--tilt-top-extra", extra.toFixed(4));
+      // 위 띠의 진한 구간 — 띠 위쪽 hold 만큼 흐림 100%, 그 아래는 설문 마스크(midAt·mid)를 남은 길이에 맞춰 줄인다
+      const hold = TILT_TOP.hold * (TILT_TOP.extra ? extra / TILT_TOP.extra : 0);
+      el.style.setProperty("--tilt-top-hold", `${(hold * 100).toFixed(1)}%`);
+      el.style.setProperty("--tilt-top-mid-at", `${((hold + (1 - hold) * TILT_SHIFT.midAt) * 100).toFixed(1)}%`);
+    }
   }
 
   /** 월드 점의 화면 높이(위 0 ~ 아래 1). ahead=true 면 x·z 를 카메라 기준 앞쪽 거리로 본다. */
