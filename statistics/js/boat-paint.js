@@ -155,7 +155,7 @@ export function markDeckFaces(P) {
  * 같은 속성을 가진 지오메트리 둘을 하나로 잇는다(램프 한 쌍). BufferGeometryUtils.mergeGeometries 대신 직접 —
  * GLB 속성이 인터리브일 수 있어 getX 계열로 읽는다(merge 는 인터리브를 못 받는다).
  */
-function concatGeometries(a, b) {
+export function concatGeometries(a, b) {
   const out = new THREE.BufferGeometry();
   const na = a.attributes.position.count, nb = b.attributes.position.count;
   for (const name of Object.keys(a.attributes)) {

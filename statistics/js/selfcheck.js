@@ -135,6 +135,10 @@ export function runSelfChecks(scene) {
     console.assert(document.getElementById(id), `[selfCheck] #${id} 엘리먼트가 없음`);
   }
 
+  // 8.5) 먼 바다 등대 섬 — GLB에서 섬·바위·오두막·등대를 이름으로 찾는다. 이름이 바뀌면 섬이 조용히 사라진다.
+  console.assert(scene.landmarks && scene.landmarks.missing.length === 0,
+    `[selfCheck] 등대 섬 노드가 없다: ${scene.landmarks ? scene.landmarks.missing.join(", ") : "landmarks 없음"} — shared/glb-nodes.js 확인`);
+
   // 9) 틸트시프트 띠 두 장. 없으면 흐림이 조용히 사라진다(index.html 마크업, css/tilt-shift.css).
   console.assert(scene.tilt && scene.tilt.layers.length === 2,
     `[selfCheck] 틸트시프트 띠(.tiltBlur.top/.bottom)가 ${scene.tilt ? scene.tilt.layers.length : 0}장 — index.html 확인`);

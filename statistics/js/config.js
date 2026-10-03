@@ -140,6 +140,51 @@ export const WATER_EXTENT_X = 140;
 export const WATER_Z_MIN = 0;
 export const WATER_Z_MAX = 170;
 
+// 하늘 풍경 (js/sky.js) — 시간대별. 색은 팔레트처럼 sRGB.
+//   haze    수평선 바로 위를 안개색으로 녹이는 세기(0~1)
+//   coast   먼 해안선 실루엣 — far 는 안개에 더 녹은 먼 산, near 는 그 앞 산. 안개색보다 조금만 짙게(공기 원근)
+//   clouds  lit 빛 받는 면 · shade 그늘 · amount 덮는 정도(0이면 없음)
+//   sun     해(밤엔 달) — az 방위(도, +가 화면 왼쪽), el 고도(도), glow 빛무리 세기, disc 원반 세기.
+//           오른쪽 낮은 하늘(제목 카드가 있는 왼쪽 위를 피해서). az −12 는 세로 화면(좌우 ±14.7°)에서도 보이는 자리. glint 는 그 아래 물 위 반짝이는 길(윤슬) 세기.
+export const SKY_LOOK = {
+  day: {
+    haze: 0.75,
+    coast: { far: "#a9d6df", near: "#8cbfcb" },
+    clouds: { lit: "#ffffff", shade: "#cfe6ee", amount: 0.75 },
+    sun: { az: -12, el: 6, color: "#fff4d6", glow: 0.8, disc: 0.6, glint: 0.8 },
+  },
+  afternoon: {
+    haze: 0.7,
+    coast: { far: "#d6cfc6", near: "#bdb5b2" },
+    clouds: { lit: "#fff4e2", shade: "#dccfc6", amount: 0.8 },
+    sun: { az: -12, el: 4, color: "#ffdca0", glow: 0.75, disc: 0.75, glint: 1.0 },
+  },
+  evening: {
+    haze: 0.6,
+    coast: { far: "#c48a84", near: "#9a6c78" },
+    clouds: { lit: "#ffc49a", shade: "#8e6a8f", amount: 0.85 },
+    sun: { az: -12, el: 2, color: "#ffad6a", glow: 1.0, disc: 0.9, glint: 1.2 },
+  },
+  night: {
+    haze: 0.5,
+    coast: { far: "#24375c", near: "#1a2a4a" },
+    clouds: { lit: "#3c5180", shade: "#1e2c4c", amount: 0.6 },
+    sun: { az: -12, el: 12, color: "#d6e2ff", glow: 0.35, disc: 0.8, glint: 0.6 },   // 달
+  },
+};
+
+// 먼 바다의 등대 섬 (js/landmarks.js). 설문 GLB의 섬·오두막·등대를 수평선 가까이에 하나 세운다.
+// 흐르는 배들(깊이 10~48)보다 훨씬 멀리 — 안개가 반쯤 덮어 공기 원근이 생기고 배와 겹치지 않는다.
+// x 는 세로 화면(1080×1920)에서도 보이게 그 깊이의 화면 반폭(약 21) 안쪽으로. +x 가 화면 왼쪽이다(카메라가 +Z를 본다).
+export const LANDMARK = {
+  x: 6, y: 0, z: 84,   // 섬 덩어리 가운데
+  width: 13,            // 섬 가로 폭(월드). 배 길이(약 1.3)의 10배 — 멀어도 한 덩어리로 읽히게
+                        // (세로 화면에서 등대 꼭대기가 제목 카드에 안 닿는 크기)
+  rotY: 0,              // 오두막·등대가 카메라 쪽을 보게
+  lighthouseRock: 0.3,  // 등대 받침 바위 높이 = 등대 높이의 이만큼
+  windowColor: 0xffd9a0, windowGlow: 1.6,   // 밤·저녁에 켜지는 등대 창
+};
+
 // 바다 결 — 반복 무늬 끊기 (지도 전용, js/sea-variety.js).
 // 파도 표(shared/ocean-core.js)는 짧은 파도 셋뿐이라, 깊이 150·폭 80을 한 화면에 담는 지도에서는
 // 같은 물결이 수백 번 되풀이돼 벽지처럼 보였다(설문은 배 근처 몇 칸만 비춰서 괜찮다). 표는 설문과

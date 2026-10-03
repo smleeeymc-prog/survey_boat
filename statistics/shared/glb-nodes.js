@@ -26,7 +26,8 @@ export const GLB_NODES = {
   gull: "Seagull",
   tube: "Tube",
 
-  // 섬 — 설문 화면만 쓴다 (지도에는 섬이 없다)
+  // 섬 — 설문은 배 옆 섬으로, 지도는 먼 바다의 등대 섬으로(statistics/js/landmarks.js, 10-03~) 쓴다.
+  // 이름이 바뀌면 두 화면 다 조용히 섬이 사라진다(지도 selfcheck 8.5가 잡는다).
   // island는 Rock·Beachhouse의 부모(블렌더 빈 오브젝트). 뒷산·등대는 GLB상 씬 바로 아래에
   // 있지만 섬 풍경이라 이 좌표계로 옮겨서 섬과 같이 움직인다.
   island:       "Island",

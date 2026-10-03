@@ -104,7 +104,7 @@ function mirrorAcrossCenterline(geo, midZ) {
 }
 
 /** 삼각형 꼭짓점 순서를 뒤집는다(앞면·뒷면이 바뀐다). 법선은 건드리지 않는다. */
-function flipWinding(geo) {
+export function flipWinding(geo) {
   if (geo.index) {
     const a = geo.index.array;
     for (let i = 0; i + 2 < a.length; i += 3) { const tmp = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = tmp; }
@@ -141,7 +141,7 @@ function makeInstanced(geo, mat, capacity, name) {
  * GLB 재질을 지도용으로 복제한다. 룩 값은 shared/look-tokens.js 에서 온다(설문과 같은 값).
  * 복제하는 이유: GLB 재질은 공유 객체라 원본을 건드리면 같은 재질을 쓰는 다른 메쉬까지 바뀐다.
  */
-function cloneMaterial(src) {
+export function cloneMaterial(src) {
   const mat = (Array.isArray(src) ? src[0] : src).clone();
   mat.fog = true;
   // 재질이 빠진 메쉬에는 GLTFLoader가 기본 재질을 만들어 주는데, 그 기본값이
@@ -167,7 +167,7 @@ function cloneMaterial(src) {
  * 같은 재질에 배 칠(boat-paint.js)도 걸리므로 onBeforeCompile 을 직접 대입하지 않고
  * patchMaterial 로 겹쳐 건다 — 대입하면 뒤에 건 것이 앞의 것을 지운다(HANDOFF-map 18.3).
  */
-function patchBakedAO(mat) {
+export function patchBakedAO(mat) {
   patchMaterial(mat, "bakedAO", (shader) => {
     shader.uniforms.uAOAmt = { value: AO.amount };
     shader.vertexShader = shader.vertexShader

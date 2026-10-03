@@ -14,6 +14,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as C from "./config.js";
 import { buildWater, seaHeightAt, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
+import { buildLandmarks } from "./landmarks.js";
+import { makeSkyDome, skyDir } from "./sky.js";
 import { setSurfaceFxSky, setSurfaceFxViewport } from "./surface-fx.js";
 import { TiltShift } from "./tilt-shift.js";
 import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed } from "./motion.js";
@@ -40,61 +42,6 @@ if (GLASS_PIN) document.documentElement.dataset.glass = GLASS_PIN;
 // 0.35 = 잔잔하되 죽지는 않은 정도 (ampScale 0.82, chop 0.20).
 const WIND_T = 0.35;
 
-/**
- * 하늘 돔. 온보딩과 같은 네 색·같은 정지점(0 · 0.48 · 0.78 · 1)의 그라디언트다.
- *
- * [변경] 예전에는 이 그라디언트를 화면 배경(scene.background)에 칠했다. 화면에 붙은 그림이라
- * 카메라가 고개를 돌리거나 줌해도 하늘은 제자리였고, 수평선만 움직여 하늘과 바다가 따로 놀았다.
- * 이제 하늘도 월드에 있다 — 색은 "그 방향이 수평선에서 몇 도 위/아래인가"로 정한다.
- * 평소 화면(화각 50·시선 CAM_LOOK_AHEAD)에서는 예전과 같은 자리에 같은 색이 오도록,
- * 방향의 높이각을 평소 화면의 세로 위치로 바꿔 그 자리의 정지점 색을 쓴다.
- * 바다는 반투명(0.92)이라 먼 바다가 지워지는 자리에서 이 돔이 비쳐 수평선이 녹아든다.
- */
-function makeSkyDome(colors) {
-  // 팔레트는 sRGB 값이다. 캔버스 그라디언트처럼 sRGB 공간에서 섞고, 변환 없이 그대로 내보낸다.
-  const srgb = (v) => {
-    const h = new THREE.Color(v).getHex();
-    return new THREE.Vector3(((h >> 16) & 255) / 255, ((h >> 8) & 255) / 255, (h & 255) / 255);
-  };
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    depthTest: false,
-    fog: false,
-    uniforms: {
-      c0: { value: srgb(colors[0]) }, c1: { value: srgb(colors[1]) },
-      c2: { value: srgb(colors[2]) }, c3: { value: srgb(colors[3]) },
-      uPitch: { value: Math.atan2(C.CAM_HEIGHT, C.CAM_LOOK_AHEAD) },
-      uTanHalf: { value: Math.tan((C.CAM_FOV * Math.PI) / 360) },
-    },
-    vertexShader: `
-      varying vec3 vDir;
-      void main() {
-        vDir = position;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 c0, c1, c2, c3;
-      uniform float uPitch, uTanHalf;
-      varying vec3 vDir;
-      void main() {
-        // 이 방향이 평소 화면에서 세로 어디(위 0 ~ 아래 1)에 오는가
-        float a = asin(clamp(normalize(vDir).y, -1.0, 1.0)) + uPitch;
-        float y = clamp(0.5 - 0.5 * tan(clamp(a, -1.35, 1.35)) / uTanHalf, 0.0, 1.0);
-        vec3 col = y < 0.48 ? mix(c0, c1, y / 0.48)
-                 : y < 0.78 ? mix(c1, c2, (y - 0.48) / 0.30)
-                 :            mix(c2, c3, (y - 0.78) / 0.22);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-  });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(300, 48, 24), mat);
-  dome.renderOrder = -1000;       // 맨 먼저 그린다 (깊이를 안 쓰므로 무엇도 가리지 않는다)
-  dome.frustumCulled = false;
-  return dome;
-}
-
 class MapScene {
   constructor(canvas) {
     const P = C.TIME_OF_DAY[TIME_KEY];
@@ -108,7 +55,7 @@ class MapScene {
     this.renderer.shadowMap.enabled = false;
 
     this.scene = new THREE.Scene();
-    this.sky = makeSkyDome(P.sky);
+    this.sky = makeSkyDome(P, TIME_KEY);   // 그라디언트·수평선 안개·해안선·구름·해 번짐(sky.js)
     this.scene.add(this.sky);
     // 안개 = 바다 타일의 끝을 가리는 유일한 장치. 타일 반경(70)보다 확실히 안쪽에서
     // 끝나야 경계가 드러나지 않는다.
@@ -150,6 +97,11 @@ class MapScene {
     wu.uOceanColor.value.setHex(P.ocean);
     wu.uSkyColor.value.setHex(P.skyRefl);
     wu.uSpecColor.value.setHex(P.spec);
+    // 윤슬 — 하늘의 해(달) 번짐과 같은 방향·색(config.js SKY_LOOK)
+    const SL = C.SKY_LOOK[TIME_KEY] || C.SKY_LOOK.day;
+    wu.uGlintDir.value.copy(skyDir(SL.sun.az, SL.sun.el));
+    wu.uGlintColor.value.set(SL.sun.color);
+    wu.uGlintAmt.value = SL.sun.glint;
     wu.uSpecStrength.value = P.specI;
     wu.uExposure.value = P.exposure * B;
     wu.uChop.value = 0.32 * (0.4 + 0.6 * WIND_T);
@@ -211,6 +163,9 @@ class MapScene {
     const gltf = await loadShipGltf();
     this.fleet = new ShipFleet(gltf.scene, C.FLEET_CAPACITY);
     this.scene.add(this.fleet.group);
+    // 먼 바다의 등대 섬 — fleet 이 Ship 쪽 노드를 가져간 뒤에 남은 섬 노드로 만든다(landmarks.js)
+    this.landmarks = buildLandmarks(gltf.scene, TIME_KEY);
+    this.scene.add(this.landmarks.group);
     runSelfChecks(this);
   }
 
@@ -597,6 +552,7 @@ class MapScene {
     this.water.material.uniforms.uTime.value = t;
     // 하늘 돔은 방향만 의미가 있다. 카메라가 숨쉬기로 오르내려도 하늘이 따라 흔들리지 않게 붙여 둔다.
     this.sky.position.copy(this.cam.pos);
+    this.sky.material.uniforms.uTime.value = t;   // 구름이 아주 천천히 흐른다
 
     if (this.fleet) {
       const d = 0.5;   // 파도 기울기를 재는 간격

@@ -71,6 +71,11 @@ export function buildWaterMaterial() {
         uSpecPower: { value: 400.0 },
         uSpecStrength: { value: 3.0 },
         uSpecColor: { value: new THREE.Color(0xaecbff) },
+        // 해(달) 쪽 반짝이는 길(윤슬) — 하늘 돔의 해 번짐과 같은 방향(sky.js · config.js SKY_LOOK).
+        // 면마다 법선이 달라(플랫 셰이딩) 길 위의 면들이 하나씩 반짝인다. 워치독이 uSpecOn 을 끄면 같이 꺼진다.
+        uGlintDir: { value: new THREE.Vector3(0, 0.2, 1).normalize() },
+        uGlintColor: { value: new THREE.Color(0xffffff) },
+        uGlintAmt: { value: 0.0 },
         // 물결 — xy는 월드 XZ 중심, z는 반지름, w는 세기(0이면 그 자리는 건너뛴다)
         uRippleOn: { value: 1.0 },
         uRipples: { value: Array.from({ length: RIPPLE_MAX }, () => new THREE.Vector4(0, 0, 0, 0)) },
@@ -123,6 +128,9 @@ export function buildWaterMaterial() {
       uniform float uSpecPower;
       uniform float uSpecStrength;
       uniform vec3 uSpecColor;
+      uniform vec3 uGlintDir;
+      uniform vec3 uGlintColor;
+      uniform float uGlintAmt;
       uniform float uFadeNear;
       uniform float uFadeFar;
       uniform float uTime;
@@ -206,6 +214,9 @@ export function buildWaterMaterial() {
         vec3 reflectDir = reflect(-normalize(uSpecSunDir), normal);
         float spec = pow(max(dot(reflectDir, viewDir), 0.0), uSpecPower);
         vec3 sparkle = uSpecColor * spec * uSpecStrength * uSpecOn;
+        // 윤슬 — 보는 방향을 면에 비춘 방향이 해 쪽이면 밝다. 좁은 항(반짝이는 면) + 넓은 항(옅은 빛길)
+        float glintC = max(dot(reflect(-viewDir, normal), normalize(uGlintDir)), 0.0);
+        sparkle += uGlintColor * (pow(glintC, 700.0) * 2.2 + pow(glintC, 36.0) * 0.16) * uGlintAmt * uSpecOn;
 
         vec3 color = sky + water + sparkle;
         if (uRippleOn > 0.5) {

@@ -758,3 +758,17 @@ three를 import하지 않는 값·순수 함수만 있다. 설문은 여기서 �
 **지도만 바꾼 것:** `statistics/js/sea-variety.js`(값은 `config.js` `SEA_VARIETY`) — 파도마다 진폭 배수
 (멀리서 줄이기 · 큰 칸에서 줄이기 · 물결 센 곳/잔잔한 곳)와 물빛 얼룩. 배 들썩임도 같은 배수(`ocean.js` `seaHeightAt`).
 draw call 그대로(8), 프레임 간격 차이는 측정 흔들림 안(540×960 소프트웨어 GL, 기준 485·507ms / 지금 507·473ms).
+
+---
+
+## 21. 지도 세션 알림 — 지도 풍경: 등대 섬·먼 해안·구름·해와 윤슬 (2026-10-03)
+
+> 사용자: "풍경이 왜 이렇게 안 예쁘지". 지도는 끝없는 평면 바다와 그라디언트 하늘뿐이었다.
+
+**설문 세션이 알아 둘 것:** 지도도 이제 GLB의 섬 노드를 쓴다 — `Island`(좌표계) · `Rock` · `Beachhouse` · `Lighthouse`
+(`shared/glb-nodes.js` 주석도 고침). 블렌더에서 이 이름을 바꾸거나 GLB를 다시 뽑으면 지도 먼 바다의 등대 섬도 같이 바뀐다
+(지도 selfcheck 8.5가 노드가 빠진 걸 잡는다). 설문의 뒷산(`Back_Mountain`)은 지금 GLB에 없어서, 지도는 등대 밑에 바위를 하나 더 깔았다.
+
+**지도만 바꾼 것:** `statistics/js/landmarks.js`(등대 섬 — 재질별로 구워 draw call 3) · `statistics/js/sky.js`(하늘 돔을 `main.js`에서
+옮기고 수평선 안개·먼 해안선·구름·해 번짐) · `ocean.js` 윤슬(`uGlint*`). 값은 `config.js` `LANDMARK` · `SKY_LOOK`(시간대별).
+비용(540×960 소프트웨어 GL, 80척): draw call 8 → 11, 삼각형 +4,917, 프레임 간격 기준 283·290ms → 323·327ms(측정 흔들림이 커서 나눠 재진 몫은 각 3~7%).
