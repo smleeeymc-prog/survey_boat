@@ -37,6 +37,9 @@
 | 공유 | `statistics/shared/` | **양쪽 다** — 고치면 두 화면이 같이 바뀐다 |
 | DB 연동 (Firebase) | 새 파일: `statistics/shared/db-config.js` · `record-schema.js` · `record-store.js`, `ui/record-sync.js`, `firebase/` 전체 · 연결에 필요한 줄만: `ui/survey.js`(제출·아카이브·스냅샷), `index.html`(스크립트 태그), `statistics/js/store.js`(FirestoreStore), `statistics/js/main.js`(저장소 선택), `statistics/index.html`(스크립트 태그), `statistics/tools/build-standalone.mjs`(새 shared 파일) · 문서: 이 문서 13장, `HANDOFF-map.md` 새 장, `statistics/README.md` 백엔드 항목 | "DB 연동" — **09-30 구현 끝**, 남은 건 사용자의 콘솔 작업(13.0). 디자인·연출·카메라·씬은 건드리지 않았다. 이후 DB 쪽 수정은 이 표의 파일 소유 세션이 13장을 보고 한다 |
 
+**예외 한 줄(10-06):** 인터랙티브 지도(`HANDOFF-map.md` 25장, 지도 세션이 만든다)가 완성되면 지도 세션이 `ui/survey.js`의
+`mapUrl()` 반환 주소만 바꿔도 된다 — 설문 아카이브의 "머무름의 지도 더 보러가기"가 가는 곳. 그 밖의 `ui/`는 설문 세션 담당 그대로.
+
 `statistics/shared/`는 두 화면이 같이 읽는 원본이다 (파도 · 팔레트 · 배 토큰 · 설문 분류값).
 여기 있는 값을 자기 파일에 다시 옮겨 적지 말 것 — 예전에 그렇게 갈라져서 한 번 합친 자리다.
 파도는 표 하나에서 셰이더 GLSL과 JS 파고 함수가 같이 생성된다.
@@ -766,7 +769,7 @@ localStorage `ibda-survey-draft-v1`에 맡긴다. 다시 열면 첫 화면 아�
   썸네일은 화면 200px 앞에서 받아서 보이는 곳에서 줄이 다시 감기는 일은 거의 없다.
 - 펼친 카드의 병은 남의 것이면 썸네일(긴 변 360px WebP — 13장)이라 고해상도 폰에선 약간 부드럽다. 크기 한도는 보안 규칙과 묶여 있어 그대로 뒀다.
 - 하단 띠(`.ar-bar`): 높이 178px, 검은 그라데이션. 지도 주소는 `survey.js mapUrl()` 한 곳 — `?mock=1`/`?emu=1`만 넘긴다.
-  인터랙티브 지도가 생기면 여기만 바꾼다. 펼친 카드가 띠에 가리면 `revealCard`가 그만큼 올린다(카드 머리는 안 넘어가게).
+  인터랙티브 지도가 생기면 여기만 바꾼다(지도 세션이 바꿔도 되는 한 줄 — 0장, `HANDOFF-map.md` 25장). 펼친 카드가 띠에 가리면 `revealCard`가 그만큼 올린다(카드 머리는 안 넘어가게).
 - 목업 배지는 아카이브에선 띠 안, 지도 버튼 바로 위.
 
 ---
