@@ -3281,8 +3281,12 @@ ${GERSTNER_GLSL}
     };
     // 섬 — 멀어져 흐려지는 동안 물결도 같이 옅어진다
     const islandFade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
-    wu.uHullCut.value = apply(this._sdfBoat, this.boat, this.boat.rotation.y, 1.0,
-          wu.uSdfBoatXf.value, wu.uSdfBoatGrid.value, wu.uSdfBoatMeta.value) ? 1 : 0;
+    const placed = apply(this._sdfBoat, this.boat, this.boat.rotation.y, 1.0,
+          wu.uSdfBoatXf.value, wu.uSdfBoatGrid.value, wu.uSdfBoatMeta.value);
+    // 배 안쪽 물 지우기는 선체가 물에 잠겨 있을 때만. [버그 10-06] 떨어지는 중이거나 출렁임에서 위로 떠오른 동안에도
+    // 켜 두었더니, 공중의 배 바로 아래 수면에 배 모양 구멍이 뚫려 그림자 같은 자국이 보였다. 쉬는 높이보다 0.05 넘게
+    // 떠 있으면 끈다 — 그만큼 떠 있으면 물이 갑판을 넘을 일도 없다.
+    wu.uHullCut.value = placed && (this._dropOffset ?? 0) < 0.05 && this.boat.scale.x > 0.99 ? 1 : 0;
     apply(this._sdfIsland, this.islandGroup, this.islandGroup.rotation.y, islandFade,
           wu.uSdfIslandXf.value, wu.uSdfIslandGrid.value, wu.uSdfIslandMeta.value);
 
