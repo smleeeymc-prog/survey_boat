@@ -331,9 +331,20 @@ const CLOUD_FADE_SPAN = INTRO_LIFT * 0.55;
 
 // ── 배가 떨어지는 연출 ──
 const BOAT_DROP_LEAD = 0.5;      // 카메라가 멈추기 몇 초 전에 배가 나타나는지
-const BOAT_DROP_SEC = 1.25;      // 뽁 → 낙하 → 잠겼다 뜨기까지
+// 뽁(0.16초) → 낙하(0.61초) → 출렁이며 자리 잡기(4.2초) = 약 5초.
+// 예전엔 착수 뒤 한 번만 잠겼다 떠서 끝났다(10-06 사용자: "한 번만 내려갔다 올라온다").
+// 지금은 위아래 폭이 조금씩 줄며 몇 번 울렁이다 제자리로 온다 — 감쇠 진동.
+const BOAT_POP_SEC = 0.16;
+const BOAT_FALL_SEC = 0.61;
+const BOAT_SETTLE_SEC = 4.2;
+const BOAT_DROP_SEC = BOAT_POP_SEC + BOAT_FALL_SEC + BOAT_SETTLE_SEC;
 const BOAT_DROP_HEIGHT = 1.7;
-const BOAT_DROP_DIP = 0.26;      // 착수하면서 수면 아래로 잠기는 깊이
+const BOAT_DROP_DIP = 0.30;      // 출렁임 시작 폭 — 첫 잠김은 약 0.24(감쇠 때문에 이보다 얕다)
+const BOAT_SETTLE_PERIOD = 1.2;  // 한 번 내려갔다 올라오는 데 걸리는 시간
+const BOAT_SETTLE_DECAY = 0.8;   // 클수록 빨리 잦아든다. 0.8이면 폭이 1.2초마다 약 40%로
+// 질문 화면은 출렁임이 끝날 때까지 기다리지 않는다 — 첫 잠김에서 수면 위로 돌아오는 순간
+// (예전 연출이 끝나던 때와 비슷)에 '자리 잡음'을 알리고, 나머지 울렁임은 질문 뒤에서 이어진다.
+const BOAT_SETTLED_AT = BOAT_POP_SEC + BOAT_FALL_SEC + BOAT_SETTLE_PERIOD * 0.5;
 
 const REENTER_ZOOM_FROM = 1.7;
 const REENTER_ZOOM_SEC = 1.8;
@@ -3269,26 +3280,31 @@ ${GERSTNER_GLSL}
 
   _updateBoatDrop(dt) {
     if (this._dropT >= 1) { this._dropOffset = 0; return; }
+    const prev = this._dropT * BOAT_DROP_SEC;
     this._dropT = Math.min(1, this._dropT + dt / BOAT_DROP_SEC);
-    if (this._dropT >= 1) { this._dropOffset = 0; this._fireIntroSettled(); return; }
-    const u = this._dropT;
-    if (u < 0.13) {
+    const sec = this._dropT * BOAT_DROP_SEC;
+    if (prev < BOAT_SETTLED_AT && sec >= BOAT_SETTLED_AT) this._fireIntroSettled();
+    if (this._dropT >= 1) { this._dropOffset = 0; this._fireIntroSettled(); return; }   // 이미 불렀으면 빈 호출
+    if (sec < BOAT_POP_SEC) {
       // 뽁 — 제자리에서 부풀어 나타난다
-      this.boat.scale.setScalar(Math.min(1, (u / 0.13) * 1.15));
+      this.boat.scale.setScalar(Math.min(1, (sec / BOAT_POP_SEC) * 1.15));
       this._dropOffset = BOAT_DROP_HEIGHT;
       return;
     }
     this.boat.scale.setScalar(1);
-    if (u < 0.62) {
+    if (sec < BOAT_POP_SEC + BOAT_FALL_SEC) {
       // 낙하 — 가속만 있고 감속이 없다(ease-in). 처음엔 느리게 떨어지다 빨라진다.
-      const p = (u - 0.13) / (0.62 - 0.13);
+      const p = (sec - BOAT_POP_SEC) / BOAT_FALL_SEC;
       this._dropOffset = BOAT_DROP_HEIGHT * (1 - p * p * p);
       return;
     }
-    // 착수 — 한 번 깊이 잠겼다가 천천히 올라와 파도 흔들림으로 이어진다.
-    // 위로 튀어오르지 않아야 가볍지 않다.
-    const p = (u - 0.62) / (1 - 0.62);
-    this._dropOffset = -BOAT_DROP_DIP * Math.sin(Math.PI * p) * (1 - p * 0.35);
+    // 착수 — 감쇠 진동. 떨어지던 힘으로 먼저 잠기고(sin이 0에서 아래로), 위아래 폭이 지수로 줄며 울렁인다.
+    // 마지막 15%는 폭을 0으로 부드럽게 접어, 끝나는 순간 파도 흔들림으로 끊김 없이 넘어간다.
+    const t = sec - BOAT_POP_SEC - BOAT_FALL_SEC;
+    const s = t / BOAT_SETTLE_SEC;
+    const tail = 1 - THREE.MathUtils.smoothstep(s, 0.85, 1);
+    this._dropOffset = -BOAT_DROP_DIP * Math.exp(-BOAT_SETTLE_DECAY * t)
+      * Math.sin((2 * Math.PI * t) / BOAT_SETTLE_PERIOD) * tail;
   }
 
   /**
@@ -3347,7 +3363,9 @@ ${GERSTNER_GLSL}
    * 첫 화면 글자가 떠 있었다. 다 오르면 배를 숨긴다 — 다시 내려갈 때 뽁 하고 나타나도록.
    */
   introRise(onDone) {
-    const up = () => { this.boat.visible = false; this._introPending = true; onDone && onDone(); };
+    // 출렁임(약 5초)이 끝나기 전에 '이전'으로 올라왔으면 여기서 끝낸다 — _dropT가 1이 아니면
+    // 다시 내려갈 때 _startBoatDrop이 걸리지 않아 배가 안 나타난다.
+    const up = () => { this.boat.visible = false; this._dropT = 1; this._dropOffset = 0; this._introPending = true; onDone && onDone(); };
     this._onIntroSettled = null;
     if (this._lift >= INTRO_LIFT - 0.01 && this._liftT >= 1) { up(); return; }
     this._liftTo(INTRO_LIFT, INTRO_RISE_SEC, easeInOutCubic, up);
