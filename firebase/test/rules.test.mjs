@@ -65,7 +65,7 @@ async function seedPublic(over = {}) {
 test("firestore.rules 가 survey-taxonomy.js · record-schema.js 에서 생성된 그대로다", async () => {
   assert.equal(RULES, await buildRules(), "node firebase/build-rules.mjs 로 다시 생성할 것");
   // 분류값이 전부 규칙에 들어 있는지 한 번 더 (생성기 자체가 값을 빠뜨리는 회귀)
-  for (const v of [...T.REGIONS, ...T.KEYWORDS, ...T.STATES.map((s) => s.id), ...T.SHARES.map((s) => s.id)]) {
+  for (const v of [...T.REGIONS, ...T.KEYWORDS, ...T.STATES.map((s) => s.id), ...T.SHARES.map((s) => s.id), ...T.BOAT_COLORS.map((c) => c.id)]) {
     assert.ok(RULES.includes(`"${v}"`), `규칙에 ${v} 가 없다`);
   }
 });
@@ -128,10 +128,28 @@ test("필드를 하나씩 틀리게 하면 전부 거절된다", async () => {
     "consent_public false": good({ consent_public: false }),
     "consent_archive false": good({ consent_archive: false }),
     "schema_version 2": good({ schema_version: 2 }),
+    "선체 색 목록 밖": good({ hull_color: "pink", deck_color: "auto" }),
+    "선체 색에 auto": good({ hull_color: "auto", deck_color: "auto" }),
+    "갑판 색 목록 밖": good({ hull_color: "red", deck_color: "gold" }),
+    "선체 색이 숫자": good({ hull_color: 3, deck_color: "auto" }),
   };
   for (const [label, rec] of Object.entries(cases)) {
     await assert.doesNotReject(assertFails(put(db, rec)), `통과하면 안 되는데 통과: ${label}`);
   }
+});
+
+test("배 색: 없어도(옛 기록) · 원톤(auto) · 투톤 · 모든 색 id 가 통과한다", async () => {
+  const db = user();
+  await assertSucceeds(put(db, good()));                                          // 색 없음
+  await assertSucceeds(put(db, good({ hull_color: "navy", deck_color: "auto" })));  // 원톤
+  await assertSucceeds(put(db, good({ hull_color: "base", deck_color: "yellow" }))); // 투톤
+  for (const c of T.BOAT_COLORS) await assertSucceeds(put(db, good({ hull_color: c.id, deck_color: c.id })));
+  // makeRecord 가 색을 실은 기록도 그대로 통과 (설문이 실제로 보내는 모양)
+  const id = S.newId();
+  const rec = { ...S.makeRecord({ id, region: "천안", state: "leaving", share: "few", text: "색을 고른 배", keywords: [], name: "익명",
+    hullColor: "green", deckColor: "auto" }), created_at: serverTimestamp() };
+  assert.deepEqual(S.checkNew(rec), []);
+  await assertSucceeds(put(db, rec));
 });
 
 test("record_id ≠ 문서 id, id 모양이 다르면 거절된다", async () => {

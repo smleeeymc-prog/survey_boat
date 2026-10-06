@@ -54,6 +54,7 @@ export async function buildRules() {
   const { COLLECTIONS: COL } = await import(pathToFileURL(path.join(SHARED, "db-config.js")).href);
   const T = S.THUMB;
   const newFields = S.FIELDS;
+  const allowedFields = S.FIELDS.concat(S.PAINT_FIELDS);
   const typeAlt = T.TYPES.join("|");
 
   return `rules_version = '2';
@@ -95,7 +96,7 @@ service cloud.firestore {
     }
 
     function validRecord(id, d) {
-      return d.keys().hasOnly(${list(newFields)})
+      return d.keys().hasOnly(${list(allowedFields)})
         && d.keys().hasAll(${list(newFields)})
         && d.record_id == id
         && id.matches('^[A-Za-z0-9]{${S.ID_LENGTH}}$')
@@ -112,7 +113,10 @@ service cloud.firestore {
         && d.consent_public == true
         && d.consent_archive == true
         && d.moderation_status == ${lit(S.CREATE_STATUS)}
-        && d.schema_version == ${S.SCHEMA_VERSION};
+        && d.schema_version == ${S.SCHEMA_VERSION}
+        // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 분류값 중 하나
+        && (!('hull_color' in d) || d.hull_color in ${list(S.COLOR_IDS)})
+        && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)});
     }
 
     match /${COL.records}/{id} {

@@ -2,7 +2,7 @@
    작성 중인 설문을 이 기기(localStorage)에 잠깐 맡겨 둔다 — 새로고침하거나 브라우저가 꺼진 뒤
    다시 열면 첫 화면에서 "이전 작성부분에서 이어가시겠어요?"를 묻는다 (survey.js renderOnboard).
 
-   · 질문 여섯 단계(지역 ~ 공개)에서만 저장한다. 첫 화면·결과·아카이브는 이어 쓸 게 없다.
+   · 질문 일곱 단계(지역 ~ 공개)에서만 저장한다. 첫 화면·결과·아카이브는 이어 쓸 게 없다.
    · 동의 체크는 맡겨 두지 않는다 — 동의는 제출하는 그 순간의 의사여야 해서, 이어 쓴 사람도 다시 누른다.
    · 6시간이 지나면 버린다. 전시장 공용 기기라면 앞사람의 문장이 다음 사람에게 뜨면 안 되고,
      실수로 껐다 다시 켜는 경우는 길어야 몇 분이다.
@@ -13,20 +13,22 @@
 const Draft = (() => {
   const KEY = "ibda-survey-draft-v1";
   const TTL_MS = 6 * 60 * 60 * 1000;
-  const STEPS = ["region", "state", "sentence", "share", "keywords", "consent"];
+  const STEPS = ["region", "state", "sentence", "share", "keywords", "color", "consent"];
   const DISCLOSE = ["익명", "별칭", "실명"];
   // 입력칸 제한과 같은 값 — 보안 규칙과 묶여 있다(문장 80 · 키워드 2 · 이름 12)
   const MAX_TEXT = 80, MAX_KW = 2, MAX_NAME = 12;
 
   const T = SURVEY_TAXONOMY;
   const oneOf = (v, list) => (list.includes(v) ? v : null);
+  const COLOR_IDS = (T.BOAT_COLORS || []).map(c => c.id);
 
   /** 설문 상태 → 저장할 값. 질문 단계가 아니면 null(저장 안 함). */
   function pick(s){
     if(!STEPS.includes(s.step)) return null;
     return {
       step: s.step, region: s.region, stateId: s.stateId, text: s.text, share: s.share,
-      keywords: [...s.keywords], disclose: s.disclose, name: s.name, at: Date.now(),
+      keywords: [...s.keywords], disclose: s.disclose, name: s.name,
+      tone: s.tone, hullColor: s.hullColor, deckColor: s.deckColor, at: Date.now(),
     };
   }
 
@@ -45,6 +47,10 @@ const Draft = (() => {
       keywords: [...new Set(kw)],
       disclose: oneOf(d.disclose, DISCLOSE) || "익명",
       name: typeof d.name === "string" ? d.name.slice(0, MAX_NAME) : "",
+      // 배 색 — 분류에 없는 색이면 기본으로(색은 앞 단계를 막지 않는다)
+      tone: d.tone === "two" ? "two" : "one",
+      hullColor: oneOf(d.hullColor, COLOR_IDS) || "base",
+      deckColor: oneOf(d.deckColor, COLOR_IDS) || "base",
       at: d.at,
     };
     // 앞 단계 값이 빠졌으면(분류가 바뀌어 걸러진 경우) 그 단계부터 다시 묻는다.

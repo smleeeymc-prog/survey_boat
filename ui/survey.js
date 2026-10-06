@@ -16,6 +16,7 @@ const STATES = SURVEY_TAXONOMY.STATES;
 const SHARES = SURVEY_TAXONOMY.SHARES;
 const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
 const SENTENCE_Q = SURVEY_TAXONOMY.SENTENCE_Q;
+const BOAT_COLORS = SURVEY_TAXONOMY.BOAT_COLORS;
 
 // 시연용 목업 시드 데이터 — DB 설정이 비었을 때만 아카이브에 쓰인다 (record-sync.js archiveView)
 let entries = [
@@ -33,6 +34,8 @@ let entries = [
 
 const FRESH_STATE = () => ({
   step: "onboard", region: null, stateId: null, text: "", share: null, keywords: [],
+  // 배 색 — tone "one"(원톤: 갑판이 선체를 따라 물든다) | "two"(투톤). paintPart 는 투톤에서 지금 칠하는 부분(화면용)
+  tone: "one", hullColor: "base", deckColor: "base", paintPart: "hull",
   disclose: "익명", name: "", consent: false,
 });
 // 첫 화면은 온보딩이다. 예전의 크림색 소개 화면(splash)은 B′ 첫 화면에 합쳤다.
@@ -54,6 +57,7 @@ function render(){
   else if(state.step==="sentence") el.appendChild(renderSentence());
   else if(state.step==="share") el.appendChild(renderShare());
   else if(state.step==="keywords") el.appendChild(renderKeywords());
+  else if(state.step==="color") el.appendChild(renderColor());
   else if(state.step==="consent") el.appendChild(renderConsent());
   else if(state.step==="result") el.appendChild(renderResult());
   else if(state.step==="archive") el.appendChild(renderArchive());
@@ -72,14 +76,15 @@ const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_NEXT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`;
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
 
-// 질문 단계 여섯 개 — 위 표시줄의 장 번호와 이름
+// 질문 단계 일곱 개 — 위 표시줄의 장 번호와 이름 (Ⅵ 색은 10-06 추가)
 const CHAPTERS = {
   region:   ["Ⅰ", "지역"],
   state:    ["Ⅱ", "상태"],
   sentence: ["Ⅲ", "문장"],
   share:    ["Ⅳ", "나눔"],
   keywords: ["Ⅴ", "키워드"],
-  consent:  ["Ⅵ", "공개"],
+  color:    ["Ⅵ", "색"],
+  consent:  ["Ⅶ", "공개"],
 };
 const QUESTION_ORDER = Object.keys(CHAPTERS);
 
@@ -176,7 +181,7 @@ function renderOnboard(){
     btn.type = "button";
     btn.innerHTML = `시작하기${ICON_NEXT}`;
     bottom.appendChild(btn);
-    bottom.appendChild(h("p", "ob-caption", "질문 6개 · 약 2분 · 익명으로 남길 수 있어요"));
+    bottom.appendChild(h("p", "ob-caption", `질문 ${QUESTION_ORDER.length}개 · 약 2분 · 익명으로 남길 수 있어요`));
     btn.onclick = () => {
       if(btn.disabled) return;
       btn.disabled = true;
@@ -278,6 +283,7 @@ function renderResumeAsk(bottom, leave){
         scene.applyRegion(state.region);
         scene.setMode(state.stateId || "stay");
         scene.applyKeywords(state.keywords);
+        scene.setPaint(state.hullColor, state.tone === "two" ? state.deckColor : "auto", true);
         const sh = SHARES.find(x => x.id === state.share);
         if(sh) scene.setTimeOfDay(sh.time);
       }
@@ -388,6 +394,79 @@ function renderKeywords(){
     title: "그 문장을 설명하는 키워드를 골라주세요",
     sub: "두 개까지 고를 수 있어요.",
     content: wrap, prev: "share",
+    onNext: () => { state.step = "color"; render(); },
+  }).el;
+}
+
+/* ── Ⅵ 색 — 배를 칠한다 (10-06 사용자) ──────────────────────────────────────
+   위에 원톤 · 투톤, 아래에 기본 + 팔레트 한 줄. 동그라미를 누르면 씬의 선체가 바로 바뀐다(render → show → setPaint).
+   원톤: 선체 색에 맞춰 갑판도 "사진에 색조·채도를 건 것처럼" 같이 물든다(statistics/shared/boat-look.js).
+   투톤: 가운데 줄의 '선체 · 갑판' 탭으로 칠할 부분을 고르고 같은 팔레트에서 따로 칠한다.
+   원톤일 때 그 줄엔 안내 문구를 둬서 두 방식의 판 높이가 같다. */
+function colorLabel(id){ return (BOAT_COLORS.find(c => c.id === id) || {}).label || id; }
+
+function renderColor(){
+  const box = h("div", "paint");
+  const two = state.tone === "two";
+  const part = two ? state.paintPart : "hull";
+
+  const modes = h("div", "paint-modes");
+  modes.setAttribute("role", "radiogroup");
+  modes.setAttribute("aria-label", "칠하는 방식");
+  [["one", "원톤"], ["two", "투톤"]].forEach(([id, label]) => {
+    const b = h("button", "paint-mode" + (state.tone === id ? " on" : ""), label);
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", state.tone === id ? "true" : "false");
+    b.onclick = () => {
+      if(state.tone === id) return;
+      state.tone = id;
+      state.paintPart = "hull";
+      render();
+    };
+    modes.appendChild(b);
+  });
+  box.appendChild(modes);
+
+  const mid = h("div", "paint-mid");
+  if(two){
+    [["hull", "선체"], ["deck", "갑판"]].forEach(([id, label]) => {
+      const t = h("button", "paint-part" + (part === id ? " on" : ""), label);
+      t.type = "button";
+      t.setAttribute("aria-pressed", part === id ? "true" : "false");
+      t.onclick = () => { state.paintPart = id; render(); };
+      mid.appendChild(t);
+    });
+  } else {
+    mid.appendChild(h("span", "paint-hint", "선체 색에 맞춰 갑판도 함께 물들어요"));
+  }
+  box.appendChild(mid);
+
+  const pads = h("div", "paint-pads");
+  const current = part === "deck" ? state.deckColor : state.hullColor;
+  BOAT_COLORS.forEach(c => {
+    const on = current === c.id;
+    const b = h("button", "paint-pad" + (on ? " on" : ""));
+    b.type = "button";
+    // 투톤 갑판 판의 '기본'은 지금 갑판 나무색이다
+    b.style.background = part === "deck" && c.id === "base" ? c.deckHex : c.hex;
+    b.setAttribute("aria-label", `${part === "deck" ? "갑판" : "선체"} ${c.label}`);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.onclick = () => {
+      if(part === "deck") state.deckColor = c.id; else state.hullColor = c.id;
+      render();
+    };
+    pads.appendChild(b);
+  });
+  box.appendChild(pads);
+  box.appendChild(h("p", "paint-name", two
+    ? `선체 ${colorLabel(state.hullColor)} · 갑판 ${colorLabel(state.deckColor)}`
+    : colorLabel(state.hullColor)));
+
+  return questionStep({
+    title: "배를 어떤 색으로 칠할까요?",
+    sub: "원톤은 갑판까지 한 번에, 투톤은 선체와 갑판을 따로.",
+    content: box, prev: "keywords",
     onNext: () => { state.step = "consent"; render(); },
   }).el;
 }
@@ -433,13 +512,15 @@ function renderConsent(){
   const step = questionStep({
     title: "공개 방식과 활용 동의",
     sub: "익명으로 남겨도 되고, 별칭을 적어도 괜찮아요.",
-    content: box, prev: "keywords", nextLabel: "제출하기",
+    content: box, prev: "color", nextLabel: "제출하기",
     onNext: () => {
       entries.forEach(e => { e._new = false; });   // "나의 기록" 표시는 방금 남긴 것 하나만
       const entry = {
         region: state.region, state: state.stateId, share: state.share, text: state.text,
         keywords: [...state.keywords],
         name: state.disclose === "익명" ? "익명" : state.name.trim(),
+        // 배 색 — 원톤이면 갑판은 "auto"(선체를 따라 물든다). 지도도 같은 식으로 그린다(boat-look.js paintMaterials)
+        hullColor: state.hullColor, deckColor: state.tone === "two" ? state.deckColor : "auto",
         // id를 여기서 미리 정한다 = DB 문서 id. 재전송해도 같은 문서라 중복이 생기지 않는다
         _new: true, id: RecordSync.newId(),
       };

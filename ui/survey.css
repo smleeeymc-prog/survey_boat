@@ -138,6 +138,25 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .kw-word.selected span{ border-bottom:1.5px solid var(--b-gold); padding-bottom:2px; }
 .kw-word:disabled{ opacity:.45; cursor:default; }
 
+/* ── Ⅵ 색 — 원톤·투톤 글자 탭, 가운데 줄(투톤: 선체·갑판 / 원톤: 안내), 동그라미 팔레트 한 줄 ── */
+.paint{ display:flex; flex-direction:column; }
+.paint-modes{ display:flex; gap:22px; }
+.paint-mode{ height:36px; padding:0 0 2px; border:0; border-bottom:1.5px solid transparent; background:transparent;
+  font-family:var(--serif) !important; font-size:18px; color:rgba(246,242,234,.6); }
+.paint-mode.on{ font-weight:700; color:var(--b-gold); border-bottom-color:var(--b-gold); }
+.paint-mid{ height:34px; display:flex; align-items:center; gap:8px; margin:6px 0 4px; }
+.paint-hint{ font-size:12.5px; color:var(--b-text3); }
+.paint-part{ height:28px; padding:0 13px; border-radius:14px; border:1px solid rgba(246,242,234,.4); background:transparent;
+  font-size:12.5px; font-weight:500; color:rgba(246,242,234,.82); }
+.paint-part.on{ background:var(--b-text); border-color:var(--b-text); color:var(--b-ink); font-weight:600; }
+/* 동그라미 9개를 한 줄에 — 좁은 폰(판 안쪽 308px)에서도 넘치지 않게 크기를 폭에 맞춘다 */
+.paint-pads{ display:flex; justify-content:space-between; gap:4px; padding:6px 2px; }
+.paint-pad{ position:relative; flex:0 0 auto; width:min(32px, calc((100% - 32px) / 9)); aspect-ratio:1; border-radius:50%;
+  border:1.5px solid rgba(246,242,234,.38); padding:0; transition:transform .15s ease; }
+.paint-pad::after{ content:""; position:absolute; inset:-7px; }      /* 누르는 자리는 더 넓게 */
+.paint-pad.on{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
+.paint-name{ font-size:12.5px; color:rgba(246,242,234,.82); margin-top:6px; min-height:18px; }
+
 /* ── 공개 방식과 동의 ── */
 .disc-tabs{ display:flex; gap:22px; }
 .disc-tab{ position:relative; height:36px; display:flex; align-items:center; cursor:pointer; }

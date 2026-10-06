@@ -75,12 +75,13 @@ var RecordSync = (function () {
   /* ── 어댑터: 설문 기록 ↔ DB 기록 ───────────────────────── */
   function toRecord(e) {
     return S.makeRecord({ id: e.id, region: e.region, state: e.state, share: e.share,
-      text: e.text, keywords: e.keywords, name: e.name });
+      text: e.text, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor });
   }
   function toEntry(r, extra) {
     return Object.assign({
       id: r.record_id, region: r.region, state: r.state, share: r.share, text: r.text,
       keywords: Array.isArray(r.keywords) ? r.keywords.slice() : [], name: r.display_name,
+      hullColor: r.hull_color, deckColor: r.deck_color,
     }, extra);
   }
 
@@ -139,6 +140,24 @@ var RecordSync = (function () {
     return flushing;
   }
 
+  /** 기록 한 건 보내기 → "ok" | "rejected". 네트워크 문제는 던진다(뒤의 것도 안 될 테니 이번 차례를 멈추게). */
+  async function sendRecord(m, id, record) {
+    const p = m.dbSubmitRecord(record);
+    // 시간 안에 답이 없어도 SDK의 쓰기는 살아 있다(온라인이 되면 끝난다). 그때 지우고 썸네일을 잇는다.
+    let late = false;
+    p.then(() => { if (late) { sent.add(id); editQueue(id, (x) => { x.record = null; }); flush(); } }, () => {});
+    try {
+      await timeout(p, SEND_WAIT_MS);
+    } catch (err) {
+      if (err && err.code === "timeout") late = true;
+      if (isRejected(err)) { console.warn("[record-sync] 거절:", err && err.code); return "rejected"; }
+      throw err;
+    }
+    sent.add(id);
+    editQueue(id, (x) => { x.record = null; });
+    return "ok";
+  }
+
   async function flushOnce() {
     if ((await ready()) === "mock") return;
     const m = await store();
@@ -146,23 +165,19 @@ var RecordSync = (function () {
       const item = readQueue().find((x) => x.id === id);   // 기다리는 사이 attachThumb 가 고쳤을 수 있다
       if (!item) continue;
       if (item.record) {
-        const p = m.dbSubmitRecord(item.record);
-        // 시간 안에 답이 없어도 SDK의 쓰기는 살아 있다(온라인이 되면 끝난다). 그때 지우고 썸네일을 잇는다.
-        let late = false;
-        p.then(() => { if (late) { sent.add(id); editQueue(id, (x) => { x.record = null; }); flush(); } }, () => {});
-        try {
-          await timeout(p, SEND_WAIT_MS);
-        } catch (err) {
-          if (err && err.code === "timeout") late = true;
-          if (isRejected(err)) {
-            console.error(`[record-sync] 기록 ${id} 이 거절됐다 — 대기열에 남겨 둔다. ` +
-              "분류값을 바꾸고 규칙을 다시 배포하지 않았는지 볼 것(HANDOFF.md 13장)", err);
-            continue;
-          }
-          throw err;   // 네트워크 — 뒤의 것도 안 될 테니 이번 차례는 여기서 멈춘다
+        let res = await sendRecord(m, id, item.record);
+        if (res === "rejected" && S.hasPaint(item.record)) {
+          // 배 색(10-06)을 모르는 옛 규칙 — 규칙을 다시 배포하기 전이다. 문장이 먼저라 색만 빼고 한 번 더 보낸다.
+          console.warn(`[record-sync] 기록 ${id} 이 배 색과 함께 거절됐다 — 색을 빼고 다시 보낸다(규칙 재배포 전, HANDOFF.md 13.3)`);
+          const bare = S.withoutPaint(item.record);
+          editQueue(id, (x) => { x.record = bare; });
+          res = await sendRecord(m, id, bare);
         }
-        sent.add(id);
-        editQueue(id, (x) => { x.record = null; });
+        if (res === "rejected") {
+          console.error(`[record-sync] 기록 ${id} 이 거절됐다 — 대기열에 남겨 둔다. ` +
+            "분류값을 바꾸고 규칙을 다시 배포하지 않았는지 볼 것(HANDOFF.md 13장)");
+          continue;
+        }
       }
       const thumb = (readQueue().find((x) => x.id === id) || {}).thumb;
       if (thumb) {

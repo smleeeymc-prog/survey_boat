@@ -28,6 +28,10 @@
  *   consent_public / consent_archive   true (설문의 동의 체크 하나가 둘 다 켠다)
  *   moderation_status  생성 시 "public". "hidden"은 운영자가 콘솔에서만
  *   schema_version     1
+ *   hull_color         (선택) 배 선체 색 id — survey-taxonomy.js BOAT_COLORS (10-06)
+ *   deck_color         (선택) 갑판 색 id, 또는 "auto" = 원톤(선체 색에 맞춰 갑판도 같이 물든다)
+ *                      선택 필드인 이유: 이 필드가 생기기 전의 기록·대기열이 그대로 통과해야 하고, 규칙을 배포하기 전에는
+ *                      설문이 색만 빼고 다시 보낸다(ui/record-sync.js). 없으면 화면은 "base"(지금 배 색)로 그린다.
  * ========================================================================== */
 
 var RECORD_SCHEMA = (function (T) {
@@ -47,6 +51,9 @@ var RECORD_SCHEMA = (function (T) {
     "record_id", "created_at", "region", "state", "share", "text", "keywords",
     "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version",
   ];
+  // 있어도 되고 없어도 되는 필드 — 배 색. 규칙은 FIELDS 는 전부, 이것들은 있을 때만 값을 본다.
+  const PAINT_FIELDS = ["hull_color", "deck_color"];
+  const DECK_AUTO = "auto";
   // Firestore 자동 id와 같은 모양(영숫자 20자). 규칙이 문서 id를 이 모양으로 묶는다.
   const ID_LENGTH = 20;
   const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -71,6 +78,8 @@ var RECORD_SCHEMA = (function (T) {
   const STATE_IDS = T.STATES.map((s) => s.id);
   const SHARE_IDS = T.SHARES.map((s) => s.id);
   const KEYWORDS = T.KEYWORDS;
+  const COLOR_IDS = (T.BOAT_COLORS || []).map((c) => c.id);
+  const DECK_COLOR_IDS = COLOR_IDS.concat(DECK_AUTO);
 
   const isStr = (v) => typeof v === "string";
   // JS trim 은 규칙의 trim(ASCII 공백만)보다 넓다. 여기서 먼저 깎아 보내면 규칙의
@@ -107,6 +116,8 @@ var RECORD_SCHEMA = (function (T) {
     if (r.consent_public !== true) problems.push("consent_public");
     if (r.consent_archive !== true) problems.push("consent_archive");
     if (r.schema_version !== SCHEMA_VERSION) problems.push("schema_version");
+    if ("hull_color" in r && !COLOR_IDS.includes(r.hull_color)) problems.push("hull_color");
+    if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color)) problems.push("deck_color");
     return problems;
   }
 
@@ -117,7 +128,7 @@ var RECORD_SCHEMA = (function (T) {
   function checkNew(r) {
     const problems = [];
     if (!r || typeof r !== "object") return ["record"];
-    const extra = Object.keys(r).filter((k) => !FIELDS.includes(k) && k !== "created_at");
+    const extra = Object.keys(r).filter((k) => !FIELDS.includes(k) && !PAINT_FIELDS.includes(k) && k !== "created_at");
     if (extra.length) problems.push("unknown:" + extra.join(","));
     if (!isStr(r.record_id) || !ID_RE.test(r.record_id)) problems.push("record_id");
     if (r.moderation_status !== CREATE_STATUS) problems.push("moderation_status");
@@ -141,11 +152,15 @@ var RECORD_SCHEMA = (function (T) {
    * 설문 답을 새 기록으로. 값 정리(trim·중복 제거·빈 이름 → 익명)는 여기 한 곳에서만 한다.
    * created_at 은 넣지 않는다 — 보내는 쪽(record-store)이 서버 시각을 붙인다.
    */
-  function makeRecord({ id, region, state, share, text, keywords, name }) {
+  function makeRecord({ id, region, state, share, text, keywords, name, hullColor, deckColor }) {
     const kws = [];
     for (const k of Array.isArray(keywords) ? keywords : []) if (!kws.includes(k)) kws.push(k);
     const nm = clean(name);
+    const paint = {};
+    // 색은 둘 다 있을 때만 싣는다 — 한쪽만 있는 기록은 화면이 어떻게 그릴지 애매하다
+    if (hullColor !== undefined && deckColor !== undefined) { paint.hull_color = hullColor; paint.deck_color = deckColor; }
     return {
+      ...paint,
       record_id: id,
       region, state, share,
       text: clean(text),
@@ -158,6 +173,14 @@ var RECORD_SCHEMA = (function (T) {
     };
   }
 
+  /** 배 색 필드가 실렸나 / 뺀 사본 — 색을 모르는 옛 규칙(배포 전)에 거절되면 색만 빼고 다시 보낸다(ui/record-sync.js) */
+  const hasPaint = (r) => !!r && PAINT_FIELDS.some((k) => k in r);
+  function withoutPaint(r) {
+    const out = Object.assign({}, r);
+    for (const k of PAINT_FIELDS) delete out[k];
+    return out;
+  }
+
   /** <img src>에 넣어도 되는 값이면 그대로, 아니면 null. 남이 올린 문자열을 화면에 넣기 전에 반드시 거친다. */
   function safeImage(url) {
     // 길이는 보지 않는다 — 내 기록의 스냅샷은 원본 PNG라 고해상도 폰에서 수백 KB가 된다.
@@ -167,8 +190,8 @@ var RECORD_SCHEMA = (function (T) {
 
   return {
     TEXT_MAX, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
-    FIELDS, ID_LENGTH, ID_RE, THUMB,
-    REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS,
-    newId, checkNew, checkRecord, makeRecord, safeImage,
+    FIELDS, PAINT_FIELDS, DECK_AUTO, ID_LENGTH, ID_RE, THUMB,
+    REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS,
+    newId, checkNew, checkRecord, makeRecord, safeImage, hasPaint, withoutPaint,
   };
 })(globalThis.SURVEY_TAXONOMY);

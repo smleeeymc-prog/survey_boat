@@ -37,7 +37,7 @@ service cloud.firestore {
     }
 
     function validRecord(id, d) {
-      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
+      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version", "hull_color", "deck_color"])
         && d.keys().hasAll(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
         && d.record_id == id
         && id.matches('^[A-Za-z0-9]{20}$')
@@ -54,7 +54,10 @@ service cloud.firestore {
         && d.consent_public == true
         && d.consent_archive == true
         && d.moderation_status == "public"
-        && d.schema_version == 1;
+        && d.schema_version == 1
+        // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 분류값 중 하나
+        && (!('hull_color' in d) || d.hull_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"])
+        && (!('deck_color' in d) || d.deck_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black", "auto"]);
     }
 
     match /records/{id} {

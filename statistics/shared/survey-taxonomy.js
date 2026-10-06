@@ -54,5 +54,23 @@ var SURVEY_TAXONOMY = (function () {
   ];
 
   const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
-  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q };
+
+  // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 작품 톤 8색, 빨주노초파남보흑 순.
+  // hex 는 고르는 판의 동그라미 색. 배는 이 색 쪽으로 기본 배에서 옮겨 간다 — 채도는 덜, 색조는 그대로
+  // (statistics/shared/boat-look.js seenTarget · PAINT_TABLE, 설문 HANDOFF 6.25). 그래서 배가 동그라미보다 조금 차분하다.
+  // base 는 지금 배 그대로 — 동그라미는 기본 배가 낮 조명에서 보이는 색(선체 #483431 · 갑판 #835e4f, 실측).
+  // deckHex 는 투톤 갑판 판에서 '기본' 동그라미 색.
+  // id 는 보안 규칙에 들어간다 — 색을 더하거나 id를 바꾸면 규칙 재생성·배포(13.3). hex 만 바꾸는 건 규칙과 무관하다.
+  const BOAT_COLORS = [
+    {id:"base",   label:"기본", hex:"#483431", deckHex:"#835e4f"},
+    {id:"red",    label:"빨강", hex:"#8e2f2a"},
+    {id:"orange", label:"주황", hex:"#91522a"},
+    {id:"yellow", label:"노랑", hex:"#8e7a2c"},
+    {id:"green",  label:"초록", hex:"#4c6a34"},
+    {id:"blue",   label:"파랑", hex:"#2e5e8c"},
+    {id:"navy",   label:"남색", hex:"#24335c"},
+    {id:"purple", label:"보라", hex:"#5b3869"},
+    {id:"black",  label:"검정", hex:"#232226"},
+  ];
+  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS };
 })();

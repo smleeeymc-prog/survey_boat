@@ -16,6 +16,7 @@
  *   2 지도를 열어 둔 채 제출 → onInsert         6 지도 콜드부팅 실패 → 캐시로 onReady → 붙으면 차이만
  *   3 운영자 숨김 → onRemove                    7 목업(?mock=1) — 두 화면·세 화면 크기, 배지, 콘솔 에러 0
  *   4 아카이브: 새 기록·썸네일, <img onerror>·<script> 문장은 글자 그대로
+ *   8 배 색 규칙 배포 전(옛 규칙) — 색을 뺀 기록으로 다시 보내 문장은 들어간다 (10-06)
  * ========================================================================== */
 
 import fs from "node:fs";
@@ -79,6 +80,18 @@ const env = await initializeTestEnvironment({
   firestore: { host: "127.0.0.1", port: 8080, rules: fs.readFileSync(path.join(HERE, "..", "firestore.rules"), "utf8") },
 });
 const admin = (fn) => env.withSecurityRulesDisabled((ctx) => fn(ctx.firestore()));
+/** 에뮬레이터 규칙 갈아끼우기 (8번: 배포 전 옛 규칙 흉내). 에뮬레이터 REST — 프록시를 타지 않게 http 로 직접 */
+function putRules(content) {
+  const body = JSON.stringify({ rules: { files: [{ name: "firestore.rules", content }] } });
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port: 8080, method: "PUT", path: "/emulator/v1/projects/demo-yeogi:securityRules",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (res) => {
+      let out = ""; res.on("data", (c) => (out += c));
+      res.on("end", () => (res.statusCode === 200 ? resolve() : reject(new Error(`규칙 교체 실패 ${res.statusCode} ${out.slice(0, 200)}`))));
+    });
+    req.on("error", reject); req.end(body);
+  });
+}
 async function adminDocs(col, ...wheres) {
   let out = [];
   await admin(async (db) => {
@@ -130,7 +143,7 @@ const errorsIn = (logs, allow = []) => logs.filter((l) =>
   ["error", "assert", "pageerror"].includes(l.type) && !allow.some((re) => re.test(l.text)));
 
 /** 설문을 실제로 눌러서 끝까지 — 결과 화면이 뜨면 돌아온다 */
-async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true }) {
+async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null }) {
   if (goto) await page.goto(url);
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
@@ -142,7 +155,17 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".qnext").click();                        // Ⅳ 나눔
   for (const i of keywordIdx) await page.locator(".kw-word").nth(i).click();   // Ⅴ 키워드
   await page.locator(".qnext").click();
-  if (name) {                                                  // Ⅵ 공개
+  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번)
+  if (color) {
+    if (color.deck !== undefined) await page.locator(".paint-mode", { hasText: "투톤" }).click();
+    await page.locator(".paint-pad").nth(color.hull).click();
+    if (color.deck !== undefined) {
+      await page.locator(".paint-part", { hasText: "갑판" }).click();
+      await page.locator(".paint-pad").nth(color.deck).click();
+    }
+  }
+  await page.locator(".qnext").click();
+  if (name) {                                                  // Ⅶ 공개
     await page.locator(".disc-tab", { hasText: "별칭" }).click();
     await page.locator(".name-input").fill(name);
   }
@@ -180,7 +203,7 @@ try {
   const survey = await ctxB.newPage();
   const surveyLogs = watch(survey);
   const myText = "지도가 이 문장을 받아야 한다 — 😀 이모지도";
-  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다" });
+  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 } });   // 원톤 남색
   check("설문: 결과 화면이 뜬다", await survey.locator(".res-sentence").isVisible());
   check("설문: DB로 돌 땐 목업 배지가 없다", await survey.evaluate(() => document.getElementById("proto-badge").hidden));
 
@@ -188,6 +211,8 @@ try {
   check("records 문서가 생긴다 (스키마 필드 전부·서버 시각)",
     mine && S.FIELDS.every((k) => k in mine) && mine.created_at instanceof Timestamp && mine.display_name === "바다" &&
     mine.share === "many" && mine.keywords.join() === "일,가족", JSON.stringify({ ...mine, created_at: String(mine.created_at) }));
+  check("배 색이 기록에 실린다 (원톤 남색 → hull_color navy · deck_color auto)", mine.hull_color === "navy" && mine.deck_color === "auto",
+    `${mine.hull_color} / ${mine.deck_color}`);
   const myThumb = await waitFor(async () => (await adminDocs("thumbs")).find((t) => t.id === mine.id), { label: "thumbs 문서", timeout: 40000 });
   check("thumbs 문서가 생긴다 (WebP, 상한 이하)", myThumb && /^data:image\/(webp|jpeg);base64,/.test(myThumb.data) && myThumb.data.length <= S.THUMB.MAX_CHARS,
     myThumb ? `${myThumb.data.slice(0, 22)}… ${myThumb.data.length}자` : "");
@@ -329,6 +354,30 @@ try {
   check("오프라인: SDK 차단 말고는 콘솔 에러 0", offErr.length === 0, offErr.map((l) => l.text).join(" | ").slice(0, 400));
   await ctxC.close();
   await ctxB.close();
+
+  // ═══ 8 — 배 색 규칙 배포 전 ═════════════════════════════════════════════════
+  // 새 설문이 먼저 나가고 사용자가 콘솔에서 규칙을 아직 안 바꾼 동안: 옛 규칙은 hull_color·deck_color 를 모르는 키로 거절한다.
+  // 설문(record-sync)은 색만 빼고 한 번 더 보내야 한다 — 문장은 들어가고 대기열은 비어야 한다.
+  console.log("\n[8] 배 색 규칙 배포 전(옛 규칙)");
+  const newRules = fs.readFileSync(path.join(HERE, "..", "firestore.rules"), "utf8");
+  const oldRules = newRules
+    .replace(/d\.keys\(\)\.hasOnly\(\[[^\]]*\]\)/, `d.keys().hasOnly([${S.FIELDS.map((f) => `"${f}"`).join(", ")}])`)
+    .replace(/\n\s*\/\/ 배 색[^\n]*\n[^\n]*hull_color[^\n]*\n[^\n]*deck_color[^\n]*;/, ";")
+    .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;");
+  check("옛 규칙 만들기 (색 필드 빠짐)", !oldRules.includes("hull_color") && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
+  await putRules(oldRules);
+  const ctxR = await newContext();
+  const rp = await ctxR.newPage();
+  const rLogs = watch(rp);
+  const oldText = "옛 규칙에서도 문장은 들어가야 한다";
+  await runSurvey(rp, { text: oldText, color: { hull: 1, deck: 3 } });   // 투톤 빨강·노랑
+  const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: "옛 규칙 records 문서", timeout: 40000 });
+  check("옛 규칙: 색을 뺀 기록으로 들어간다", oldDoc && !("hull_color" in oldDoc) && !("deck_color" in oldDoc),
+    oldDoc ? Object.keys(oldDoc).join(",") : "");
+  await waitFor(async () => (await queueOf(rp)).every((x) => !x.record), { label: "옛 규칙: 대기열의 기록이 빈다", timeout: 20000 });
+  check("옛 규칙: 대기열의 기록이 빈다", true);
+  await putRules(newRules);
+  await ctxR.close();
 
   // ═══ 7 — 목업 ═════════════════════════════════════════════════════════════
   // 원래 "설정이 빈 상태"를 봤는데, 09-30 실제 웹 설정값(ibda-2026-exhibition)이 들어간 뒤로는 주소만 열면 실DB로 간다.
