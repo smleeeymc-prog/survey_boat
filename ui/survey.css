@@ -186,6 +186,14 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
   font-size:16px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:26px; }
 .cta:disabled{ opacity:.5; }
 .ob-caption{ font-size:12.5px; color:rgba(246,242,234,.64); margin-top:14px; }
+/* 이어 쓰기 물음 (ui/draft.js) — 소개 문장 자리에 대신 놓인다. 쓰던 문장은 두 줄까지만 */
+.ob-resume-q{ font-family:var(--serif); font-size:21px; line-height:1.5; font-weight:700; color:var(--b-text); word-break:keep-all; }
+.ob-resume-meta{ font-size:12.5px; letter-spacing:.04em; color:rgba(246,242,234,.7); margin-top:8px; }
+.ob-resume-text{ font-family:var(--serif); font-size:15px; line-height:1.55; color:rgba(246,242,234,.9); margin-top:12px;
+  word-break:keep-all; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.ob-resume-text + .cta, .ob-resume-meta + .cta{ margin-top:22px; }
+.ob-fresh{ height:44px; margin-top:6px; padding:0 10px; border:0; background:transparent;
+  font-size:13px; color:rgba(246,242,234,.72); text-decoration:underline; text-underline-offset:3px; }
 
 /* ── 첫 화면 2장 — 질문 한 줄만 하늘 가운데에. 하늘이 밝아 짙은 남색 명조 ── */
 .pr-q{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); top:50%; margin-top:-60px;
@@ -219,8 +227,10 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 #toast.show{ opacity:1; transform:translate(-50%, 0); }
 
 /* ── 다른 사람들의 기록 (머무름의 지도 보러가기) — 결과 화면과 같은 톤: 크림 바탕, 명조, 갈색·금색 ──
-   씬이 숨은 화면이라 배경은 #bgFallback(크림). 한 줄에 두 개씩 정사각형 카드, 누르면 펼친다. */
-.archive-screen{ width:100%; padding:calc(18px + var(--safe-t)) 0 calc(40px + var(--safe-b)); color:var(--b-paper-ink); }
+   씬이 숨은 화면이라 배경은 #bgFallback(크림). 카드는 한 줄 전체 폭에 높이 고정, 누르면 펼친다(10-06 사용자).
+   아래 여백은 화면에 붙은 버튼 띠(.ar-bar) 높이만큼 — 마지막 카드가 버튼 뒤에 숨지 않게. */
+.archive-screen{ width:100%; padding:calc(18px + var(--safe-t)) 0 calc(var(--ar-bar-h) + 16px + var(--safe-b)); color:var(--b-paper-ink);
+  --ar-bar-h:178px; }
 .ar-head{ text-align:center; margin-bottom:20px; }
 .ar-eyebrow{ font-size:11.5px; font-weight:600; letter-spacing:.22em; color:#7A5B32; }
 .ar-title{ font-family:var(--serif); font-size:28px; font-weight:700; margin:8px 0 6px; }
@@ -235,28 +245,53 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
   padding:6px 18px 6px 4px; appearance:none; -webkit-appearance:none; cursor:pointer;
   background-image:linear-gradient(45deg, transparent 50%, #7A5B32 50%), linear-gradient(135deg, #7A5B32 50%, transparent 50%);
   background-position:calc(100% - 8px) 55%, calc(100% - 3px) 55%; background-size:5px 5px; background-repeat:no-repeat; }
-.ar-grid{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; grid-auto-flow:dense; }
-.ar-card{ position:relative; aspect-ratio:1 / 1; min-width:0; overflow:hidden; text-align:left;
+.ar-grid{ display:flex; flex-direction:column; gap:10px; }
+
+/* 닫힌 카드 — 높이 130px(예전 펼친 한 줄 카드 약 100px의 1.3배).
+   병은 오른쪽에 카드 높이에서 위아래 6px만 남기고 크게. 병 그림은 가로:세로 약 1.64라 118px 높이면 폭 194px —
+   좁은 폰에서 문장 칸이 너무 좁아지지 않게 카드 폭의 절반을 넘지 않는다. 메타·문장·키워드는 병 왼쪽 칸에만. */
+.ar-card{ --snap-w:min(50%, 194px);
+  position:relative; height:130px; min-width:0; overflow:hidden; text-align:left;
   display:flex; flex-direction:column; gap:8px; padding:14px 14px 12px; border-radius:14px;
   background:#FFFDF9; border:1px solid #E4DCCD; color:var(--b-paper-ink); font-family:var(--ui);
   animation:cardIn .5s ease backwards; cursor:pointer; }
-.ar-card.open{ grid-column:span 2; aspect-ratio:auto; }
+.ar-card.has-snap{ padding-right:calc(var(--snap-w) + 16px); }
 .ar-card.mine{ border:1.5px solid #B8955E; box-shadow:0 0 0 3px rgba(184,149,94,.14); }
 @keyframes cardIn{ from{opacity:0; transform:translateY(10px) scale(.97);} to{opacity:1; transform:none;} }
-.ar-meta{ font-size:11px; color:#7A5B32; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ar-card.has-snap .ar-meta{ padding-right:44px; }   /* 오른쪽 위 병 그림 자리 */
+.ar-meta{ order:0; flex:0 0 auto; font-size:11px; color:#7A5B32; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ar-meta b{ font-weight:700; }
-.ar-snap{ position:absolute; right:10px; top:8px; width:40px; height:auto; }
-.ar-text{ flex:1 1 auto; min-height:0; font-family:var(--serif); font-size:15px; line-height:1.5; font-weight:700; word-break:keep-all;
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:5; overflow:hidden; }
-.ar-card.open .ar-text{ -webkit-line-clamp:unset; display:block; font-size:17px; }
-.ar-card.open .ar-snap{ width:88px; }
-.ar-foot{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-size:11px; }
+/* putSnap(ui/record-sync.js)이 늦게 카드 끝에 붙여도 자리가 같도록 순서는 order로 정한다 */
+.ar-snap{ order:1; position:absolute; right:8px; top:6px; width:var(--snap-w); height:calc(100% - 12px);
+  object-fit:contain; object-position:right center; }
+/* 정사각 카드 때의 글자 크기(15px) 그대로 두 줄까지, 넘치면 '…' */
+.ar-text{ order:2; flex:0 0 auto; font-family:var(--serif); font-size:15px; line-height:1.5; font-weight:700;
+  word-break:keep-all; overflow-wrap:anywhere;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.ar-foot{ order:3; margin-top:auto; display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-size:11px; }
 .ar-kw{ color:#8A6A3E; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ar-by{ color:#8A847A; white-space:nowrap; flex:0 0 auto; }
 .ar-by.named{ color:#3E3A34; font-weight:600; }
-.ar-empty{ grid-column:span 2; text-align:center; color:#5E5A53; font-size:13px; padding:40px 0; }
-.ar-again{ max-width:320px; margin:26px auto 0; background:#16181D; color:var(--b-text); }
+
+/* 펼친 카드 — 메타 줄 아래에 병을 폭 가득, 그 아래 문장 전체(17px). 높이는 내용만큼 */
+.ar-card.open{ height:auto; padding-right:14px; }
+.ar-card.open .ar-snap{ position:static; width:100%; height:auto; margin:2px 0 4px; object-position:center; animation:snapIn .35s ease; }
+.ar-card.open .ar-text{ -webkit-line-clamp:unset; display:block; font-size:17px; }
+.ar-card.open .ar-foot{ margin-top:4px; }
+@keyframes snapIn{ from{opacity:0; transform:scale(.96);} to{opacity:1; transform:none;} }
+.ar-empty{ text-align:center; color:#5E5A53; font-size:13px; padding:40px 0; }
+
+/* 화면 아래에 붙은 버튼 띠 — 위로 갈수록 투명해지는 검은 음영 위에 지도 · 다시 쓰기 */
+.ar-bar{ position:fixed; left:0; right:0; bottom:0; z-index:5; pointer-events:none;
+  min-height:calc(var(--ar-bar-h) + var(--safe-b)); padding:0 calc(var(--side) + 20px) calc(12px + var(--safe-b));
+  display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:4px;
+  background:linear-gradient(180deg, rgba(7,9,14,0) 0%, rgba(7,9,14,.55) 38%, rgba(7,9,14,.86) 72%, rgba(7,9,14,.92) 100%); }
+.ar-bar > *{ pointer-events:auto; }
+.ar-map{ max-width:360px; margin-top:0; text-decoration:none; }
+.ar-again{ height:44px; padding:0 12px; border:0; background:transparent; color:rgba(246,242,234,.82);
+  font-size:13px; font-weight:500; display:flex; align-items:center; gap:6px; }
+.ar-again svg{ width:15px; height:15px; }
+/* 목업 배지는 버튼과 겹치지 않게 아카이브에선 음영 안, 지도 버튼 바로 위로 */
+body[data-step="archive"] #proto-badge{ bottom:calc(124px + var(--safe-b)); }
 
 /* 짧은 화면(높이 760px 이하, 예: 360×740) — 질문 판이 화면의 거의 절반이라 배 밑동과 3줄짜리 질문이
    닿는다. 판과 제목을 조금 줄인다. 질문 제목이 모든 단계에서 같은 자리인 건 그대로다. */

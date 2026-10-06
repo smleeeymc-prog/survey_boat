@@ -116,6 +116,8 @@
 <script src="./ui/share-card.js"></script>
 <!-- DB 연결(제출·대기열·썸네일·아카이브 목록). survey.js 가 부르므로 그보다 먼저 -->
 <script src="./ui/record-sync.js"></script>
+<!-- 작성 중 저장·이어 쓰기. survey.js 가 시작할 때 읽으므로 그보다 먼저 -->
+<script src="./ui/draft.js"></script>
 <script src="./ui/survey.js"></script>
 
 <!-- ===========================================================
@@ -250,6 +252,16 @@ function bottleRadiusAtU(u) {
   return 0;
 }
 // 병이 나타나는 구간과 바다가 빠지는 구간. 겹치되 병이 먼저 자리를 잡는다.
+// 병 스냅샷(아카이브 카드·공유 카드)을 찍는 "정해 둔 순간" — 같은 답이면 같은 그림이 나오게(10-06 사용자).
+// 예전엔 결과 화면이 뜬 그 순간을 찍어서 파도 비침·등대 불빛 방향·연기 모양이 병마다 제각각이었다.
+// 찍는 동안만 아래 값으로 놓고 찍은 뒤 그대로 되돌린다(capture → _withSnapPose).
+const SNAP_POSE = {
+  t: 12.0,          // 파도·물결·표면 효과의 시각(초)
+  waveX: 0,         // 배가 파도 공간의 이 x에 있는 것처럼 — 배가 어디까지 나아갔든 같은 물결이 비친다
+  lhAngle: 2.3,     // 등대 빛줄기 각도(라디안)
+  smokeSec: 3.2,    // 연기를 처음부터 이만큼 다시 피워 본다(정해 둔 난수로)
+  seed: 20261006,   // 연기 난수 씨앗
+};
 const BOTTLE_IN_UNTIL = 0.60;   // bottleT가 여기 닿으면 병은 이미 다 보인다
 const BOTTLE_SEA_FROM = 0.30;   // 바다는 여기부터 빠지기 시작한다
 // 바다는 병 주변부터 먼저 걷힌다. 균일하게 빠지면 병의 아래쪽 윤곽이 수평선의 바다와
@@ -1079,6 +1091,7 @@ class BottleScene {
           uChop: { value: 0.13 },
           uAmpScale: { value: 0.5 },
           uFlowPhase: { value: 0 },
+          uWaveShift: { value: 0 },   // 파도·흩뜨림·물결 자국을 계산할 때만 더하는 x — 평소 0, 병 스냅샷 때만 쓴다(SNAP_POSE)
           uSpecOn: { value: 1.0 },
         // 반짝임 조절 손잡이. 지수가 낮을수록 넓게 퍼지고, 세기는 밝기다.
         // 물리값이 아니라 눈으로 맞추는 값이라 상수로 박지 않고 밖으로 빼둔다.
@@ -1134,6 +1147,7 @@ class BottleScene {
         // (예전엔 (speed + uFlowBoost) * t 였는데, 그러면 uFlowBoost가 조금만 바뀌어도
         //  위상이 t배로 증폭돼 밀리면서 파도가 순간적으로 미친듯이 흘렀다)
         uniform float uFlowPhase;
+        uniform float uWaveShift;
         varying vec3 vWorldPos;
 
 ${GERSTNER_GLSL}
@@ -1149,7 +1163,7 @@ ${GERSTNER_GLSL}
           // 흩뜨림은 월드 칸 번호에서 만든다 — 타일이 한 칸 옮겨 가도 같은 월드 자리의 꼭짓점은
           // 같은 모양이라, 로우폴리 면이 월드에 붙은 채 배 뒤로 흘러간다.
           // 칸 번호: 격자 꼭짓점은 칸의 정확히 반 칸 어긋난 자리(…, k+0.5, …)에 있어서 floor가 흔들리지 않는다.
-          vec2 cellIdx = floor(vec2(position.x + uBoatX, position.z) / ${WATER_CELL.toFixed(7)});
+          vec2 cellIdx = floor(vec2(position.x + uBoatX + uWaveShift, position.z) / ${WATER_CELL.toFixed(7)});
           // 파도 랩(1144)과 같은 주기로 접는다 — 랩 순간에 흩뜨림 무늬가 바뀌지 않게.
           cellIdx.x = mod(cellIdx.x, ${WATER_WRAP_CELLS.toFixed(1)});
           vec3 h3 = fract(vec3(cellIdx.xyx) * vec3(0.1031, 0.1030, 0.0973));
@@ -1157,7 +1171,7 @@ ${GERSTNER_GLSL}
           vec2 jitter = (fract((h3.xx + h3.yz) * h3.zy) - 0.5) * ${(WATER_CELL * 0.6).toFixed(5)};
           vec3 localPos = position + vec3(jitter.x, 0.0, jitter.y);
 
-          vec2 worldXZ = vec2(localPos.x + uBoatX, localPos.z);
+          vec2 worldXZ = vec2(localPos.x + uBoatX + uWaveShift, localPos.z);
           vec3 wave = gerstnerSum(worldXZ, uTime);
 
           vec4 worldPos = modelMatrix * vec4(localPos + wave, 1.0);
@@ -1192,6 +1206,7 @@ ${GERSTNER_GLSL}
         uniform float uProfR[7];
         uniform float uTime;          // 정점 셰이더에만 있던 것 — 물결 울렁임에 필요하다
         uniform float uRippleOn;
+        uniform float uWaveShift;
         uniform vec3 uRippleColor;
         uniform sampler2D uSdfBoat;
         uniform vec4 uSdfBoatXf;
@@ -1389,7 +1404,7 @@ ${GERSTNER_GLSL}
             vec2 pXZ = vWorldPos.xz;
             float foam = contactFoam(pXZ, uSdfBoat, uSdfBoatXf, uSdfBoatGrid, uSdfBoatMeta, vWorldPos.y)
                        + contactFoam(pXZ, uSdfIsland, uSdfIslandXf, uSdfIslandGrid, uSdfIslandMeta, vWorldPos.y)
-                       + driftAt(pXZ, vWorldPos.y) * ${(DRIFT_LEVEL * DRIFT_ON).toFixed(3)};
+                       + driftAt(pXZ + vec2(uWaveShift, 0.0), vWorldPos.y) * ${(DRIFT_LEVEL * DRIFT_ON).toFixed(3)};
             color += uRippleColor * min(1.0, foam) * 0.55;
           }
           // 거리 페이드: 안개가 다 낀 지점에서 바다를 완전히 지워 경계가 드러나지 않게 한다.
@@ -1671,7 +1686,10 @@ ${GERSTNER_GLSL}
     let pending = null;
     try { pending = r.compileAsync ? r.compileAsync(this.scene, this.camera) : (r.compile(this.scene, this.camera), null); }
     finally { restore(); }   // 컴파일할 재질은 위에서 이미 모았다 — 기다리는 동안 화면엔 원래대로
-    Promise.resolve(pending).then(drawOnePixel, (e) => { console.warn("[prewarm] 컴파일 실패 — 처음 보일 때 컴파일된다", e); });
+    // 1픽셀 그리기는 다음 애니메이션 프레임 안, 본 렌더 바로 앞에서 한다(_animate). 프레임 밖(프로미스 콜백)에서
+    // 그리면 브라우저가 그 1픽셀짜리 버퍼를 그대로 내보내 캔버스 전체가 한 프레임 비어 보일 수 있다.
+    Promise.resolve(pending).then(() => { this._pixelWarm = drawOnePixel; },
+      (e) => { console.warn("[prewarm] 컴파일 실패 — 처음 보일 때 컴파일된다", e); });
   }
 
   /**
@@ -3241,6 +3259,12 @@ ${GERSTNER_GLSL}
   _startBoatDrop() {
     this._dropT = 0;
     this.boat.visible = true;
+    // [버그 10-06] 이 함수는 _animate 안에서 배 높이를 이미 계산한 **뒤에** 불린다. 그래서 첫 프레임만
+    // 배가 바다 높이(dropOffset 0)에 그려졌다 — 하늘에서 내려오기 직전 바다에 배가 반짝 보였다가 사라진 원인
+    // (헤드리스 실측: 첫 프레임 y 0.01·크기 0.35 → 다음 프레임 y 1.71). 높이·크기를 지금 바로 맞춘다.
+    this._dropOffset = BOAT_DROP_HEIGHT;
+    this.boat.position.y += BOAT_DROP_HEIGHT;
+    this.boat.scale.setScalar(0.001);
   }
 
   _updateBoatDrop(dt) {
@@ -3721,6 +3745,111 @@ ${GERSTNER_GLSL}
    * 그대로 남았다. 둘러보던 각도를 잠깐 0으로 되돌린 기본 구도로 찍고 원래대로 돌려놓는다.
    * 배경(하늘)·그림자·바다를 잠시 끄면 알파가 뚫려 병과 그 안만 남은 그림이 나온다.
    */
+  /**
+   * fn을 "정해 둔 순간"(SNAP_POSE)에서 실행하고, 건드린 상태를 전부 되돌린다.
+   * 찍히는 그림을 바꾸는 것: 파도(시각·흐름 위상·배가 파도 공간의 어디 있는지·바람 세기), 배의 출렁임 자세,
+   * 연기 덩어리, 등대 빛줄기 각도, 램프 흔들림, 물결 일렁임, 병이 다 떠올랐는지, 카메라가 배를 따라온 정도.
+   * 답(지역 모래색·상태·시간대·키워드)에 따라 달라지는 건 그대로 둔다 — 그게 이 병의 모양이다.
+   * 연기는 지금 떠 있는 것을 치우고, 정해 둔 난수로 smokeSec초 동안 처음부터 다시 피운다
+   * ('오가는 중'은 배가 그동안 나아간 것처럼 연기가 뒤로 끌린다). 찍고 나면 원래 연기로 되돌린다.
+   */
+  _withSnapPose(fn) {
+    const P = SNAP_POSE, wu = this.waterMesh.material.uniforms, b = this.boat;
+    const keep = {
+      uTime: wu.uTime.value, flow: wu.uFlowPhase.value, chop: wu.uChop.value, amp: wu.uAmpScale.value,
+      boatU: wu.uBoatX.value, shift: wu.uWaveShift.value, clipT: wu.uClipT.value,
+      waterX: this.waterMesh.position.x, windT: this.windT, fxTime: this.fx.uFxTime.value,
+      lh: this._lhAngle, camX: this._camFollowX, bottleT: this.bottleT, camBlend: this._bottleCamBlend,
+      bx: b.position.x, by: b.position.y, brz: b.rotation.z, bry: b.rotation.y,
+      bottleX: this.bottleGroup.position.x, clipCx: wu.uClipCenter.value.x,
+      bottleOp: [this.bottleMat.opacity, this.bottleRimMat.opacity, this.bottleCorkMat.opacity, this.bottleWaterMat.opacity],
+      smoke: this.smokePool.map((p) => ({ active: p.active, age: p.age, vis: p.mesh.visible, pos: p.mesh.position.clone(),
+        rot: p.mesh.rotation.clone(), sc: p.mesh.scale.x, op: p.mat.opacity, col: p.mat.color.getHex(),
+        spin: p.spin, drift: p.drift, wobble: p.wobble })),
+      spawnTimer: this.smokeSpawnTimer, random: Math.random,
+    };
+    try {
+      // 병은 다 떠오른 상태로 (결과 화면에서 찍는다)
+      if (this.bottleTarget === 1) {
+        this.bottleT = 1; this._bottleCamBlend = 1;
+        this.bottleMat.opacity = 0.28; this.bottleRimMat.opacity = 0.62;
+        this.bottleCorkMat.opacity = 0.9; this.bottleWaterMat.opacity = 0.9;
+        wu.uClipT.value = 1;
+      }
+      // 선착장에 댄 배는 선착장 기준으로 정해 둔 자리에 — 머무르는 중은 제자리에서 좌우로 조금 흔들려서
+      // (_animate: dockX + sin(t·0.4)·0.03) 그것만으로도 섬과의 사이가 병마다 달라졌다
+      const dockTarget = this.mode === "stay" ? this.dockX + Math.sin(P.t * 0.4) * 0.03
+        : (this.mode === "leaving" || this.mode === "returned") ? this.dockX : null;
+      if (dockTarget !== null) b.position.x = dockTarget;
+      this.bottleGroup.position.x = b.position.x + this._bottleRelX;
+      wu.uClipCenter.value.x = this.bottleGroup.position.x;
+      // 파도 — 정해 둔 시각·위상·바람, 배가 파도 공간의 waveX에 있는 것처럼(타일은 배에 딱 맞춘다)
+      this.windT = this.windTarget;
+      wu.uTime.value = P.t; wu.uFlowPhase.value = 0;
+      wu.uChop.value = 0.32 * (0.4 + 0.6 * this.windT);
+      wu.uAmpScale.value = 0.5 + 0.9 * this.windT;
+      this.waterMesh.position.x = b.position.x;
+      wu.uBoatX.value = b.position.x;
+      wu.uWaveShift.value = P.waveX - b.position.x;
+      this.fx.uFxTime.value = P.t;
+      // 배 자세 — 같은 파도에서의 출렁임(_animate 의 배 블록과 같은 식)
+      const bob = BOAT_BOB_BY_MODE[this.mode] ?? 1;
+      const wy = this._waveHeightAt(P.waveX, 0, P.t, 0);
+      const slope = this._waveHeightAt(P.waveX + 0.12, 0, P.t, 0) - this._waveHeightAt(P.waveX - 0.12, 0, P.t, 0);
+      const rotZ = this.mode === "between" ? Math.sin(P.t * 0.7) * 0.015 : 0;
+      b.position.y = wy * bob;
+      b.rotation.z = rotZ + slope * 0.9 * bob;
+      b.rotation.y = (this.headingY ?? b.rotation.y) + Math.sin(P.t * 0.5) * 0.08;
+      b.updateMatrixWorld(true);
+      this._camFollowX = b.position.x;
+      // 연기 — 치우고 정해 둔 난수로 처음부터 다시 피운다
+      let seed = P.seed >>> 0;
+      Math.random = () => { seed = (seed + 0x6D2B79F5) >>> 0; let x = seed; x = Math.imul(x ^ (x >>> 15), x | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+      for (const p of this.smokePool) { p.active = false; p.mesh.visible = false; }
+      this.smokeSpawnTimer = 0;
+      if (this.mode !== "stay" && this.mode !== "unsure") {
+        const dt = 1 / 30, n = Math.round(P.smokeSec / dt);
+        const v = this.mode === "between" ? CRUISE_SPEED : 0;   // 배가 나아간 만큼 연기가 뒤로 끌린다
+        const baseX = b.position.x;
+        for (let i = 0; i < n; i++) {
+          b.position.x = baseX + v * (n - i) * dt;
+          b.updateMatrixWorld(true);
+          this._spawnSmoke(dt);
+          this._updateSmoke(dt);
+        }
+        b.position.x = baseX;
+        b.updateMatrixWorld(true);
+      }
+      Math.random = keep.random;
+      // 등대·램프·물결 — 정해 둔 각도·시각으로 다시 계산
+      this._lhAngle = P.lhAngle;
+      this._updateLighthouse(0, THREE.MathUtils.smoothstep(this.bottleT, BOTTLE_SEA_FROM, 1.0));
+      this._updateLamps(P.t);
+      this._updateRipples(0);
+      return fn();
+    } finally {
+      Math.random = keep.random;
+      wu.uTime.value = keep.uTime; wu.uFlowPhase.value = keep.flow; wu.uChop.value = keep.chop; wu.uAmpScale.value = keep.amp;
+      wu.uBoatX.value = keep.boatU; wu.uWaveShift.value = keep.shift; wu.uClipT.value = keep.clipT;
+      this.waterMesh.position.x = keep.waterX; this.windT = keep.windT; this.fx.uFxTime.value = keep.fxTime;
+      this._lhAngle = keep.lh; this._camFollowX = keep.camX; this.bottleT = keep.bottleT; this._bottleCamBlend = keep.camBlend;
+      [this.bottleMat.opacity, this.bottleRimMat.opacity, this.bottleCorkMat.opacity, this.bottleWaterMat.opacity] = keep.bottleOp;
+      b.position.x = keep.bx; b.position.y = keep.by; b.rotation.z = keep.brz; b.rotation.y = keep.bry;
+      this.bottleGroup.position.x = keep.bottleX; wu.uClipCenter.value.x = keep.clipCx;
+      b.updateMatrixWorld(true);
+      this.smokePool.forEach((p, i) => {
+        const k = keep.smoke[i];
+        p.active = k.active; p.age = k.age; p.mesh.visible = k.vis; p.mesh.position.copy(k.pos); p.mesh.rotation.copy(k.rot);
+        p.mesh.scale.setScalar(k.sc); p.mat.opacity = k.op; p.mat.color.setHex(k.col);
+        p.spin = k.spin; p.drift = k.drift; p.wobble = k.wobble;
+      });
+      this.smokeSpawnTimer = keep.spawnTimer;
+      this._updateLighthouse(0, THREE.MathUtils.smoothstep(this.bottleT, BOTTLE_SEA_FROM, 1.0));
+      this._updateRipples(0);
+    }
+  }
+
   capture() {
     const saved = {
       yaw: this.orbitYaw, pitch: this.orbitPitch,
@@ -3738,13 +3867,18 @@ ${GERSTNER_GLSL}
     // 안개색으로 칠해진 채 남으므로, 찍는 동안만 안개를 멀리 밀어 둔다.
     this.scene.fog.near = 1e6; this.scene.fog.far = 1e7;
 
-    this._placeCamera();
-    this.renderer.render(this.scene, this.camera);
-    // 알파가 남아 있는 영역(=병과 그 안)만 잘라 낸다. 정사각형으로 두면 위아래가
-    // 빈 하늘로 채워져 카드마다 높이를 크게 잡아먹는다.
-    const url = this._cropToContent(this.canvas);
+    // 정해 둔 순간(SNAP_POSE)으로 놓고 찍는다 — 같은 답이면 같은 그림
+    const url = this._withSnapPose(() => {
+      this._updateSpecAnchor();   // 둘러보던 각도를 0으로 돌렸으니 반짝임 자리도 기본 구도로
+      this._placeCamera();
+      this.renderer.render(this.scene, this.camera);
+      // 알파가 남아 있는 영역(=병과 그 안)만 잘라 낸다. 정사각형으로 두면 위아래가
+      // 빈 하늘로 채워져 카드마다 높이를 크게 잡아먹는다.
+      return this._cropToContent(this.canvas);
+    });
 
     this.orbitYaw = saved.yaw; this.orbitPitch = saved.pitch;
+    this._updateSpecAnchor();
     this.scene.background = saved.bg;
     if (this.shadowCatcher) this.shadowCatcher.visible = saved.shadow;
     this.renderer.setClearAlpha(saved.clearAlpha);
@@ -4256,6 +4390,7 @@ ${GERSTNER_GLSL}
         `yaw: ${yaw.toFixed(3)}\npitch: ${pitch.toFixed(3)}\nradius: ${radius.toFixed(2)}\n(드래그로 각도 잡고 이 값을 baseYaw/basePitch/radius에 붙여넣기)`;
     }
 
+    if (this._pixelWarm) { const warm = this._pixelWarm; this._pixelWarm = null; warm(); }   // _prewarm 참고
     if (this.visible) this.renderer.render(this.scene, this.camera);
   }
 }

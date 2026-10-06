@@ -39,6 +39,8 @@ const FRESH_STATE = () => ({
 let state = { ...FRESH_STATE(), filterState: "all", filterRegion: "all" };
 
 const app = document.getElementById("app");
+// 새로고침·브라우저 종료 전에 쓰던 기록 — 있으면 첫 화면에서 이어 쓸지 묻는다 (ui/draft.js)
+let resumeDraft = Draft.read();
 
 function render(){
   app.innerHTML = "";
@@ -62,6 +64,8 @@ function render(){
 
   // 3D 병 속 풍경 씬 동기화 (onboard ~ result 단계까지 배경으로 노출)
   if(window.BottleScene) window.BottleScene.show(state.step, state);
+  // 작성 중이면 이 기기에 맡겨 둔다 — 새로고침·브라우저 종료 뒤 이어 쓰기 (ui/draft.js)
+  Draft.save(state);
 }
 
 const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>`;
@@ -156,23 +160,29 @@ function renderOnboard(){
   d.appendChild(scrim);
 
   const bottom = h("div", "ob-bottom fade-stage");
-  bottom.appendChild(h("p", "ob-desc", "충남·아산에 남아 살아가는 청년의 이야기를 한 문장으로 남겨주세요. 당신의 문장은 다른 사람들의 기록과 함께 전시장 안에 쌓입니다."));
-  const btn = h("button", "cta");
-  btn.type = "button";
-  btn.innerHTML = `시작하기${ICON_NEXT}`;
-  bottom.appendChild(btn);
-  bottom.appendChild(h("p", "ob-caption", "질문 6개 · 약 2분 · 익명으로 남길 수 있어요"));
   d.appendChild(bottom);
-
   const reveal = () => requestAnimationFrame(() => { scrim.classList.add("show"); bottom.classList.add("show"); });
-  btn.onclick = () => {
-    if(btn.disabled) return;
-    btn.disabled = true;
-    // 1장을 걷어내고 하늘만 남긴 채 2장(질문 한 줄)으로 넘어간다
+  // 1장을 걷어내고 하늘만 남긴 뒤 다음으로 넘어간다
+  const leave = (then) => {
     scrim.classList.remove("show"); bottom.classList.remove("show");
     for(const el of [title, label]){ el.style.transition = "opacity .6s ease"; el.style.opacity = "0"; }
-    setTimeout(() => { state.step = "prompt"; render(); }, 650);
+    setTimeout(then, 650);
   };
+
+  if(resumeDraft) renderResumeAsk(bottom, leave);
+  else {
+    bottom.appendChild(h("p", "ob-desc", "충남·아산에 남아 살아가는 청년의 이야기를 한 문장으로 남겨주세요. 당신의 문장은 다른 사람들의 기록과 함께 전시장 안에 쌓입니다."));
+    const btn = h("button", "cta");
+    btn.type = "button";
+    btn.innerHTML = `시작하기${ICON_NEXT}`;
+    bottom.appendChild(btn);
+    bottom.appendChild(h("p", "ob-caption", "질문 6개 · 약 2분 · 익명으로 남길 수 있어요"));
+    btn.onclick = () => {
+      if(btn.disabled) return;
+      btn.disabled = true;
+      leave(() => { state.step = "prompt"; render(); });
+    };
+  }
 
   whenScene((scene) => {
     if(state.step !== "onboard") return;
@@ -205,17 +215,7 @@ function renderPrompt(){
     next.disabled = true;
     // 글자를 먼저 걷어내고, 카메라가 내려앉는 동안 화면을 비워 둔다.
     q.classList.remove("show"); next.classList.remove("show");
-    if(window.BottleScene){
-      window.BottleScene.introDescend(() => {
-        // 배가 자리를 잡고 0.5초 머문 뒤에 첫 질문이 페이드로 올라온다.
-        setTimeout(() => {
-          state.step = "region"; render();
-          const el = document.querySelector(".step");
-          if(el){ el.classList.add("step-fade");
-            requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("show"))); }
-        }, 500);
-      });
-    } else { state.step = "region"; render(); }
+    descendTo("region");
   };
 
   whenScene((scene) => {
@@ -224,6 +224,71 @@ function renderPrompt(){
     skyUp(scene, reveal);
   });
   return d;
+}
+
+/** 하늘에서 바다로 내려앉고, 배가 자리를 잡아 0.5초 머문 뒤 질문 단계를 페이드로 올린다.
+    첫 질문으로 갈 때(2장 '다음')와 이어 쓰기가 같이 쓴다. */
+function descendTo(step){
+  if(!window.BottleScene){ state.step = step; render(); return; }
+  window.BottleScene.introDescend(() => {
+    setTimeout(() => {
+      state.step = step; render();
+      const el = document.querySelector(".step");
+      if(el){ el.classList.add("step-fade");
+        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("show"))); }
+    }, 500);
+  });
+}
+
+/* ── 이어 쓰기 — 첫 화면 1장의 아래 어둠 자리에서 묻는다 (ui/draft.js) ─────────────────
+   이어 쓰면 2장(질문 한 줄)은 건너뛰고, 고른 값(모래 색·배 상태·시간대·키워드 소품)을 씬에 먼저
+   입힌 채 하늘에서 내려앉아 멈췄던 단계를 연다. 동의 체크는 맡겨 두지 않으므로 다시 누른다. */
+function renderResumeAsk(bottom, leave){
+  const dr = resumeDraft;
+  const at = Draft.STEPS.indexOf(dr.step);
+  const past = (step) => Draft.STEPS.indexOf(step) < at;
+  const [num, name] = CHAPTERS[dr.step];
+  bottom.appendChild(h("p", "ob-resume-q", "이전 작성부분에서 이어가시겠어요?"));
+  const meta = [`${num} ${name}부터`];
+  if(past("region") && dr.region) meta.push(dr.region);
+  if(past("state") && dr.stateId) meta.push(stateLabel(dr.stateId));
+  bottom.appendChild(h("p", "ob-resume-meta", meta.join(" · ")));
+  // 자기가 쓴 문장이지만 저장소에서 온 값이라 textContent 로만 넣는다
+  if(dr.text.trim()) bottom.appendChild(h("p", "ob-resume-text", `“${dr.text.trim()}”`));
+
+  const go = h("button", "cta");
+  go.type = "button";
+  go.innerHTML = `이어 쓰기${ICON_NEXT}`;
+  const fresh = h("button", "ob-fresh", "처음부터 새로 쓰기");
+  fresh.type = "button";
+  bottom.appendChild(go);
+  bottom.appendChild(fresh);
+
+  go.onclick = () => {
+    if(go.disabled) return;
+    go.disabled = fresh.disabled = true;
+    resumeDraft = null;
+    const { step, at: _at, ...vals } = dr;
+    Object.assign(state, vals, { consent: false });
+    leave(() => {
+      const scene = window.BottleScene;
+      if(scene){
+        // render()가 단계마다 show()로 지역·상태·키워드를 다시 입히지만, 내려앉는 동안에도
+        // 고른 풍경이어야 하므로 먼저 입힌다. 시간대는 나눔 단계만 바꾸므로 여기서 직접.
+        scene.applyRegion(state.region);
+        scene.setMode(state.stateId || "stay");
+        scene.applyKeywords(state.keywords);
+        const sh = SHARES.find(x => x.id === state.share);
+        if(sh) scene.setTimeOfDay(sh.time);
+      }
+      descendTo(step);
+    });
+  };
+  fresh.onclick = () => {
+    Draft.clear();
+    resumeDraft = null;
+    render();
+  };
 }
 
 function renderRegion(){
@@ -275,6 +340,7 @@ function renderSentence(){
   });
   ta.addEventListener("input", () => {
     state.text = ta.value;
+    Draft.save(state);
     count.textContent = `${ta.value.length} / 80`;
     step.next.disabled = ta.value.trim().length === 0;
   });
@@ -338,7 +404,7 @@ function renderConsent(){
     const lab = h("label", "disc-tab");
     lab.innerHTML = `<input type="radio" name="disclose" value="${v}" ${state.disclose === v ? "checked" : ""}><span>${v}</span>`;
     // 피커와 같은 이유로 render()를 부르지 않는다 — 이름 칸만 다시 그린다
-    lab.querySelector("input").addEventListener("change", () => { state.disclose = v; renderNameField(); updateNext(); });
+    lab.querySelector("input").addEventListener("change", () => { state.disclose = v; Draft.save(state); renderNameField(); updateNext(); });
     tabs.appendChild(lab);
   });
   box.appendChild(tabs);
@@ -353,7 +419,7 @@ function renderConsent(){
     inp.placeholder = state.disclose === "별칭" ? "별칭 (예: 바다)" : "이름 (예: 이승민)";
     inp.setAttribute("aria-label", state.disclose);
     inp.value = state.name || "";
-    inp.addEventListener("input", () => { state.name = inp.value; updateNext(); });
+    inp.addEventListener("input", () => { state.name = inp.value; Draft.save(state); updateNext(); });
     nameWrap.appendChild(inp);
   }
 
@@ -379,6 +445,7 @@ function renderConsent(){
       };
       entries.unshift(entry);
       RecordSync.submit(entry);   // 기다리지 않는다 — 전송이 실패해도 결과 화면은 뜨고 문장은 대기열에 남는다
+      Draft.clear();              // 이제 이어 쓸 것이 없다 — 남은 건 RecordSync 대기열이 맡는다
       state.step = "result"; render();
     },
   });
@@ -467,14 +534,27 @@ function renderResult(){
 }
 
 function restart(){
+  Draft.clear();
   state = { ...FRESH_STATE(), filterState: state.filterState, filterRegion: state.filterRegion };
   render();
 }
 
 /* ── 다른 사람들의 기록 (머무름의 지도 보러가기) ──────────────────────────────
-   결과 화면과 같은 톤 — 크림 바탕, 명조 문장, 갈색·금색. 한 줄에 두 개씩 정사각형 카드.
-   문장이 길면 다섯 줄에서 자르고, 누르면 그 카드만 두 칸을 차지하며 전부 펼친다.
-   병 스냅샷은 작게(카드 오른쪽 위) — 문장이 주인공이다. */
+   결과 화면과 같은 톤 — 크림 바탕, 명조 문장, 갈색·금색.
+   카드는 모두 한 줄 전체 폭, 높이 고정(10-06 사용자). 오른쪽에 병 그림을 카드 높이만큼 크게 두고,
+   문장은 병 왼쪽에서 두 줄까지만 — 넘치면 '…'. 누르면 펼쳐져 메타 줄 아래에 병을 폭 가득 크게,
+   그 아래에 문장 전체. 맨 아래엔 지도·다시 쓰기 버튼이 화면에 붙어 따라온다(.ar-bar). */
+
+// "머무름의 지도 더 보러가기" — 지금은 지도(statistics/) 첫 화면. 인터랙티브 지도가 생기면 이 주소만 바꾼다.
+// 목업·에뮬레이터로 테스트하던 중이면 지도도 같은 저장소를 보게 그 표시만 넘긴다.
+function mapUrl(){
+  const q = new URLSearchParams(location.search);
+  const keep = new URLSearchParams();
+  for(const k of ["mock", "emu"]) if(q.get(k) === "1") keep.set(k, "1");
+  const qs = keep.toString();
+  return "./statistics/" + (qs ? "?" + qs : "");
+}
+
 function renderArchive(){
   // DB가 붙어 있으면 서버의 최신 기록 + 내 것, 아니면 위 목업 entries (ui/record-sync.js)
   const view = RecordSync.archiveView(entries, () => { if(state.step === "archive") render(); });
@@ -540,18 +620,36 @@ function renderArchive(){
       c.onclick = () => {
         const open = c.classList.toggle("open");
         c.setAttribute("aria-expanded", open ? "true" : "false");
+        if(open) revealCard(c, bar);
       };
       grid.appendChild(c);
     });
   }
   d.appendChild(grid);
 
-  const again = h("button", "cta ar-again");
+  // 화면 아래에 붙어 따라오는 버튼 두 개 + 검은 음영
+  const bar = h("div", "ar-bar");
+  const toMap = h("a", "cta ar-map");
+  toMap.href = mapUrl();
+  toMap.innerHTML = `머무름의 지도 더 보러가기${ICON_NEXT}`;
+  const again = h("button", "ar-again");
   again.type = "button";
-  again.innerHTML = `다시 한 문장 남기기${ICON_NEXT}`;
+  again.innerHTML = `${ICON_AGAIN}다시 한 문장 남기기`;
   again.onclick = () => { restart(); window.scrollTo(0, 0); };
-  d.appendChild(again);
+  bar.appendChild(toMap);
+  bar.appendChild(again);
+  d.appendChild(bar);
   return d;
+}
+
+/** 펼친 카드의 아래가 하단 버튼에 가리면 그만큼 올린다 — 단, 카드 머리가 화면 위로 넘어가지는 않게. */
+function revealCard(card, bar){
+  requestAnimationFrame(() => {
+    const r = card.getBoundingClientRect();
+    const limit = window.innerHeight - (bar ? bar.offsetHeight : 0);
+    const need = Math.min(r.bottom - limit + 12, r.top - 12);
+    if(need > 0) window.scrollBy({ top: need, behavior: "smooth" });
+  });
 }
 
 // "PROTOTYPE · 목업 데이터" 배지는 목업으로 돌 때만 — 실DB로 도는 전시 화면에서 '목업'이라 쓰면 거짓말이 된다.
