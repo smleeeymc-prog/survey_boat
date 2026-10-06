@@ -149,17 +149,18 @@ export function lampTwinZ(P, lampPos) {
 }
 
 /* ── 배 색 (설문 Ⅵ 색 단계, 10-06) ─────────────────────────────────────────────
- * 팔레트·id 는 survey-taxonomy.js BOAT_COLORS (보안 규칙과 묶여 있다). 여기는 "고른 색 → 재질 색" 계산만.
+ * 색 값은 둘 중 하나: 팔레트 id(survey-taxonomy.js BOAT_COLORS — 보안 규칙과 묶여 있다) 또는 "#rrggbb"(컬러휠).
  *
- *   원톤  선체를 고른 색으로 칠하고, 갑판은 "사진 전체에 색조·채도를 건 것처럼" 같은 만큼 옮긴다 —
- *         기본 선체 → 고른 선체 의 색조 차·채도 비·밝기 차를 기본 갑판에 그대로 건다(사용자: hue-saturation).
- *         그래서 갑판은 선체와 같은 색 계열이되 원래처럼 한 톤 밝고 조금 더 주황 쪽이다.
- *   투톤  선체·갑판을 각각 팔레트에서. 갑판 'base' = 지금 갑판 그대로.
+ *   팔레트·컬러휠 모두  기본 배에서 고른 색 쪽으로 채도·밝기를 일부만 옮겨 띤다(seenTarget). 볕 받는 면은 눈에 더 밝게 읽혀서
+ *            이렇게 옮긴 배가 동그라미와 비슷하게 보이고, 원색을 골라도 지도 톤에 맞는다. 휠의 아주 쨍한·밝은 색은 팔레트가 닿는
+ *            범위 위에서 한 번 더 눌린다(SEEN_C_* · SEEN_L_*). 그 부분이 낼 수 없는 색은 낼 수 있는 데까지(fitSeen).
+ *            재질: 팔레트는 표(PAINT_TABLE), 휠은 응답 격자(PAINT_LUT)를 거꾸로 읽어 푼다.
+ *   원톤     갑판은 "사진 전체에 색조·채도를 건 것처럼" 선체를 따라 물든다(deckSeenForHull). deck = "auto".
+ *   투톤     선체·갑판을 각각. 갑판 'base' = 지금 갑판 그대로.
  *
- * 팔레트 hex 는 화면에 보이는 색(낮 조명)이고, 재질에는 PAINT_RENDER_GAIN 으로 나눠 넣는다 — 설문 낮 조명에서
- * 재질 색의 약 64%가 화면에 나온다(갑판 실측 #bf7a60 → #784f3d: 0.63·0.65·0.64). 조명이 다른 화면(지도)은
- * 이 비율을 자기 조명에서 다시 잴 것.
- * 돌려주는 null 은 "건드리지 말고 원래 재질 색 그대로"다(기본 선택).
+ * "보이는 색"은 설문 색 단계 화면(낮)에서 그 부분 픽셀 중 휘도 50~75% 띠의 평균이다(그늘·판자 이음매와 광택 반사를 뺀 볕 받는 면).
+ * 조명이 다른 화면(지도)은 표·곡선을 자기 조명에서 다시 잴 것(HANDOFF-map 26장).
+ * 재질 함수가 돌려주는 null 은 "건드리지 말고 원래 재질 색 그대로"다(기본).
  */
 export const PAINT_RENDER_GAIN = 0.64;
 // 기본 배가 색 단계 화면(낮)에서 보이는 색 — 선체·갑판 픽셀 중 휘도 50~75% 띠의 평균 실측(10-06).
@@ -170,12 +171,16 @@ export const BASE_DECK_SEEN = 0x835e4f;
 // 동그라미(채도 0.4~0.55)를 그대로 따라가면 배만 장난감처럼 쨍하게 뜬다 — 처음 시도에서 그랬다.
 // 그래서 기본 배에서 동그라미 쪽으로 채도는 55%, 밝기는 85%만 옮긴다(OKLCH). 색조는 동그라미 그대로.
 const SEEN_SAT_K = 0.55, SEEN_LIGHT_K = 0.85;
+// 컬러휠 원색은 위 비율로 옮겨도 팔레트보다 훨씬 쨍하다(빨강 원색 채도 0.155 — 팔레트는 0.087까지). 팔레트가 닿는 곳(무릎) 위로는
+// 부드럽게 눌러 상한에 붙인다. 팔레트는 무릎 아래라 거의 그대로다.
+const SEEN_C_KNEE = 0.08, SEEN_C_CAP = 0.10;
+const SEEN_L_KNEE = 0.55, SEEN_L_CAP = 0.60;
+const softCap = (x, knee, cap) => (x <= knee ? x : knee + (cap - knee) * Math.tanh((x - knee) / (cap - knee)));
 // 원톤 갑판(OKLCH): 색조는 선체가 옮겨 간 만큼 그대로 옮기고, 채도는 선체 채도가 늘어난 비율을 따르되 1.4배·0.09에서 멈춘다
 // (그 이상이면 판자가 형광으로 뜬다 — HSL로 한 처음 세 번이 그랬다). 선체가 회색에 가까우면(검정) 갑판도 회색 나무.
 // 밝기는 선체 밝기 차의 60%만 더하고 0.62에서 멈춘다(OKLab L).
 const DECK_SAT_RATIO_MAX = 1.4, DECK_SAT_MAX = 0.09;
 const DECK_LIGHT_FOLLOW = 0.6, DECK_LIGHT_MAX = 0.62;
-const DECK_SEEN_MAX = [161, 188, 196];   // 넘으면 세 채널을 같은 비율로 줄여 들인다(색조 유지)
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -212,20 +217,20 @@ function seenToMaterial(hex) {
 
 /**
  * 설문 색 단계(낮) 조명에서 재서 푼 재질 색 — 배가 띨 목표색(seenTarget·deckSeenForHull)이 그 부분 픽셀(휘도 50~75% 띠의
- * 평균)이 되도록 렌더 → 재기 → 고치기를 여섯 번 되풀이했다(10-06, 고정 자세 SNAP_POSE, 오차 0~4 / 255).
+ * 평균)이 되도록 렌더 → 재기 → 고치기를 여섯 번 되풀이했다(10-06, 고정 자세 SNAP_POSE, 오차 0~2 / 255).
  * 표가 우선이고, 표에 없는 id(팔레트에 새로 더한 색)는 아래 PAINT_RENDER_GAIN 식으로 어림한다.
  * 팔레트 hex·SEEN_*·DECK_* 를 바꾸면 이 표를 다시 풀 것:  node tools/calibrate-paint.mjs (설문 HANDOFF.md 6.25)
  *   hull 선체 · deckAuto 원톤 갑판(선체를 따라 물든 색) · deck 투톤 갑판
  */
 export const PAINT_TABLE = {
-  red:     { hull: 0xc5473d, deckAuto: 0xd88365, deck: 0xab463a },
-  orange:  { hull: 0xcf733d, deckAuto: 0xe29d60, deck: 0xc96527 },
-  yellow:  { hull: 0xc7a95b, deckAuto: 0xb8b462, deck: 0xb69940 },
-  green:   { hull: 0x788c36, deckAuto: 0x82bc84, deck: 0x6f8533 },
-  blue:    { hull: 0x4980bc, deckAuto: 0x88a1e9, deck: 0x4976ae },
-  navy:    { hull: 0x263970, deckAuto: 0x8477c2, deck: 0x2f3e77 },
-  purple:  { hull: 0x7e4a8d, deckAuto: 0xbd78b2, deck: 0x774784 },
-  black:   { hull: 0x210f27, deckAuto: 0x916581, deck: 0x331c3c },
+  red:     { hull: 0xd45a3c, deckAuto: 0xe08e66, deck: 0xc3502e },
+  orange:  { hull: 0xde8057, deckAuto: 0xe4a168, deck: 0xce7141 },
+  yellow:  { hull: 0xceaa5c, deckAuto: 0xc1b25c, deck: 0xbd953d },
+  green:   { hull: 0x95872d, deckAuto: 0x9cb86c, deck: 0x877f26 },
+  blue:    { hull: 0x398b8e, deckAuto: 0x4fb1ce, deck: 0x328184 },
+  navy:    { hull: 0x2b3d73, deckAuto: 0x847ac3, deck: 0x314078 },
+  purple:  { hull: 0x923c6a, deckAuto: 0xd37188, deck: 0x863b64 },
+  black:   { hull: 0x2f1d33, deckAuto: 0x9a6a83, deck: 0x3c2a46 },
 };
 
 /** 동그라미 색 → 그 부분(기본 색 base)이 띨 화면 색 — 위 SEEN_* 만큼만 옮긴다 */
@@ -233,10 +238,73 @@ export function seenTarget(padHex, baseSeen) {
   const p = hexToOklch(padHex), b = hexToOklch(baseSeen);
   return oklchToHex({
     h: p.h,
-    C: Math.max(0, b.C + (p.C - b.C) * SEEN_SAT_K),
-    L: clamp01(b.L + (p.L - b.L) * SEEN_LIGHT_K),
+    C: softCap(Math.max(0, b.C + (p.C - b.C) * SEEN_SAT_K), SEEN_C_KNEE, SEEN_C_CAP),
+    L: softCap(clamp01(b.L + (p.L - b.L) * SEEN_LIGHT_K), SEEN_L_KNEE, SEEN_L_CAP),
   });
 }
+
+/**
+ * 응답 격자 — 재질 색을 채널마다 PAINT_LUT_LEVELS 다섯 단계로 바꿔 가며(5×5×5) 칠했을 때 보이는 색(0xRRGGBB), 빨강이 가장 바깥 순.
+ * 컬러휠 색을 재질로 풀 때 이 격자를 사이값으로 읽어 거꾸로 푼다(materialFromSeen). 채널별 곡선 하나로는 안 됐다 —
+ * 보이는 색이 세 채널에 같이 걸려 있어(재는 밝기 띠·톤 매핑) 오차가 최대 47이었다. tools/calibrate-paint.mjs 가 같이 잰다.
+ */
+export const PAINT_LUT_LEVELS = [0, 64, 128, 192, 255];
+export const PAINT_LUT = {
+  hull: [
+    0x252929, 0x252938, 0x252a56, 0x252a7a, 0x252aa1,
+    0x233b2a, 0x233b3b, 0x233b5e, 0x233b86, 0x233bb0,
+    0x285b2b, 0x285b3d, 0x295a5b, 0x2a5a7a, 0x2a5a99,
+    0x247c2a, 0x247c3b, 0x247d58, 0x237d7b, 0x237d9f,
+    0x1ea520, 0x1ea533, 0x1ea555, 0x1ea57a, 0x1ea5a0,
+    0x342929, 0x342939, 0x35285a, 0x362884, 0x3627ad,
+    0x363a27, 0x363a3a, 0x363a5e, 0x363a85, 0x363aab,
+    0x37592c, 0x37593c, 0x365959, 0x355a7b, 0x355a9d,
+    0x357c28, 0x347c39, 0x347d57, 0x337d7a, 0x327d9f,
+    0x31a41f, 0x32a433, 0x32a455, 0x32a47a, 0x31a4a0,
+    0x582526, 0x58253a, 0x57255d, 0x572585, 0x5725ae,
+    0x573925, 0x553938, 0x543958, 0x533a7b, 0x533a9e,
+    0x545826, 0x545837, 0x525858, 0x50597b, 0x50599e,
+    0x537c20, 0x537c32, 0x537c53, 0x537c79, 0x537c9f,
+    0x53a31e, 0x53a331, 0x53a353, 0x53a379, 0x53a39e,
+    0x7a2424, 0x7c2336, 0x7e225a, 0x7e2281, 0x7d23a9,
+    0x773724, 0x783735, 0x783755, 0x77387a, 0x77389f,
+    0x70592c, 0x71593c, 0x735858, 0x73587a, 0x75589e,
+    0x797c1d, 0x797c31, 0x797c52, 0x797c78, 0x797c9f,
+    0x79a41e, 0x79a431, 0x7aa454, 0x7aa479, 0x7aa49f,
+    0xa42525, 0xa42538, 0xa3255b, 0xa12682, 0x9d28a6,
+    0x963a29, 0x953b3a, 0x963b58, 0x973b7a, 0x933c9d,
+    0x97592a, 0x98593a, 0x9b5957, 0x9b587b, 0x9d589f,
+    0xa07e1f, 0xa07e33, 0xa07e55, 0xa07e7a, 0xa07ea0,
+    0x9ea425, 0x9ea43b, 0x9ca460, 0x9ca481, 0x9ba4a3,
+  ],
+  deck: [
+    0x243842, 0x243851, 0x24396e, 0x24398d, 0x2439ae,
+    0x234b44, 0x234b54, 0x234b70, 0x234b90, 0x234bb1,
+    0x216b43, 0x206b54, 0x206b71, 0x206b94, 0x1e6bbd,
+    0x1c972b, 0x1c9741, 0x1d9768, 0x1f9693, 0x2196bd,
+    0x22c030, 0x21c043, 0x23c068, 0x24bf91, 0x24bfba,
+    0x373641, 0x373650, 0x37356d, 0x37358f, 0x3734b2,
+    0x38473c, 0x38464d, 0x38466d, 0x384692, 0x3845b9,
+    0x366a3c, 0x366a4e, 0x356a6f, 0x356a95, 0x366abb,
+    0x379529, 0x38953f, 0x389567, 0x399491, 0x3b94ba,
+    0x3cbe2f, 0x3cbe43, 0x3cbe67, 0x3cbe90, 0x3dbdb8,
+    0x64262a, 0x64253e, 0x652566, 0x652495, 0x6524c4,
+    0x653d27, 0x653d3e, 0x653d66, 0x653d94, 0x633dc0,
+    0x62672a, 0x5f6741, 0x5e6666, 0x5e6690, 0x5e66b9,
+    0x62912c, 0x639140, 0x639165, 0x64918c, 0x6491b3,
+    0x61bb2e, 0x61bb41, 0x61bc64, 0x61bb8d, 0x61bbb6,
+    0x952427, 0x95233e, 0x952366, 0x952394, 0x9523c2,
+    0x953d27, 0x903e40, 0x8c3f68, 0x874092, 0x8143b8,
+    0x8a662d, 0x896742, 0x8b6666, 0x8c668e, 0x8d66ba,
+    0x8c912e, 0x8c9241, 0x8c9266, 0x8c9390, 0x8b93b8,
+    0x8aba3f, 0x8bbb4f, 0x8cbb6c, 0x8cbc91, 0x8dbcb8,
+    0xc32428, 0xc4243e, 0xc52466, 0xc62395, 0xc225c2,
+    0xab4336, 0xa7444c, 0xaa446c, 0xac4393, 0xb042bc,
+    0xbe6728, 0xbe673e, 0xbe6766, 0xbc6891, 0xba69bc,
+    0xb89431, 0xb99444, 0xb89469, 0xb89491, 0xb894b9,
+    0xb6be38, 0xb7be4a, 0xb7be6d, 0xb7be93, 0xb7beb9,
+  ],
+};
 
 /** 원톤 갑판 — 기본 선체→고른 선체의 색조·채도·밝기 변화를 기본 갑판에 그대로 (화면 색 기준, 결과도 화면 색) */
 export function deckSeenForHull(hullSeen, baseHullSeen = BASE_HULL_SEEN, baseDeckSeen = BASE_DECK_SEEN) {
@@ -244,32 +312,99 @@ export function deckSeenForHull(hullSeen, baseHullSeen = BASE_HULL_SEEN, baseDec
   const h = (((d.h + (t.h - b.h)) % 360) + 360) % 360;
   const C = Math.min(DECK_SAT_MAX, d.C * Math.min(DECK_SAT_RATIO_MAX, b.C > 1e-3 ? t.C / b.C : 1));
   const L = Math.max(0.2, Math.min(DECK_LIGHT_MAX, d.L + (t.L - b.L) * DECK_LIGHT_FOLLOW));
-  const out = oklchToHex({ L, C, h });
-  const c = [(out >> 16) & 255, (out >> 8) & 255, out & 255];
-  const k = Math.min(1, ...c.map((v, i) => DECK_SEEN_MAX[i] / Math.max(1, v)));
-  const [r, g, bb] = c.map((v) => Math.round(v * k));
-  return (r << 16) | (g << 8) | bb;
+  return oklchToHex({ L, C, h });   // 갑판이 낼 수 있는 범위로 맞추는 건 paintSeen(fitSeen)이 한다
+}
+
+export const COLOR_HEX_RE = /^#[0-9a-f]{6}$/;
+const hexNum = (h) => parseInt(String(h).slice(1), 16);
+
+/**
+ * 그 부분이 띨 화면 색. value = 팔레트 id | "#rrggbb", part = "hull" | "deck". 기본('base'·빈 값)이면 null.
+ * 팔레트·컬러휠 같은 식(seenTarget) — 팔레트는 고르기 쉽게 미리 골라 둔 동그라미일 뿐이다.
+ */
+export function paintTarget(value, part, palette) {
+  if (!value || value === "base") return null;
+  let pad = null;
+  if (COLOR_HEX_RE.test(value)) pad = hexNum(value);
+  else { const c = (palette || []).find((x) => x.id === value); if (c && c.id !== "base") pad = hexNum(c.hex); }
+  return pad === null ? null : seenTarget(pad, part === "deck" ? BASE_DECK_SEEN : BASE_HULL_SEEN);
 }
 
 /**
- * 고른 색 id → 재질 색. palette = BOAT_COLORS(id·hex 문자열), deckId 'auto' = 원톤.
- * → { hull: 재질 hex | null, deck: 재질 hex | null }  (null = 원래 재질 그대로)
+ * 그 부분이 낼 수 있는 범위로 — 재질을 흰색(1,1,1)으로 칠해도 보이는 색은 격자의 마지막 칸만큼이 한계다(선체 빨강 154 남짓).
+ * 넘는 채널이 있으면 세 채널을 같은 비율로 낮춘다(색조 유지). 컬러휠의 밝은 노랑·분홍이 여기서 걸린다.
  */
-export function paintMaterials(hullId, deckId, palette) {
-  const seen = (id) => {
-    const c = (palette || []).find((x) => x.id === id);
-    return c && id !== "base" ? parseInt(String(c.hex).replace("#", ""), 16) : null;
-  };
+function fitSeen(part, hex) {
+  const L = PAINT_LUT[part];
+  if (!L || hex === null) return hex;
+  const ch = (v) => [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  const max = ch(L[L.length - 1]).map((v) => v * 0.97);
+  let c = ch(hex);
+  const k = Math.min(1, ...c.map((v, i) => max[i] / Math.max(1, v)));
+  c = c.map((v) => Math.round(v * k));
+  let out = (c[0] << 16) | (c[1] << 8) | c[2];
+  // 어두운 쪽 한계 — 재질을 검정으로 칠해도 하늘 반사·주변광이 남아 아주 어두운 색은 못 낸다(컬러휠의 검정).
+  // 팔레트 먹색(#2c2b30, OKLab L 0.28)은 맞춰지므로 밝기 0.26 밑으로는 내리지 않는다(색조·채도는 그대로).
+  const o = hexToOklch(out);
+  if (o.L < SEEN_L_MIN) out = oklchToHex({ ...o, L: SEEN_L_MIN });
+  return out;
+}
+const SEEN_L_MIN = 0.26;
+
+/** 선체·갑판이 띨 화면 색 → { hull, deck } (null = 기본). deckValue "auto" = 원톤 */
+export function paintSeen(hullValue, deckValue, palette) {
+  const hull = fitSeen("hull", paintTarget(hullValue, "hull", palette));
+  const deck = deckValue === "auto" || deckValue === undefined
+    ? (hull === null ? null : fitSeen("deck", deckSeenForHull(hull)))
+    : fitSeen("deck", paintTarget(deckValue, "deck", palette));
+  return { hull, deck };
+}
+
+/** 응답 격자 앞으로 읽기 — 재질 [r,g,b](0~255) → 보이는 [r,g,b] (세 방향 사이값) */
+function lutForward(L, m) {
+  const G = PAINT_LUT_LEVELS, n = G.length;
+  const cell = (v) => { let i = 0; while (i < n - 2 && v > G[i + 1]) i++; return [i, Math.max(0, Math.min(1, (v - G[i]) / (G[i + 1] - G[i])))]; };
+  const [ri, rt] = cell(m[0]), [gi, gt] = cell(m[1]), [bi, bt] = cell(m[2]);
+  const out = [0, 0, 0];
+  for (let dr = 0; dr < 2; dr++) for (let dg = 0; dg < 2; dg++) for (let db = 0; db < 2; db++) {
+    const w = (dr ? rt : 1 - rt) * (dg ? gt : 1 - gt) * (db ? bt : 1 - bt);
+    if (!w) continue;
+    const v = L[((ri + dr) * n + (gi + dg)) * n + (bi + db)];
+    out[0] += w * ((v >> 16) & 255); out[1] += w * ((v >> 8) & 255); out[2] += w * (v & 255);
+  }
+  return out;
+}
+const linC = (v) => sLin(Math.max(0, Math.min(255, v)) / 255);
+const gamC = (v) => Math.round(sGam(clamp01(v)) * 255);
+
+/**
+ * 화면 색(hex) → 재질 색. 응답 격자를 거꾸로 — 도구(calibrate-paint)가 렌더로 하던 "칠해 보고 재서 고치기"를 격자 위에서 되풀이한다.
+ * 낼 수 없는 색(격자 밖)은 가장 가까운 곳에서 멈춘다.
+ */
+export function materialFromSeen(part, seenHex) {
+  const L = PAINT_LUT[part];
+  if (!L) return seenToMaterial(seenHex);
+  const T = [(seenHex >> 16) & 255, (seenHex >> 8) & 255, seenHex & 255];
+  let m = T.map((v) => Math.min(255, v / PAINT_RENDER_GAIN));
+  for (let it = 0; it < 12; it++) {
+    const f = lutForward(L, m);
+    m = m.map((v, k) => gamC(linC(v) * (linC(T[k]) + 1e-4) / (linC(f[k]) + 1e-4)));
+  }
+  return (m[0] << 16) | (m[1] << 8) | m[2];
+}
+
+/**
+ * 고른 색 → 재질 색 { hull, deck } (null = 원래 재질 그대로). 팔레트 id 는 표, 컬러휠·표에 없는 색은 응답 곡선.
+ */
+export function paintMaterials(hullValue, deckValue, palette) {
   const T = PAINT_TABLE;
-  const hullSeen = seen(hullId);
-  const hullT = hullSeen === null ? null : seenTarget(hullSeen, BASE_HULL_SEEN);
-  const hull = hullSeen === null ? null : (T[hullId] ? T[hullId].hull : seenToMaterial(hullT));
+  const seen = paintSeen(hullValue, deckValue, palette);
+  const auto = deckValue === "auto" || deckValue === undefined;
+  const hull = seen.hull === null ? null : (T[hullValue] ? T[hullValue].hull : materialFromSeen("hull", seen.hull));
   let deck = null;
-  if (deckId === "auto" || deckId === undefined) {
-    deck = hullSeen === null ? null : (T[hullId] ? T[hullId].deckAuto : seenToMaterial(deckSeenForHull(hullT)));
-  } else {
-    const ds = seen(deckId);
-    deck = ds === null ? null : (T[deckId] ? T[deckId].deck : seenToMaterial(seenTarget(ds, BASE_DECK_SEEN)));
+  if (seen.deck !== null) {
+    if (auto) deck = T[hullValue] ? T[hullValue].deckAuto : materialFromSeen("deck", seen.deck);
+    else deck = T[deckValue] ? T[deckValue].deck : materialFromSeen("deck", seen.deck);
   }
   return { hull, deck };
 }

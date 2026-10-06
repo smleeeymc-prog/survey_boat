@@ -55,22 +55,25 @@ var SURVEY_TAXONOMY = (function () {
 
   const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
 
-  // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 작품 톤 8색, 빨주노초파남보흑 순.
-  // hex 는 고르는 판의 동그라미 색. 배는 이 색 쪽으로 기본 배에서 옮겨 간다 — 채도는 덜, 색조는 그대로
-  // (statistics/shared/boat-look.js seenTarget · PAINT_TABLE, 설문 HANDOFF 6.25). 그래서 배가 동그라미보다 조금 차분하다.
-  // base 는 지금 배 그대로 — 동그라미는 기본 배가 낮 조명에서 보이는 색(선체 #483431 · 갑판 #835e4f, 실측).
-  // deckHex 는 투톤 갑판 판에서 '기본' 동그라미 색.
-  // id 는 보안 규칙에 들어간다 — 색을 더하거나 id를 바꾸면 규칙 재생성·배포(13.3). hex 만 바꾸는 건 규칙과 무관하다.
+  // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 지도 톤에 맞춘 작품 색 8개(주홍·테라코타·머스터드·올리브·청록·진남·자두·먹색)를
+  // 빨주노초파남보흑 순으로. id 는 무지개 칸 이름이고 이름(label)이 실제 색이다.
+  // hex = 고르는 판의 동그라미 색. 배는 기본 배에서 이 색 쪽으로 채도·밝기를 일부만 옮겨 띤다(statistics/shared/boat-look.js
+  // seenTarget — 컬러휠과 같은 식). 볕 받는 면은 눈에 더 밝게 읽혀서, 이렇게 옮긴 배가 동그라미와 비슷하게 보인다(설문 HANDOFF 6.25).
+  // 그래서 동그라미는 이 계산에 맞춘 세기로 골랐다 — 더 연하게 바꾸면 배가 회색에 가까워진다.
+  // 재질 색은 boat-look.js PAINT_TABLE 이 이 hex 에 맞춰 풀어 둔 값. hex 를 바꾸면 node tools/calibrate-paint.mjs 로 표를 다시 풀 것.
+  // base 는 지금 배 그대로(선체 #483431 · 갑판 #835e4f 로 보인다, 실측). deckHex 는 투톤 갑판 판에서 '기본' 동그라미 색.
+  // 컬러휠로 고른 색은 id 대신 "#rrggbb" 로 기록된다(record-schema.js COLOR_HEX_RE).
+  // id 는 보안 규칙에 들어간다 — 색을 더하거나 id를 바꾸면 규칙 재생성·배포(13.3). hex·label 만 바꾸는 건 규칙과 무관하다.
   const BOAT_COLORS = [
-    {id:"base",   label:"기본", hex:"#483431", deckHex:"#835e4f"},
-    {id:"red",    label:"빨강", hex:"#8e2f2a"},
-    {id:"orange", label:"주황", hex:"#91522a"},
-    {id:"yellow", label:"노랑", hex:"#8e7a2c"},
-    {id:"green",  label:"초록", hex:"#4c6a34"},
-    {id:"blue",   label:"파랑", hex:"#2e5e8c"},
-    {id:"navy",   label:"남색", hex:"#24335c"},
-    {id:"purple", label:"보라", hex:"#5b3869"},
-    {id:"black",  label:"검정", hex:"#232226"},
+    {id:"base",   label:"기본",     hex:"#483431", deckHex:"#835e4f"},
+    {id:"red",    label:"주홍",     hex:"#9a3a26"},
+    {id:"orange", label:"테라코타", hex:"#9a5a3a"},
+    {id:"yellow", label:"머스터드", hex:"#95792a"},
+    {id:"green",  label:"올리브",   hex:"#5f6630"},
+    {id:"blue",   label:"청록",     hex:"#24676a"},
+    {id:"navy",   label:"진남",     hex:"#26355e"},
+    {id:"purple", label:"자두",     hex:"#6a2f50"},
+    {id:"black",  label:"먹색",     hex:"#2a292d"},
   ];
   return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS };
 })();

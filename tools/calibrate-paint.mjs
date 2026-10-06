@@ -3,11 +3,12 @@
  *
  * 팔레트(survey-taxonomy.js BOAT_COLORS)의 동그라미 색을 바꿨거나, 조명·배 재질이 바뀌어 배 색이 동그라미와
  * 어긋나면 돌린다. 설문 색 단계 화면(낮)에서 선체·갑판을 렌더 → 그 부분 픽셀(휘도 50~75% 띠의 평균)을 재기 →
- * 재질 색 고치기를 여섯 번 되풀이해, 배가 띨 목표색(boat-look.js seenTarget·deckSeenForHull)에 맞춘다.
+ * 재질 색 고치기를 여섯 번 되풀이해, 배가 띨 목표색(boat-look.js paintSeen)에 맞춘다.
+ * 컬러휠 색에 쓰는 응답 격자(PAINT_LUT, 5×5×5)도 같이 재고, 그 격자로 푼 색이 얼마나 맞는지 몇 색으로 확인한다.
  *
  *   python3 -m http.server 8000          # 레포 루트에서 (다른 창)
- *   node tools/calibrate-paint.mjs http://localhost:8000/index.html
- *   → 끝에 찍히는 PAINT_TABLE 을 boat-look.js 에 붙여 넣는다. 첫 줄의 "기본 실측"이 BASE_HULL_SEEN·BASE_DECK_SEEN과
+ *   node tools/calibrate-paint.mjs http://localhost:8000/index.html [--table-only]
+ *   → 끝에 찍히는 PAINT_TABLE · PAINT_LUT 을 boat-look.js 에 붙여 넣는다. 첫 줄의 "기본 실측"이 BASE_HULL_SEEN·BASE_DECK_SEEN과
  *     크게 다르면 그 둘과 survey-taxonomy.js 의 base 동그라미(hex·deckHex)도 같이 고친다.
  *
  * Playwright 는 firebase/node_modules 의 것을 쓴다(firebase/ 에서 npm install). three·폰트는 CDN에서 받으므로 네트워크가 필요하다.
@@ -26,7 +27,7 @@ const BL = await import(pathToFileURL(path.join(ROOT, "statistics/shared/boat-lo
 const ctx = {}; vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(ROOT, "statistics/shared/survey-taxonomy.js"), "utf8") + ";this.T=SURVEY_TAXONOMY", ctx);
 const PAL = ctx.T.BOAT_COLORS.filter((c) => c.id !== "base");
-const URL = (process.argv[2] || "http://localhost:8000/index.html") + "?mock=1";
+const URL = (process.argv.slice(2).find((a) => !a.startsWith("--")) || "http://localhost:8000/index.html") + "?mock=1";
 
 const exe = process.env.CHROMIUM || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined);
 const browser = await chromium.launch({ executablePath: exe, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
@@ -97,13 +98,40 @@ async function solve(part, target) {
 }
 const rows = [];
 for (const c of PAL) {
-  const pad = parseInt(c.hex.slice(1), 16);
-  const hullT = BL.seenTarget(pad, BL.BASE_HULL_SEEN);
-  const hull = await solve("hull", hullT);
-  const deckAuto = await solve("deck", BL.deckSeenForHull(hullT));
-  const deck = await solve("deck", BL.seenTarget(pad, BL.BASE_DECK_SEEN));
+  const one = BL.paintSeen(c.id, "auto", ctx.T.BOAT_COLORS), two = BL.paintSeen(c.id, c.id, ctx.T.BOAT_COLORS);
+  const hull = await solve("hull", one.hull);
+  const deckAuto = await solve("deck", one.deck);
+  const deck = await solve("deck", two.deck);
   console.log(`${c.id.padEnd(7)} 오차 선체 ${hull.err} · 원톤 갑판 ${deckAuto.err} · 투톤 갑판 ${deck.err}`);
   rows.push(`  ${(c.id + ":").padEnd(8)} { hull: ${hx(hull.m)}, deckAuto: ${hx(deckAuto.m)}, deck: ${hx(deck.m)} },`);
 }
-console.log(`\nexport const PAINT_TABLE = {\n${rows.join("\n")}\n};`);
+
+// 응답 격자 — 재질을 채널마다 다섯 단계로(5×5×5) 칠해 보고 보이는 색. 팔레트만 바꿨으면 --table-only 로 건너뛴다(격자는 팔레트와 무관)
+if (process.argv.includes("--table-only")) {
+  console.log(`\nexport const PAINT_TABLE = {\n${rows.join("\n")}\n};`);
+  await browser.close();
+  process.exit(0);
+}
+// 응답 격자 — 재질을 채널마다 다섯 단계로(5×5×5) 칠해 보고 보이는 색
+const G = BL.PAINT_LUT_LEVELS;
+const lut = {};
+for (const part of ["hull", "deck"]) {
+  lut[part] = [];
+  for (const r of G) for (const g of G) for (const b of G) lut[part].push(toHex(await page.evaluate(([p, h]) => __measure(p, h), [part, (r << 16) | (g << 8) | b])));
+}
+const lutSrc = `export const PAINT_LUT = {\n` + ["hull", "deck"].map((p) =>
+  `  ${p}: [\n` + Array.from({ length: G.length * G.length }, (_, i) => "    " + lut[p].slice(i * G.length, (i + 1) * G.length).map(hx).join(", ") + ",").join("\n") + `\n  ],`).join("\n") + `\n};`;
+// 격자 검증 — 컬러휠에서 고를 법한 색 몇 개를 격자로 풀어 칠해 보고 목표와의 차
+Object.assign(BL.PAINT_LUT, lut);   // 이 실행에서만 새 격자로
+const probe = ["#e0402a", "#30a0ff", "#7a3fd0", "#40c060", "#f0d020", "#808080", "#ff80c0", "#104030"];
+const errs = [];
+for (const h of probe) {
+  const seen = BL.paintSeen(h, "auto", ctx.T.BOAT_COLORS);
+  for (const part of ["hull", "deck"]) {
+    const got = await page.evaluate(([p, x]) => __measure(p, x), [part, BL.materialFromSeen(part, seen[part])]);
+    errs.push(Math.max(...rgb(seen[part]).map((v, k) => Math.abs(v - got[k]))));
+  }
+}
+console.log(`응답 격자 검증(컬러휠 색 ${probe.length}개 × 선체·원톤 갑판): 최대 오차 ${Math.max(...errs)} · 평균 ${(errs.reduce((a, b) => a + b, 0) / errs.length).toFixed(1)} · [${errs.join(",")}]`);
+console.log(`\nexport const PAINT_TABLE = {\n${rows.join("\n")}\n};\n\n${lutSrc}`);
 await browser.close();

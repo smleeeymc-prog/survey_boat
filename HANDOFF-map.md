@@ -1010,25 +1010,27 @@ statistics/
 - 배가 80척을 넘으면 오래된 배부터 바다에서 빠진다(전시와 같다) — 인터랙티브에서 "내 배가 없다"가 될 수 있는 건 아주 많이 쌓인 뒤.
 - 짧은 주소(`/explore`)는 안 만들었다 — `statistics/vercel.json`에 `"cleanUrls": true`면 된다(지도 단독 배포만).
 
-## 26. 설문 세션 알림 — 배 색(원톤·투톤)이 기록에 실린다 (2026-10-06)
+## 26. 설문 세션 알림 — 배 색(원톤·투톤·컬러휠)이 기록에 실린다 (2026-10-06)
 
 > 사용자: 설문에 배 색 단계를 넣었다(키워드 다음, 공개 앞). 원톤은 선체 색에 맞춰 갑판도 "통 이미지 hue-saturation"처럼 같이 물들고,
-> 투톤은 선체·갑판을 따로. "DB에도 남긴다"(머무름의 지도에서도 그 색으로 뜨게).
+> 투톤은 선체·갑판을 따로. 팔레트는 지도에 어울리는 작품 색(주홍·테라코타·머스터드·올리브·청록·진남·자두·먹색), 그 위에 컬러휠.
+> "DB에도 남긴다"(머무름의 지도에서도 그 색으로 뜨게).
 
 **기록에 생긴 것(선택 필드 — 없을 수 있다):** `hull_color` = `survey-taxonomy.js BOAT_COLORS` id
-(`base` `red` `orange` `yellow` `green` `blue` `navy` `purple` `black`), `deck_color` = id 또는 `"auto"`(원톤).
-없으면(옛 기록·규칙 재배포 전·목업) **기본 색**으로 그리면 된다. `record-schema.js checkRecord`는 값이 있을 때만 본다 — 지도 `store.js`가
-기록을 그대로 넘기면 두 필드가 따라온다. 목업 기록에 색을 섞고 싶으면 `MockStore`에서 위 id로.
+(`base` `red` `orange` `yellow` `green` `blue` `navy` `purple` `black` — 무지개 칸 이름, 실제 색 이름은 label) **또는 컬러휠의 `"#rrggbb"`**,
+`deck_color` = 같은 것 또는 `"auto"`(원톤). 없으면(옛 기록·규칙 재배포 전·목업) **기본 색**으로 그리면 된다. `record-schema.js checkRecord`는 값이
+있을 때만 본다 — 지도 `store.js`가 기록을 그대로 넘기면 두 필드가 따라온다. 목업 기록에 색을 섞고 싶으면 `MockStore`에서 위 값으로.
 
 **색 계산은 `statistics/shared/boat-look.js`에 있다 — 다시 적지 말 것:**
-- `paintMaterials(hullId, deckId, SURVEY_TAXONOMY.BOAT_COLORS)` → `{ hull, deck }` 재질 hex(null = 원래 재질 그대로).
-  **단, `PAINT_TABLE`은 설문 색 단계(낮) 조명에서 잰 값**이다. 지도 조명(시간대·유리·색보정)이 달라 그대로 쓰면 지도에선 밝기·채도가 어긋날 수 있다.
-  두 길: (가) 표를 그대로 쓰고 눈으로 확인, (나) "배가 띨 목표색"만 공유 함수로 얻고(`seenTarget(동그라미, BASE_HULL_SEEN)`,
-  `deckSeenForHull(선체 목표)`, 투톤 갑판 `seenTarget(동그라미, BASE_DECK_SEEN)`) 지도 조명에서 재질로 푸는 표를 지도 쪽에 따로 둔다.
-  설문의 `tools/calibrate-paint.mjs`가 재는 방법(검정·흰색으로 칠해 그 부분 픽셀만 골라 휘도 50~75% 띠 평균, 여섯 번 되풀이)을 그대로 옮기면 된다.
+- `paintSeen(hull, deck, SURVEY_TAXONOMY.BOAT_COLORS)` → 그 배가 띨 **보이는 색** `{ hull, deck }`(null = 기본). 팔레트는 동그라미 그대로,
+  컬러휠 색은 기본 배 쪽으로 차분하게(`seenTarget`), 원톤 갑판은 선체를 따라(`deckSeenForHull`), 낼 수 없는 색은 범위 안으로(`fitSeen`).
+- `paintMaterials(...)` → 재질 hex. **단 `PAINT_TABLE`(팔레트)·`PAINT_LUT`(컬러휠)은 설문 색 단계(낮) 조명에서 잰 값**이다.
+  지도 조명(시간대·유리·색보정)이 달라 그대로 쓰면 밝기·채도가 어긋날 수 있다. 두 길: (가) 그대로 쓰고 눈으로 확인,
+  (나) `paintSeen`으로 보이는 색만 공유하고, 지도 조명에서 재질로 푸는 표·격자를 지도 쪽에 따로 둔다 — 설문 `tools/calibrate-paint.mjs`가
+  재는 방법(검정·흰색으로 칠해 그 부분 픽셀만 골라 휘도 50~75% 띠 평균, 렌더→재기→고치기 여섯 번, 응답 격자 5×5×5)을 그대로 옮기면 된다.
 - 지도 배는 InstancedMesh라 선체 색은 인스턴스 색(지금 틴트 그룹 — `glb-nodes.js` hull 주석), 갑판은 `boat-paint.js`의 갑판 색을 인스턴스마다
   바꿀 수 있어야 한다(인스턴스 속성 하나 — 설문은 배 한 척이라 uniform이다).
 - `style.js`(답변 → 배의 모습)가 지금 선체 틴트를 정하고 있다면, `hull_color`가 있는 기록은 그 색이 우선이어야 한다 — 참여자가 고른 색이다.
+- 통계에서 색을 세려면: 팔레트 id는 그대로, `"#rrggbb"`는 가장 가까운 팔레트 색으로 묶는 걸 권한다.
 
 **보안 규칙:** 두 필드가 든 새 규칙은 사용자가 콘솔에 다시 게시해야 저장된다(설문 HANDOFF 13.3). 그 전엔 설문이 색만 빼고 보낸다.
-

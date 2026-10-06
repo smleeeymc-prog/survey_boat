@@ -28,8 +28,8 @@
  *   consent_public / consent_archive   true (설문의 동의 체크 하나가 둘 다 켠다)
  *   moderation_status  생성 시 "public". "hidden"은 운영자가 콘솔에서만
  *   schema_version     1
- *   hull_color         (선택) 배 선체 색 id — survey-taxonomy.js BOAT_COLORS (10-06)
- *   deck_color         (선택) 갑판 색 id, 또는 "auto" = 원톤(선체 색에 맞춰 갑판도 같이 물든다)
+ *   hull_color         (선택) 배 선체 색 — survey-taxonomy.js BOAT_COLORS 의 id, 또는 컬러휠로 고른 "#rrggbb"(소문자) (10-06)
+ *   deck_color         (선택) 갑판 색 — 위와 같고, "auto" = 원톤(선체 색에 맞춰 갑판도 같이 물든다)
  *                      선택 필드인 이유: 이 필드가 생기기 전의 기록·대기열이 그대로 통과해야 하고, 규칙을 배포하기 전에는
  *                      설문이 색만 빼고 다시 보낸다(ui/record-sync.js). 없으면 화면은 "base"(지금 배 색)로 그린다.
  * ========================================================================== */
@@ -54,6 +54,9 @@ var RECORD_SCHEMA = (function (T) {
   // 있어도 되고 없어도 되는 필드 — 배 색. 규칙은 FIELDS 는 전부, 이것들은 있을 때만 값을 본다.
   const PAINT_FIELDS = ["hull_color", "deck_color"];
   const DECK_AUTO = "auto";
+  // 컬러휠 색 — 소문자 6자리만. 규칙에도 같은 식이 들어간다(build-rules.mjs)
+  const COLOR_HEX_RE = /^#[0-9a-f]{6}$/;
+  const COLOR_HEX_SRC = "^#[0-9a-f]{6}$";
   // Firestore 자동 id와 같은 모양(영숫자 20자). 규칙이 문서 id를 이 모양으로 묶는다.
   const ID_LENGTH = 20;
   const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -116,8 +119,9 @@ var RECORD_SCHEMA = (function (T) {
     if (r.consent_public !== true) problems.push("consent_public");
     if (r.consent_archive !== true) problems.push("consent_archive");
     if (r.schema_version !== SCHEMA_VERSION) problems.push("schema_version");
-    if ("hull_color" in r && !COLOR_IDS.includes(r.hull_color)) problems.push("hull_color");
-    if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color)) problems.push("deck_color");
+    const isHex = (v) => isStr(v) && COLOR_HEX_RE.test(v);
+    if ("hull_color" in r && !COLOR_IDS.includes(r.hull_color) && !isHex(r.hull_color)) problems.push("hull_color");
+    if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color) && !isHex(r.deck_color)) problems.push("deck_color");
     return problems;
   }
 
@@ -190,7 +194,7 @@ var RECORD_SCHEMA = (function (T) {
 
   return {
     TEXT_MAX, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
-    FIELDS, PAINT_FIELDS, DECK_AUTO, ID_LENGTH, ID_RE, THUMB,
+    FIELDS, PAINT_FIELDS, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
     REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS,
     newId, checkNew, checkRecord, makeRecord, safeImage, hasPaint, withoutPaint,
   };

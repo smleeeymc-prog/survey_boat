@@ -95,6 +95,11 @@ service cloud.firestore {
         && !s.matches('(?s)[\\\\s\\\\pZ]*');
     }
 
+    // 컬러휠로 고른 배 색 — 소문자 6자리 색 코드만
+    function paintHex(v) {
+      return v is string && v.matches('${S.COLOR_HEX_SRC}');
+    }
+
     function validRecord(id, d) {
       return d.keys().hasOnly(${list(allowedFields)})
         && d.keys().hasAll(${list(newFields)})
@@ -114,9 +119,9 @@ service cloud.firestore {
         && d.consent_archive == true
         && d.moderation_status == ${lit(S.CREATE_STATUS)}
         && d.schema_version == ${S.SCHEMA_VERSION}
-        // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 분류값 중 하나
-        && (!('hull_color' in d) || d.hull_color in ${list(S.COLOR_IDS)})
-        && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)});
+        // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 팔레트 id 중 하나, 또는 컬러휠의 "#rrggbb"
+        && (!('hull_color' in d) || d.hull_color in ${list(S.COLOR_IDS)} || paintHex(d.hull_color))
+        && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)} || paintHex(d.deck_color));
     }
 
     match /${COL.records}/{id} {

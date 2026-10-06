@@ -21,6 +21,8 @@ const Draft = (() => {
   const T = SURVEY_TAXONOMY;
   const oneOf = (v, list) => (list.includes(v) ? v : null);
   const COLOR_IDS = (T.BOAT_COLORS || []).map(c => c.id);
+  // 컬러휠 색 — 규칙과 같은 모양만(record-schema.js COLOR_HEX_RE)
+  const hexOrNull = (v) => (typeof v === "string" && RECORD_SCHEMA.COLOR_HEX_RE.test(v) ? v : null);
 
   /** 설문 상태 → 저장할 값. 질문 단계가 아니면 null(저장 안 함). */
   function pick(s){
@@ -49,8 +51,8 @@ const Draft = (() => {
       name: typeof d.name === "string" ? d.name.slice(0, MAX_NAME) : "",
       // 배 색 — 분류에 없는 색이면 기본으로(색은 앞 단계를 막지 않는다)
       tone: d.tone === "two" ? "two" : "one",
-      hullColor: oneOf(d.hullColor, COLOR_IDS) || "base",
-      deckColor: oneOf(d.deckColor, COLOR_IDS) || "base",
+      hullColor: oneOf(d.hullColor, COLOR_IDS) || hexOrNull(d.hullColor) || "base",
+      deckColor: oneOf(d.deckColor, COLOR_IDS) || hexOrNull(d.deckColor) || "base",
       at: d.at,
     };
     // 앞 단계 값이 빠졌으면(분류가 바뀌어 걸러진 경우) 그 단계부터 다시 묻는다.

@@ -155,8 +155,11 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".qnext").click();                        // Ⅳ 나눔
   for (const i of keywordIdx) await page.locator(".kw-word").nth(i).click();   // Ⅴ 키워드
   await page.locator(".qnext").click();
-  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번)
-  if (color) {
+  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (원판 위 0~1 자리)
+  if (color && color.wheel) {
+    const box = await page.locator(".paint-wheel").boundingBox();
+    await page.mouse.click(box.x + box.width * color.wheel[0], box.y + box.height * color.wheel[1]);
+  } else if (color) {
     if (color.deck !== undefined) await page.locator(".paint-mode", { hasText: "투톤" }).click();
     await page.locator(".paint-pad").nth(color.hull).click();
     if (color.deck !== undefined) {
@@ -330,7 +333,7 @@ try {
   const offLogs = watch(off);
   sdkBlocked = true;
   const offText = "와이파이가 끊겨도 이 문장은 사라지지 않는다";
-  await runSurvey(off, { text: offText });
+  await runSurvey(off, { text: offText, color: { wheel: [0.85, 0.5] } });   // 컬러휠 — 오른쪽 가장자리 근처(초록 계열)
   check("오프라인: 결과 화면이 정상으로 뜬다", await off.locator(".res-sentence").isVisible());
   await waitFor(async () => { const q = await queueOf(off); return q.length === 1 && q[0].record && q[0].thumb; }, { label: "대기열(기록+썸네일)", timeout: 20000 });
   const q1 = await queueOf(off);
@@ -344,6 +347,8 @@ try {
   await waitFor(async () => (await queueOf(off)).length === 0, { label: "재전송 후 대기열 비움", timeout: 40000 });
   const offDocs = await adminDocs("records", where("text", "==", offText));
   check("복구 후 새로고침: 문서 1건, 대기열 빔", offDocs.length === 1);
+  check("컬러휠 색이 색 코드로 실린다 (hull_color #rrggbb · deck_color auto)",
+    offDocs[0] && /^#[0-9a-f]{6}$/.test(offDocs[0].hull_color) && offDocs[0].deck_color === "auto", offDocs[0] && `${offDocs[0].hull_color} / ${offDocs[0].deck_color}`);
   check("복구 후: 썸네일도 기록 뒤에 올라간다", (await adminDocs("thumbs")).some((t) => t.id === q1[0].id));
   // "보냈는데 확인을 못 받은" 경우를 흉내 — 같은 기록을 대기열에 다시 넣고 새로고침
   await off.evaluate((item) => localStorage.setItem("yeogi.queue.v1", JSON.stringify([{ ...item, thumb: null }])), q1[0]);
@@ -363,7 +368,8 @@ try {
   const oldRules = newRules
     .replace(/d\.keys\(\)\.hasOnly\(\[[^\]]*\]\)/, `d.keys().hasOnly([${S.FIELDS.map((f) => `"${f}"`).join(", ")}])`)
     .replace(/\n\s*\/\/ 배 색[^\n]*\n[^\n]*hull_color[^\n]*\n[^\n]*deck_color[^\n]*;/, ";")
-    .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;");
+    .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;")
+    .replace(/\n    \/\/ 컬러휠로 고른 배 색[^\n]*\n    function paintHex\(v\) \{\n[^\n]*\n    \}\n/, "");
   check("옛 규칙 만들기 (색 필드 빠짐)", !oldRules.includes("hull_color") && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
   await putRules(oldRules);
   const ctxR = await newContext();

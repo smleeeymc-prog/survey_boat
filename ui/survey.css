@@ -43,7 +43,7 @@ body{
 
 /* 조작하는 요소만 포인터를 되살린다 (빈 곳을 끌면 캔버스가 받아 배를 둘러본다) */
 #app button, #app input, #app textarea, #app select, #app label,
-#app .picker-track, #app .dial, #app .archive-screen{ pointer-events:auto; }
+#app .picker-track, #app .dial, #app .archive-screen, #app .paint-wheel, #app .paint-val{ pointer-events:auto; }
 #app textarea, #app input{ user-select:text; -webkit-user-select:text; }
 #app button{ font-family:var(--ui); cursor:pointer; }
 
@@ -138,24 +138,41 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .kw-word.selected span{ border-bottom:1.5px solid var(--b-gold); padding-bottom:2px; }
 .kw-word:disabled{ opacity:.45; cursor:default; }
 
-/* ── Ⅵ 색 — 원톤·투톤 글자 탭, 가운데 줄(투톤: 선체·갑판 / 원톤: 안내), 동그라미 팔레트 한 줄 ── */
+/* ── Ⅵ 색 — 위: 왼쪽(원톤·투톤 / 선체·갑판 칩 / 고른 색 이름) + 오른쪽(컬러휠 + 밝기 막대), 아래: 동그라미 팔레트 한 줄 ── */
 .paint{ display:flex; flex-direction:column; }
+.paint-top{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.paint-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
 .paint-modes{ display:flex; gap:22px; }
 .paint-mode{ height:36px; padding:0 0 2px; border:0; border-bottom:1.5px solid transparent; background:transparent;
   font-family:var(--serif) !important; font-size:18px; color:rgba(246,242,234,.6); }
 .paint-mode.on{ font-weight:700; color:var(--b-gold); border-bottom-color:var(--b-gold); }
-.paint-mid{ height:34px; display:flex; align-items:center; gap:8px; margin:6px 0 4px; }
+.paint-mid{ height:34px; display:flex; align-items:center; gap:8px; margin:6px 0 2px; }
 .paint-hint{ font-size:12.5px; color:var(--b-text3); }
 .paint-part{ height:28px; padding:0 13px; border-radius:14px; border:1px solid rgba(246,242,234,.4); background:transparent;
   font-size:12.5px; font-weight:500; color:rgba(246,242,234,.82); }
 .paint-part.on{ background:var(--b-text); border-color:var(--b-text); color:var(--b-ink); font-weight:600; }
+.paint-name{ font-size:12px; color:rgba(246,242,234,.82); min-height:18px; margin-top:4px; overflow-wrap:anywhere; }
+/* 컬러휠: 색조 = 각도(위가 빨강, 시계 방향), 채도 = 가운데(흰색)에서 바깥, 명도 = 검은 막(shade)의 짙기. 그림과 고르는 식(HSV)이 같다 */
+.paint-wheelbox{ flex:0 0 auto; display:flex; align-items:center; gap:9px; }
+.paint-wheel{ position:relative; width:92px; height:92px; border-radius:50%; touch-action:none; cursor:crosshair;
+  background:radial-gradient(closest-side, #fff, rgba(255,255,255,0)),
+    conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+  box-shadow:0 0 0 1.5px rgba(246,242,234,.38); }
+.paint-wheel.on{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); }
+.paint-wheel-shade{ position:absolute; inset:0; border-radius:50%; background:#000; pointer-events:none; }
+.paint-wheel-dot{ position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%;
+  border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.55); pointer-events:none; }
+.paint-wheel-dot[hidden]{ display:none; }
+.paint-val{ position:relative; width:14px; height:92px; border-radius:7px; touch-action:none; cursor:ns-resize;
+  box-shadow:0 0 0 1.5px rgba(246,242,234,.38); }
+.paint-val-knob{ position:absolute; left:50%; width:20px; height:8px; margin:-4px 0 0 -10px; border-radius:4px;
+  background:var(--b-text); box-shadow:0 0 0 1px rgba(0,0,0,.5); pointer-events:none; }
 /* 동그라미 9개를 한 줄에 — 좁은 폰(판 안쪽 308px)에서도 넘치지 않게 크기를 폭에 맞춘다 */
-.paint-pads{ display:flex; justify-content:space-between; gap:4px; padding:6px 2px; }
+.paint-pads{ display:flex; justify-content:space-between; gap:4px; padding:10px 2px 2px; }
 .paint-pad{ position:relative; flex:0 0 auto; width:min(32px, calc((100% - 32px) / 9)); aspect-ratio:1; border-radius:50%;
   border:1.5px solid rgba(246,242,234,.38); padding:0; transition:transform .15s ease; }
 .paint-pad::after{ content:""; position:absolute; inset:-7px; }      /* 누르는 자리는 더 넓게 */
 .paint-pad.on{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
-.paint-name{ font-size:12.5px; color:rgba(246,242,234,.82); margin-top:6px; min-height:18px; }
 
 /* ── 공개 방식과 동의 ── */
 .disc-tabs{ display:flex; gap:22px; }

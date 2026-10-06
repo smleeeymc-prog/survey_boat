@@ -132,6 +132,11 @@ test("필드를 하나씩 틀리게 하면 전부 거절된다", async () => {
     "선체 색에 auto": good({ hull_color: "auto", deck_color: "auto" }),
     "갑판 색 목록 밖": good({ hull_color: "red", deck_color: "gold" }),
     "선체 색이 숫자": good({ hull_color: 3, deck_color: "auto" }),
+    "색 코드 대문자": good({ hull_color: "#A35C2E", deck_color: "auto" }),
+    "색 코드 3자리": good({ hull_color: "#a3c", deck_color: "auto" }),
+    "색 코드 # 없음": good({ hull_color: "a35c2e", deck_color: "auto" }),
+    "색 코드 뒤에 글자": good({ hull_color: "#a35c2e;x", deck_color: "auto" }),
+    "갑판 색 코드 틀림": good({ hull_color: "red", deck_color: "#zzzzzz" }),
   };
   for (const [label, rec] of Object.entries(cases)) {
     await assert.doesNotReject(assertFails(put(db, rec)), `통과하면 안 되는데 통과: ${label}`);
@@ -143,6 +148,8 @@ test("배 색: 없어도(옛 기록) · 원톤(auto) · 투톤 · 모든 색 id 
   await assertSucceeds(put(db, good()));                                          // 색 없음
   await assertSucceeds(put(db, good({ hull_color: "navy", deck_color: "auto" })));  // 원톤
   await assertSucceeds(put(db, good({ hull_color: "base", deck_color: "yellow" }))); // 투톤
+  await assertSucceeds(put(db, good({ hull_color: "#a35c2e", deck_color: "auto" })));    // 컬러휠 원톤
+  await assertSucceeds(put(db, good({ hull_color: "navy", deck_color: "#0f8a7e" })));    // 투톤 갑판만 컬러휠
   for (const c of T.BOAT_COLORS) await assertSucceeds(put(db, good({ hull_color: c.id, deck_color: c.id })));
   // makeRecord 가 색을 실은 기록도 그대로 통과 (설문이 실제로 보내는 모양)
   const id = S.newId();

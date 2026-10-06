@@ -399,16 +399,41 @@ function renderKeywords(){
 }
 
 /* ── Ⅵ 색 — 배를 칠한다 (10-06 사용자) ──────────────────────────────────────
-   위에 원톤 · 투톤, 아래에 기본 + 팔레트 한 줄. 동그라미를 누르면 씬의 선체가 바로 바뀐다(render → show → setPaint).
-   원톤: 선체 색에 맞춰 갑판도 "사진에 색조·채도를 건 것처럼" 같이 물든다(statistics/shared/boat-look.js).
-   투톤: 가운데 줄의 '선체 · 갑판' 탭으로 칠할 부분을 고르고 같은 팔레트에서 따로 칠한다.
-   원톤일 때 그 줄엔 안내 문구를 둬서 두 방식의 판 높이가 같다. */
-function colorLabel(id){ return (BOAT_COLORS.find(c => c.id === id) || {}).label || id; }
+   위 왼쪽: 원톤 · 투톤 / 가운데 줄(투톤: 선체 · 갑판 칩, 원톤: 안내) / 고른 색 이름.  위 오른쪽: 컬러휠 + 밝기 막대.
+   아래: 기본 + 팔레트 한 줄(지도 톤 작품 색 8개, 빨주노초파남보흑 순). 판 높이는 휠이 없던 때와 거의 같다(휠이 왼쪽 줄들 옆에 앉는다).
+   팔레트는 동그라미가 곧 배 색이고, 컬러휠 색은 기본 배에서 그 색 쪽으로 차분하게 옮겨 간다(statistics/shared/boat-look.js).
+   팔레트를 고르면 id("red"…), 휠로 고르면 "#rrggbb"가 기록된다(record-schema.js — 규칙도 둘 다 받는다).
+   휠·밝기 막대를 끄는 동안엔 render()를 부르지 않는다 — 화면을 다시 만들면 손가락이 잡고 있던 요소가 사라진다.
+   그동안은 씬 색·표시만 직접 바꾸고, 손을 떼면 render()(이어 쓰기 저장 포함). */
+function colorLabel(id){
+  if(/^#[0-9a-f]{6}$/.test(id || "")) return `직접 고른 색 ${id}`;
+  return (BOAT_COLORS.find(c => c.id === id) || {}).label || id;
+}
+// 컬러휠 — HSV(색조 = 각도, 채도 = 반지름, 명도 = 막대). 화면 그림도 같은 식이라 손가락 아래 색이 곧 고른 색이다.
+function hsvToHex(h, s, v){
+  const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return "#" + [f(5), f(3), f(1)].map(x => Math.round(x * 255).toString(16).padStart(2, "0")).join("");
+}
+function hexToHsv(hex){
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), d = mx - Math.min(r, g, b);
+  let h = 0;
+  if(d > 1e-6) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
+}
+const WHEEL_V0 = 0.8;   // 휠을 처음 만질 때의 밝기
 
 function renderColor(){
   const box = h("div", "paint");
   const two = state.tone === "two";
   const part = two ? state.paintPart : "hull";
+  const current = () => part === "deck" ? state.deckColor : state.hullColor;
+  const setCurrent = (v) => { if(part === "deck") state.deckColor = v; else state.hullColor = v; };
+  const isHex = (v) => /^#[0-9a-f]{6}$/.test(v || "");
+  const applyScene = () => { if(window.BottleScene) window.BottleScene.setPaint(state.hullColor, two ? state.deckColor : "auto"); };
+
+  const top = h("div", "paint-top");
+  const left = h("div", "paint-left");
 
   const modes = h("div", "paint-modes");
   modes.setAttribute("role", "radiogroup");
@@ -426,7 +451,7 @@ function renderColor(){
     };
     modes.appendChild(b);
   });
-  box.appendChild(modes);
+  left.appendChild(modes);
 
   const mid = h("div", "paint-mid");
   if(two){
@@ -438,30 +463,94 @@ function renderColor(){
       mid.appendChild(t);
     });
   } else {
-    mid.appendChild(h("span", "paint-hint", "선체 색에 맞춰 갑판도 함께 물들어요"));
+    mid.appendChild(h("span", "paint-hint", "갑판도 함께 물들어요"));
   }
-  box.appendChild(mid);
+  left.appendChild(mid);
+  const name = h("p", "paint-name");
+  const showName = () => {
+    name.textContent = two ? `선체 ${colorLabel(state.hullColor)} · 갑판 ${colorLabel(state.deckColor)}` : colorLabel(state.hullColor);
+  };
+  showName();
+  left.appendChild(name);
+  top.appendChild(left);
 
+  // ── 컬러휠 + 밝기 막대 ──
+  const hsv0 = isHex(current()) ? hexToHsv(current()) : { h: 0, s: 0, v: WHEEL_V0 };
+  let wh = hsv0.h, ws = hsv0.s, wv = Math.max(0.15, hsv0.v);
+  const wheelWrap = h("div", "paint-wheelbox");
+  const wheel = h("div", "paint-wheel");
+  wheel.setAttribute("role", "slider");
+  wheel.setAttribute("aria-label", `${part === "deck" ? "갑판" : "선체"} 색 고르기 원판`);
+  const shade = h("span", "paint-wheel-shade");
+  const dot = h("span", "paint-wheel-dot");
+  wheel.appendChild(shade); wheel.appendChild(dot);
+  const val = h("div", "paint-val");
+  val.setAttribute("role", "slider");
+  val.setAttribute("aria-label", "밝기");
+  const knob = h("span", "paint-val-knob");
+  val.appendChild(knob);
+  wheelWrap.appendChild(wheel); wheelWrap.appendChild(val);
+  top.appendChild(wheelWrap);
+  box.appendChild(top);
+
+  const drawWheel = () => {
+    const picked = isHex(current());
+    shade.style.opacity = String(1 - wv);
+    dot.hidden = !picked;
+    const a = wh * Math.PI / 180;
+    dot.style.left = `${50 + Math.sin(a) * ws * 50}%`;
+    dot.style.top = `${50 - Math.cos(a) * ws * 50}%`;
+    if(picked) dot.style.background = current();
+    val.style.background = `linear-gradient(to top, #000, ${hsvToHex(wh, ws, 1)})`;
+    knob.style.top = `${(1 - wv) * 100}%`;
+    wheel.classList.toggle("on", picked);
+  };
+  drawWheel();
+
+  const pick = () => {
+    setCurrent(hsvToHex(wh, ws, wv));
+    applyScene(); drawWheel(); showName();
+    pads.querySelectorAll(".paint-pad.on").forEach(p => { p.classList.remove("on"); p.setAttribute("aria-pressed", "false"); });
+  };
+  const drag = (el, onMove) => {
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch(_) {}
+      onMove(e);
+      const move = (ev) => onMove(ev);
+      const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up); render(); };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+  };
+  drag(wheel, (e) => {
+    const r = wheel.getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    wh = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    ws = Math.min(1, Math.hypot(dx, dy) / (r.width / 2));
+    pick();
+  });
+  drag(val, (e) => {
+    const r = val.getBoundingClientRect();
+    wv = Math.max(0.15, Math.min(1, 1 - (e.clientY - r.top) / r.height));
+    pick();
+  });
+
+  // ── 기본 + 팔레트 한 줄 ──
   const pads = h("div", "paint-pads");
-  const current = part === "deck" ? state.deckColor : state.hullColor;
   BOAT_COLORS.forEach(c => {
-    const on = current === c.id;
+    const on = current() === c.id;
     const b = h("button", "paint-pad" + (on ? " on" : ""));
     b.type = "button";
     // 투톤 갑판 판의 '기본'은 지금 갑판 나무색이다
     b.style.background = part === "deck" && c.id === "base" ? c.deckHex : c.hex;
     b.setAttribute("aria-label", `${part === "deck" ? "갑판" : "선체"} ${c.label}`);
     b.setAttribute("aria-pressed", on ? "true" : "false");
-    b.onclick = () => {
-      if(part === "deck") state.deckColor = c.id; else state.hullColor = c.id;
-      render();
-    };
+    b.onclick = () => { setCurrent(c.id); render(); };
     pads.appendChild(b);
   });
   box.appendChild(pads);
-  box.appendChild(h("p", "paint-name", two
-    ? `선체 ${colorLabel(state.hullColor)} · 갑판 ${colorLabel(state.deckColor)}`
-    : colorLabel(state.hullColor)));
 
   return questionStep({
     title: "배를 어떤 색으로 칠할까요?",
