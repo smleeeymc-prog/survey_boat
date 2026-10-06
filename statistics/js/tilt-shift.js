@@ -48,11 +48,14 @@ export class TiltShift {
    * @param {{x:number,z:number,renderScale?:number}|null} boat 도착 제시 중인 배
    * @param {number} zoomT 도착 줌 진행(0 평소 ~ 1 다 당김)
    * @param {number} shipScale 지도 배율(FLEET_SHIP_SCALE)
+   * @param {number} [lensT] 인터랙티브에서 관람객이 렌즈를 당긴 정도(0 평소 ~ 1). 당긴 만큼 초점을 화면 가운데로 —
+   *        당긴 화면에서는 배 띠 가운데(깊이 28)가 화면 밖으로 나가 화면 대부분이 흐려졌다. 위 띠 덧댐도 같이 줄인다.
    */
-  update(camera, boat, zoomT, shipScale) {
+  update(camera, boat, zoomT, shipScale, lensT = 0) {
     if (!this.enabled) return;
     let y = this._screenY(camera, 0, 0, FOCUS_DEPTH, true);
-    const z = boat ? zoomT : 0;
+    y += (0.5 - y) * lensT;
+    const z = Math.max(boat ? zoomT : 0, lensT);
     const extra = TILT_TOP.extra * (1 - z);   // 위 띠만 더 내린다 — 줌하는 만큼 설문 모양으로 돌아간다
     if (boat && zoomT > 0) {
       const s = shipScale * (boat.renderScale || 1);

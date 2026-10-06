@@ -545,14 +545,18 @@ function restart(){
    문장은 병 왼쪽에서 두 줄까지만 — 넘치면 '…'. 누르면 펼쳐져 메타 줄 아래에 병을 폭 가득 크게,
    그 아래에 문장 전체. 맨 아래엔 지도·다시 쓰기 버튼이 화면에 붙어 따라온다(.ar-bar). */
 
-// "머무름의 지도 더 보러가기" — 지금은 지도(statistics/) 첫 화면. 인터랙티브 지도가 생기면 이 주소만 바꾼다.
+// "머무름의 지도 더 보러가기" — 인터랙티브 지도(statistics/explore.html, HANDOFF-map 25·26장).
 // 목업·에뮬레이터로 테스트하던 중이면 지도도 같은 저장소를 보게 그 표시만 넘긴다.
+// 방금 남긴 기록이 있으면 그 id(me)를 붙인다 — 지도가 그 배로 먼저 다가간다. 기록 id는 공개 문서 id라 비밀이 아니다.
+// (이 함수는 지도 세션이 고친다 — HANDOFF.md 0장 예외 한 줄)
 function mapUrl(){
   const q = new URLSearchParams(location.search);
   const keep = new URLSearchParams();
   for(const k of ["mock", "emu"]) if(q.get(k) === "1") keep.set(k, "1");
+  const mine = entries.find(e => e._new);
+  if(mine && mine.id) keep.set("me", mine.id);
   const qs = keep.toString();
-  return "./statistics/" + (qs ? "?" + qs : "");
+  return "./statistics/explore.html" + (qs ? "?" + qs : "");
 }
 
 function renderArchive(){

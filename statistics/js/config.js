@@ -23,6 +23,24 @@
 // `node statistics/tools/sync-model.mjs` 로 맞춰야 두 화면의 배가 갈라지지 않는다.
 export const MODEL_URLS = ["./assets/Scene.glb", "../assets/Scene.glb"];
 
+// ── 입구 ────────────────────────────────────────────────────────────────────
+// 같은 장면을 두 입구가 쓴다 — 전시 송출(index.html)과 인터랙티브(explore.html, <html data-page="explore">).
+// 인터랙티브는 바다를 좌우로 더 둘러볼 수 있어서 배가 사는 띠를 그만큼 넓혀야 한다(아래 FLOW_ASPECT_MAX).
+// node(tools/check-insights.mjs)에서도 이 파일을 읽으므로 document 가 없을 수 있다.
+export const IS_EXPLORE = typeof document !== "undefined" && document.documentElement.dataset.page === "explore";
+// 인터랙티브 바다 조작(js/explore/view-control.js). 10-06 사용자 결정:
+//   · 좌우는 끝이 있다 — 평소 화면에서 양옆으로 화면 폭의 20%씩 더 둘러본다(pan)
+//   · 줌인했을 때는 그 범위 안에서 상하좌우로 자유롭게 옮겨 본다(평소 화면 위아래 밖으로는 안 나간다)
+//   · zoomMax 렌즈를 평소의 몇 배까지 당기는가. 배를 눌러 보는 줌(ARRIVAL_ZOOM 3배 — 배까지 거리 기준)보다
+//     조금 더 — 맨손으로 당겨서도 먼 배를 알아볼 수 있게.
+//   · 한계 밖으로 끌면 이만큼만 고무줄처럼 늘었다가(over, 화면 폭 비율) 손을 떼면 돌아온다.
+export const EXPLORE_VIEW = { pan: 0.2, zoomMax: 4, over: 0.06 };
+// 인터랙티브의 시간들(초)
+//   guideHide   둘러보기 안내가 첫 터치 뒤 사라지기까지
+//   toast       "새 배가 도착했어요" 알림이 떠 있는 시간
+//   meWait      ?me=<기록 id> 로 왔는데 그 기록이 아직 안 보이면 이만큼 기다린다(DB 반영이 늦을 때)
+export const EXPLORE_TIME = { guideHide: 3, toast: 7, meWait: 8 };
+
 // 지도 전용: 배 크기. 온보딩은 3.38(배 1척이 주인공)이지만, 지도는 배 수십 척과
 // 넓은 바다를 한 화면에 담아야 하므로 절반 이하로 줄인다. 파도 파장(2.2/1.3/0.8)은
 // 월드 값이라 그대로이므로, 배가 작아지는 만큼 상대적으로 너울이 커 보인다 —
@@ -116,7 +134,8 @@ export const FLOW_DIR = -1;            // 화면에서 왼→오른쪽으로 흐
 // 화면비. 10-03부터 화면은 9:16 무대 하나다(css/panel.css #stage — 다른 창에서도 9:16으로 선다).
 // 예전엔 16:9 가로 화면까지 받느라 띠가 86으로 넓어서, 세로 화면에서는 배의 2/3가 화면 밖을 돌았다
 // (사용자: "바다가 휑하다, 더 빽빽하게"). 9:16으로 역산하면 띠가 30 남짓 — 같은 배가 화면 안에 모인다.
-export const FLOW_ASPECT_MAX = 9 / 16;
+// 인터랙티브(IS_EXPLORE)는 양옆으로 화면 폭의 EXPLORE_VIEW.pan 씩 더 둘러보므로, 보이는 가로가 그만큼(1 + 2·pan배) 넓다.
+export const FLOW_ASPECT_MAX = (9 / 16) * (IS_EXPLORE ? 1 + 2 * EXPLORE_VIEW.pan : 1);
 // 화면 가장자리 너머로 이만큼 더 가서 감긴다. 좌우 시선 흔들림(CAM_SWAY 0.035rad)이
 // 깊이 48에서 1.7, 배 반 길이가 1 남짓 — 합쳐도 3이면 감기는 배가 화면에 걸리지 않는다.
 export const FLOW_WRAP_MARGIN = 3;

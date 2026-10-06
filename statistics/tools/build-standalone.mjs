@@ -55,7 +55,8 @@ const MODULE_ORDER = [
   // 생성 시점에 METRIC/VIEWS 를 훑어 잘못된 id를 잡아낸다.
   // text.js 는 셋 모두가 쓰는 글자 도구, insights.js 는 metrics 의 MOTIVE_OF 를 쓴다.
   "stats/text.js", "stats/metrics.js", "stats/insights.js", "stats/views.js", "stats/index.js",
-  "panel.js", "selfcheck.js", "main.js",
+  // world.js(장면)는 main.js(전시 진행)가 쓴다 — 바로 앞. js/explore/ 는 인터랙티브 입구라 시안에 넣지 않는다.
+  "panel.js", "selfcheck.js", "world.js", "main.js",
 ];
 
 const read = (p) => fs.readFileSync(p, "utf8");
@@ -155,16 +156,19 @@ let bundle = SHARED_ORDER.map(
   (f) => `\n/* ══════ shared/${f} ══════ */\n` + flatten(read(path.join(STAT, "shared", f)))
 ).join("\n");
 
+// 고칠 줄은 파일을 가리지 않고 찾는다(10-06 장면이 world.js 로 나가면서 GLB 로더 줄이 main.js 를 떠났다).
+// 어느 파일에서도 못 찾으면 원본이 바뀐 것이다 — 조용히 넘어가면 시안이 GLB 를 fetch 하다 죽는다.
+const rewritten = new Set();
 bundle += MODULE_ORDER.map((f) => {
   let src = read(path.join(STAT, "js", f));
   for (const [from, to] of REWRITES) {
-    if (f === "main.js") {
-      if (!src.includes(from)) throw new Error(`[build] main.js에서 못 찾음:\n  ${from}\n원본이 바뀌었으면 REWRITES를 고칠 것.`);
-      src = src.replace(from, to);
-    }
+    if (src.includes(from)) { src = src.replace(from, to); rewritten.add(from); }
   }
   return `\n/* ══════ ${f} ══════ */\n` + flatten(src);
 }).join("\n");
+for (const [from] of REWRITES) {
+  if (!rewritten.has(from)) throw new Error(`[build] 어느 모듈에서도 못 찾음:\n  ${from}\n원본이 바뀌었으면 REWRITES를 고칠 것.`);
+}
 
 // 한 스코프에 전부 펴 넣으므로 최상위 이름이 겹치면 그 자리에서 죽는다
 // ("Identifier 'f' has already been declared"). 모듈로 열 때는 파일마다 스코프가

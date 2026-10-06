@@ -32,16 +32,23 @@ import { STAT_ROTATE_SEC } from "../config.js";
  * sec 을 주면 그 장만 더 머문다. 칸이 많은 그림(히트맵·네트워크)은 결론 문장을 읽고
  * 그림에서 그 칸을 찾아갈 시간이 더 든다. 문장 벽은 몇 문장은 읽혀야 한다.
  * tagline 은 레퍼런스 카드의 이탤릭 머리글처럼 한/영을 겹친다.
+ *
+ * explore 는 인터랙티브 입구(explore.html)의 통계 보기에서 이 장을 어떻게 다룰지다(HANDOFF-map 25·26장).
+ * 장 목록은 여기 하나뿐이다 — 인터랙티브는 이 목록을 걸러 쓰므로, 장을 더하면 저절로 따라 들어간다.
+ *   (없음)               지역·상태 필터 어느 쪽에서도 보여준다
+ *   false                인터랙티브에서는 뺀다 — 지역끼리 견주는 장(관람객이 고른 범위의 통계가 아니라 지역 비교다)
+ *   { state: false }     상태 필터가 걸려 있으면 목록에서 감춘다 — 상태 하나로 거르면 그 장이 무의미해진다
+ *                        (머무는 사람의 이유·동기별 이유·상태 막대 100% 한 줄). region 도 같은 식.
  */
 export const SLIDES = [
-  { metric: "stayReason", insight: "stayTop", view: "bubble", tagline: "Why people stay" },
-  { metric: "motives", insight: "motiveContrast", view: "motives", tagline: "Same word, other reasons" },
+  { metric: "stayReason", insight: "stayTop", view: "bubble", tagline: "Why people stay", explore: { state: false } },
+  { metric: "motives", insight: "motiveContrast", view: "motives", tagline: "Same word, other reasons", explore: { state: false } },
   { metric: "reason", insight: "concentration", view: "spread", tagline: "What people chose" },
-  { metric: "regionReason", insight: "placeTop", view: "places", sec: 10, tagline: "Reasons by place" },
+  { metric: "regionReason", insight: "placeTop", view: "places", sec: 10, tagline: "Reasons by place", explore: false },
   { metric: "keywordPairs", insight: "strongestPair", view: "network", sec: 10, tagline: "Chosen together" },
-  { metric: "state", insight: "topState", view: "bars", tagline: "Where people stand" },
-  { metric: "regionState", insight: "regionalColor", view: "heatmap", sec: 11, tagline: "Place and position" },
-  { metric: "settleTemp", insight: "settle", view: "thermo", tagline: "Settling temperature" },
+  { metric: "state", insight: "topState", view: "bars", tagline: "Where people stand", explore: { state: false } },
+  { metric: "regionState", insight: "regionalColor", view: "heatmap", sec: 11, tagline: "Place and position", explore: false },
+  { metric: "settleTemp", insight: "settle", view: "thermo", tagline: "Settling temperature", explore: false },
   { metric: "inflow", insight: "inflow", view: "pulse", tagline: "Arrivals, last hour" },
   { metric: "sentences", insight: "voices", view: "textwall", sec: 22, tagline: "Voices" },
 ];
@@ -120,6 +127,20 @@ export class StatDeck {
   }
 
   advance() { this.i = (this.i + 1) % this.slides.length; }
+
+  /** 장을 직접 고른다 — 인터랙티브는 자동으로 넘기지 않고 관람객이 목차·이전/다음으로 고른다 */
+  goTo(i) { this.i = ((i % this.slides.length) + this.slides.length) % this.slides.length; }
+}
+
+/** 인터랙티브 통계 보기의 장들 — SLIDES 에서 explore:false 만 뺀 것(목록은 여기 하나뿐이다) */
+export const EXPLORE_SLIDES = SLIDES.filter((s) => s.explore !== false);
+
+/** 지금 필터({region, state} — 비면 전체)에서 이 장을 보여줄 수 있는가 (SLIDES 머리말의 explore 표) */
+export function exploreFits(slide, filter = {}) {
+  const e = slide.explore || {};
+  if (filter.region && e.region === false) return false;
+  if (filter.state && e.state === false) return false;
+  return true;
 }
 
 export { METRICS, METRIC, VIEWS };

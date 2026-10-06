@@ -1,0 +1,250 @@
+/* =============================================================================
+ * explore.css — 인터랙티브 입구(explore.html)에만 있는 껍데기. 틀만 쓴다.
+ *
+ * 차트 안쪽 모양은 여기 쓰지 않는다 — 그건 css/stats.css(전시와 같이 쓴다)다. 여기 있는 건:
+ * 무대 크기(폰 세로를 꽉 채운다) · 손짓 층 · 통계 보기 버튼 · 새 배 알림 · 둘러보기 안내 · 배 카드 닫기 ·
+ * 통계 보기 층(필터 칩 · 확대/스크롤 틀 · 이전/목차/다음).
+ * 화면 상태는 html[data-ex] 하나로 맞춘다(js/explore/main.js _setMode): boot · browse · focus · stats.
+ * ========================================================================== */
+
+/* 폰이 주 기기다. 전시 무대는 9:16 상자 하나지만, 폰은 대개 9:16 보다 길쭉해서 위아래가 검게 빈다.
+   여기선 높이를 화면에 꽉 채우고 폭만 9:16 을 넘지 않게 한다 — 길쭉한 만큼 바다가 아래로 더 보인다.
+   단위(u)는 폭 기준 그대로라 글자·카드 크기는 전시와 같은 비율이다. */
+:root { --u: min(1vw, .5625vh); }
+@supports (height: 100dvh) {
+  :root { --u: min(1vw, .5625dvh); }
+  #stage { height: 100dvh; }
+}
+#stage {
+  width: calc(100 * var(--u));
+  height: 100vh;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── 손짓 층 — 캔버스·비네트 위, 글자 아래 ─────────────────────────────── */
+.ex-touch { position: fixed; inset: 0; z-index: 2; touch-action: none; cursor: grab; }
+.ex-touch:active { cursor: grabbing; }
+/* 제목은 바다 위 글자일 뿐 — 손을 막지 않는다 */
+.masthead { pointer-events: none; transition: opacity .6s var(--ease-io); }
+html[data-ex="stats"] .masthead, html[data-ex="stats"] .scrimTop { opacity: 0; }
+.scrimTop { transition: opacity .6s var(--ease-io); }
+
+/* ── 통계 보기 — 아래 가운데 알약 ──────────────────────────────────────── */
+.ex-open {
+  position: fixed; left: 50%; bottom: calc(7 * var(--u) + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+  display: inline-flex; align-items: center; gap: calc(1.6 * var(--u));
+  padding: calc(2.6 * var(--u)) calc(5.2 * var(--u));
+  border-radius: 999px;
+  font-size: calc(3.6 * var(--u)); font-weight: 600; letter-spacing: .06em; color: var(--t1);
+  background: rgba(var(--night), .62);
+  border: 1px solid rgba(246, 242, 234, .2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 12px 32px rgba(0, 0, 0, .3);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transform: translate(-50%, 0);
+  opacity: 0; pointer-events: none;
+  transition: opacity .5s var(--ease-io), transform .6s var(--ease-out);
+}
+.ex-open svg { width: calc(4.2 * var(--u)); height: calc(4.2 * var(--u)); fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; }
+html[data-ex="browse"] .ex-open { opacity: 1; pointer-events: auto; }
+html:not([data-ex="browse"]) .ex-open { transform: translate(-50%, calc(3 * var(--u))); }
+html[data-glass="flat"] .ex-open { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(12, 15, 21, .92); }
+
+/* ── 새 배 알림 — 맨 위 가운데 ────────────────────────────────────────── */
+.ex-toast {
+  /* 제목(위 10u) 위의 좁은 띠에 — 제목 글자를 가리지 않게 낮고 작게 */
+  position: fixed; left: 50%; top: calc(1.4 * var(--u) + env(safe-area-inset-top, 0px));
+  z-index: 7;
+  display: inline-flex; align-items: center; gap: calc(1.6 * var(--u));
+  padding: calc(1 * var(--u)) calc(1.2 * var(--u)) calc(1 * var(--u)) calc(2.6 * var(--u));
+  border-radius: 999px;
+  font-size: calc(2.8 * var(--u)); font-weight: 500; color: var(--t1); white-space: nowrap;
+  background: rgba(var(--night), .78);
+  border: 1px solid rgba(246, 242, 234, .18);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: translate(-50%, calc(-4 * var(--u)));
+  opacity: 0; pointer-events: none;
+  transition: opacity .4s var(--ease-io), transform .5s var(--ease-out);
+}
+.ex-toast.on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.ex-toast b {
+  font-weight: 600; color: var(--b-ink, #0c0f15);
+  background: var(--accent); border-radius: 999px;
+  padding: calc(.6 * var(--u)) calc(2.2 * var(--u));
+}
+.ex-toast-dot {
+  width: calc(1.6 * var(--u)); height: calc(1.6 * var(--u)); border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 0 rgba(230, 199, 154, .6);
+  animation: ex-ping 1.6s var(--ease-out) infinite;
+}
+@keyframes ex-ping { 70% { box-shadow: 0 0 0 calc(2 * var(--u)) rgba(230, 199, 154, 0); } 100% { box-shadow: 0 0 0 0 rgba(230, 199, 154, 0); } }
+
+/* ── 둘러보기 안내 — 가운데를 살짝 어둡게, 손가락 움직임 ───────────────── */
+.ex-guide {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse 80% 42% at 50% 56%, rgba(var(--night), .62) 0%, rgba(var(--night), .38) 55%, rgba(var(--night), 0) 100%);
+  opacity: 0; visibility: hidden;
+  transition: opacity .9s var(--ease-io), visibility 0s linear .9s;
+}
+.ex-guide.on { opacity: 1; visibility: visible; transition: opacity 1.1s var(--ease-io) .2s, visibility 0s; }
+.ex-guide-in { margin-top: calc(18 * var(--u)); width: calc(78 * var(--u)); text-align: center; }
+.ex-guide-anim { display: flex; justify-content: center; gap: calc(6 * var(--u)); margin-bottom: calc(4 * var(--u)); }
+.ex-guide-anim { align-items: center; }
+.ex-g-swipe { width: calc(26 * var(--u)); height: calc(14 * var(--u)); overflow: visible; }
+.ex-g-pinch { width: calc(15 * var(--u)); height: calc(15 * var(--u)); overflow: visible; }
+.ex-g-arrow { fill: none; stroke: rgba(246, 242, 234, .72); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.ex-g-finger, .ex-g-f1, .ex-g-f2 { fill: rgba(246, 242, 234, .92); stroke: var(--accent); stroke-width: 2.5; }
+/* 한 손가락이 좌우로 민다 */
+.ex-guide.on .ex-g-finger { animation: ex-swipe 2.4s var(--ease-io) infinite; }
+@keyframes ex-swipe { 0%, 100% { transform: translateX(-30px); } 50% { transform: translateX(30px); } }
+/* 두 손가락이 벌어진다 */
+.ex-guide.on .ex-g-f1 { animation: ex-pinch1 2.4s var(--ease-io) infinite; }
+.ex-guide.on .ex-g-f2 { animation: ex-pinch2 2.4s var(--ease-io) infinite; }
+@keyframes ex-pinch1 { 0%, 15% { transform: translate(0, 0); } 60%, 100% { transform: translate(-11px, 11px); } }
+@keyframes ex-pinch2 { 0%, 15% { transform: translate(0, 0); } 60%, 100% { transform: translate(11px, -11px); } }
+.ex-guide-lead { font-family: var(--serif); font-size: calc(5.2 * var(--u)); font-weight: 700; color: var(--t1); line-height: 1.35; word-break: keep-all; }
+.ex-guide-list { list-style: none; margin-top: calc(3.4 * var(--u)); display: grid; gap: calc(1.8 * var(--u)); text-align: left; justify-content: center; }
+.ex-guide-list li { display: flex; align-items: center; gap: calc(2 * var(--u)); font-size: calc(3.3 * var(--u)); color: var(--t2); line-height: 1.4; word-break: keep-all; }
+/* 작은 선 아이콘 — 핀치 · 탭 · 막대 */
+.ex-ic {
+  flex: none; width: calc(5.2 * var(--u)); height: calc(5.2 * var(--u));
+  border: 1px solid rgba(230, 199, 154, .7); border-radius: 50%;
+  background-repeat: no-repeat; background-position: center; background-size: 62%;
+}
+.ex-ic-pinch { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23e6c79a' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M4 16l4-4M16 4l-4 4M4 16h4M4 16v-4M16 4h-4M16 4v4'/%3E%3C/svg%3E"); }
+.ex-ic-tap { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23e6c79a' stroke-width='1.6'%3E%3Ccircle cx='10' cy='10' r='3'/%3E%3Ccircle cx='10' cy='10' r='7' opacity='.5'/%3E%3C/svg%3E"); }
+.ex-ic-chart { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23e6c79a' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M3 16.5h14M5.5 14V9M10 14V4.5M14.5 14V7.5'/%3E%3C/svg%3E"); }
+
+/* ── 배 카드 — 닫기 단추. 카드는 손을 받는다(뒤 바다로 새지 않게) ──────── */
+.arrival.on { pointer-events: auto; }
+.arrival-in { position: relative; }
+/* 카드 위 가장자리 바깥(어둠이 풀리는 띠)에 — 머리줄의 기록 번호와 겹치지 않게 */
+.ex-close {
+  position: absolute; right: calc(-1 * var(--u)); top: calc(-11.5 * var(--u));
+  width: calc(9 * var(--u)); height: calc(9 * var(--u));
+  display: grid; place-items: center; border-radius: 50%;
+  color: var(--t1);
+  background: rgba(var(--night), .55);
+  border: 1px solid rgba(246, 242, 234, .2);
+}
+.ex-close svg, .ex-x svg, .ex-nav-b svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ex-close:active { background: rgba(246, 242, 234, .1); }
+
+/* ── 통계 보기 층 ──────────────────────────────────────────────────────── */
+.ex-stats {
+  position: fixed; inset: 0; z-index: 5;
+  display: flex; flex-direction: column;
+  padding: calc(5 * var(--u) + env(safe-area-inset-top, 0px)) var(--pad-x) calc(4 * var(--u) + env(safe-area-inset-bottom, 0px));
+  gap: calc(2.6 * var(--u));
+  background: linear-gradient(180deg, rgba(var(--night), .62) 0%, rgba(var(--night), .3) 30%, rgba(var(--night), .3) 70%, rgba(var(--night), .6) 100%);
+  opacity: 0; visibility: hidden;
+  transition: opacity .6s var(--ease-io), visibility 0s linear .6s;
+}
+.ex-stats.on { opacity: 1; visibility: visible; transition: opacity .7s var(--ease-io), visibility 0s; }
+/* 닫히는 동안(사라지는 0.6초)에도 손은 바로 바다로 — 닫자마자 끌면 그게 바다에 먹어야 한다 */
+.ex-stats:not(.on) { pointer-events: none; }
+.ex-stats-top { display: flex; align-items: center; justify-content: space-between; }
+.ex-stats-title { font-size: calc(3.4 * var(--u)); font-weight: 600; letter-spacing: .14em; color: var(--accent); }
+.ex-stats-title span { color: var(--t2); letter-spacing: .04em; font-weight: 500; }
+.ex-x {
+  width: calc(10 * var(--u)); height: calc(10 * var(--u)); margin-right: calc(-2 * var(--u));
+  display: grid; place-items: center; border-radius: 50%; color: var(--t1);
+}
+.ex-x:active { background: rgba(246, 242, 234, .1); }
+
+/* 필터 칩 두 줄 — 넘치면 가로로 민다 */
+.ex-filters { display: grid; gap: calc(1.8 * var(--u)); }
+.ex-chips {
+  display: flex; align-items: center; gap: calc(1.6 * var(--u));
+  overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x;
+  scrollbar-width: none; margin: 0 calc(-1 * var(--pad-x)); padding: 0 var(--pad-x);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 calc(4 * var(--u)), #000 calc(100% - 6 * var(--u)), transparent);
+  mask-image: linear-gradient(90deg, transparent 0, #000 calc(4 * var(--u)), #000 calc(100% - 6 * var(--u)), transparent);
+}
+.ex-chips::-webkit-scrollbar { display: none; }
+.ex-chips-name { flex: none; font-size: calc(2.7 * var(--u)); font-weight: 600; letter-spacing: .12em; color: var(--t3); margin-right: calc(.6 * var(--u)); }
+.ex-chip {
+  flex: none; white-space: nowrap;
+  padding: calc(1.5 * var(--u)) calc(3 * var(--u));
+  border-radius: 999px;
+  font-size: calc(3.2 * var(--u)); font-weight: 500; color: var(--t2);
+  background: rgba(var(--night), .45);
+  border: 1px solid rgba(246, 242, 234, .18);
+  transition: color .3s, border-color .3s, background .3s;
+}
+.ex-chip[aria-checked="true"] { color: var(--t1); font-weight: 600; border-color: var(--accent); background: rgba(230, 199, 154, .14); }
+
+/* 확대·스크롤 틀 — 카드 한 장. 카드 크기는 js 가 틀 크기로 잡고, 확대는 카드에 scale 을 건다(report.js) */
+.ex-frame {
+  position: relative; flex: 1 1 0; min-height: 0;
+  overflow: auto; overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  border-radius: calc(4 * var(--u));
+  scrollbar-width: none;
+}
+.ex-frame::-webkit-scrollbar { display: none; }
+.ex-sizer { position: relative; }
+.ex-frame .report {
+  /* 전시 카드는 무대 가운데 떠 있다(panel.css) — 여기선 틀 왼쪽 위에 붙고, 늘 보인다 */
+  position: absolute; left: 0; top: 0;
+  opacity: 1; visibility: visible;
+  transform-origin: 0 0;
+  transition: none;
+}
+.ex-stats:not(.on) .ex-frame .report { visibility: hidden; }
+.ex-frame .report:not([style*="scale"]) { transform: none; }
+/* 진행선은 전시의 자동 넘김 시간 — 여기선 넘기는 손이 정하므로 채우지 않는다 */
+.ex-frame .r-progress { display: none; }
+.ex-zoomhint {
+  text-align: center; font-size: calc(2.6 * var(--u)); color: var(--t3); letter-spacing: .04em;
+  transition: opacity .6s var(--ease-io); margin-top: calc(-1 * var(--u));
+}
+.ex-zoomhint.gone, .ex-stats.zoomed .ex-zoomhint { opacity: 0; }
+
+/* 이전 · 목차 · 다음 */
+.ex-nav { display: flex; align-items: center; justify-content: space-between; gap: calc(3 * var(--u)); }
+.ex-nav-b {
+  width: calc(11 * var(--u)); height: calc(11 * var(--u)); border-radius: 50%;
+  display: grid; place-items: center; color: var(--t1);
+  background: rgba(var(--night), .5); border: 1px solid rgba(246, 242, 234, .2);
+}
+.ex-nav-b:active, .ex-nav-toc:active { background: rgba(246, 242, 234, .12); }
+.ex-nav-toc {
+  flex: 1; height: calc(11 * var(--u)); border-radius: 999px;
+  font-size: calc(3.2 * var(--u)); font-weight: 600; letter-spacing: .12em; color: var(--t2);
+  background: rgba(var(--night), .5); border: 1px solid rgba(246, 242, 234, .2);
+}
+.ex-nav-toc b { margin-left: calc(1.6 * var(--u)); color: var(--t1); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.ex-toc {
+  position: absolute; left: var(--pad-x); right: var(--pad-x);
+  bottom: calc(17 * var(--u) + env(safe-area-inset-bottom, 0px));
+  z-index: 2;
+  display: grid; padding: calc(2 * var(--u));
+  border-radius: calc(3.4 * var(--u));
+  background: rgba(12, 15, 21, .94); border: 1px solid rgba(246, 242, 234, .16);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .45);
+}
+.ex-toc[hidden] { display: none; }
+.ex-toc-i {
+  display: flex; align-items: baseline; gap: calc(2.4 * var(--u)); text-align: left;
+  padding: calc(2.2 * var(--u)) calc(2 * var(--u)); border-radius: calc(2 * var(--u));
+  font-size: calc(3.4 * var(--u)); color: var(--t2);
+}
+.ex-toc-i b { font-family: var(--serif); font-size: 1.1em; color: var(--t3); font-variant-numeric: tabular-nums; }
+.ex-toc-i.on { color: var(--t1); background: rgba(230, 199, 154, .1); }
+.ex-toc-i.on b { color: var(--accent); }
+.ex-toc-i:active { background: rgba(246, 242, 234, .08); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ex-guide.on .ex-g-finger, .ex-guide.on .ex-g-f1, .ex-guide.on .ex-g-f2, .ex-toast-dot { animation: none; }
+}

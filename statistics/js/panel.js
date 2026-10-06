@@ -56,7 +56,13 @@ const OUT_MS = 460;
 const EXPECT_MAX_SEC = 40;
 
 export class Panel {
-  constructor(root = document) {
+  /**
+   * @param {Document} root
+   * @param {{auto?: boolean}} [o] auto=false — 시간표(풍경/통계)를 돌리지 않는다. 인터랙티브 입구(explore.html)는
+   *        관람객이 통계를 직접 열고, 이 패널에서는 누적 수·아래 문장 카드·보고서 채우기만 쓴다.
+   */
+  constructor(root = document, { auto = true } = {}) {
+    this.auto = auto;
     const $ = (id) => root.getElementById(id);
     this.el = {
       count: $("countNum"), plus: $("countPlus"),
@@ -97,7 +103,11 @@ export class Panel {
     // 문장 벽에 부적절한 문장이 20초 더 흐르는 일이 없게.
     const removed = [...this._shownIds].some((id) => !ids.has(id));
     this._syncCount(false);
-    if (this._mode === "boot") { this._enterLandscape(LANDSCAPE_FIRST_SEC); return; }
+    if (this._mode === "boot") {
+      if (this.auto) this._enterLandscape(LANDSCAPE_FIRST_SEC);
+      else this._mode = "free";
+      return;
+    }
     if (removed && this._mode === "session") this._showChapter("still");
   }
 
@@ -241,18 +251,11 @@ export class Panel {
     setTimeout(swap, OUT_MS);
   }
 
+  /** 인터랙티브가 고른 장을 꽂는다 — 전시와 같은 카드·같은 들어오는 연출(swap · fresh · still) */
+  showReport(c, how = "swap") { this._show(c, how); }
+
   _fill(c) {
-    const e = this.el;
-    // 설문의 단계 표시줄과 같은 꼴 — 명조 장 번호 · 자간 넓은 이름 · 오른쪽 "01 / 09"
-    e.num.textContent = c.index ? pad2(c.index) : "";
-    e.idx.textContent = c.index ? `${pad2(c.index)} / ${pad2(c.total)}` : "";
-    e.label.textContent = c.label || "";
-    e.headline.innerHTML = keepTogether(c.headline || "");   // insights.js 가 참여자 글을 이미 esc 했다
-    e.chart.innerHTML = c.html || "";
-    e.chart.dataset.view = c.view || "";
-    e.extra.textContent = c.extra || "";
-    e.period.textContent = c.period || "";
-    e.legend.innerHTML = c.legend || "";
+    fillReport(this.el, c);
     // 지금 화면에 걸린 기록들 — 나중에 이 중 하나가 가려지면 바로 다시 그린다
     this._shownIds = new Set(c.kind === "chapter" && c.view === "textwall"
       ? this._visible().slice(-12).map((r) => r.record_id) : []);
@@ -262,6 +265,7 @@ export class Panel {
 
   /** 카메라가 새 배로 고개를 돌리기 시작했다. 통계 카드는 바로 비켜선다(머리말의 규칙). */
   incoming() {
+    if (!this.auto) return;   // 시간표가 없으니 멈출 것도 없다
     if (this._mode === "pin" || this._mode === "arrival") return;
     this._paused = this._mode === "session"
       ? { mode: "session", frac: this._rotateT / (this._dwell || STAT_ROTATE_SEC) }
@@ -275,13 +279,16 @@ export class Panel {
    * 줌이 끝나 배가 섰다 — 숫자를 올리고 아래에 방금 도착한 문장을 띄운다.
    * 카드는 배가 다 선 뒤에 뜬다(css 의 지연). 레퍼런스: 카메라 먼저, 카드는 그다음.
    */
-  showArrival(record) {
+  showArrival(record, { hold = ARRIVAL_HOLD_SEC } = {}) {
     this.reveal(record.record_id);
     if (this._mode !== "pin" && this._mode !== "arrival") this.incoming();
     this._fillLog(record);
-    // 금색 가는 선이 카드가 떠 있는 시간(머무는 시간)에 걸쳐 찬다
+    // 금색 가는 선이 카드가 떠 있는 시간(머무는 시간)에 걸쳐 찬다. 정해진 시간이 없으면(인터랙티브에서
+    // 관람객이 고른 배 — 닫을 때까지 머문다) 선을 채우지 않는다
     if (this.el.arrival) {
-      this.el.arrival.style.setProperty("--hold", `${ARRIVAL_HOLD_SEC}s`);
+      const timed = Number.isFinite(hold);
+      this.el.arrival.style.setProperty("--hold", `${timed ? hold : 0}s`);
+      this.el.arrival.classList.toggle("untimed", !timed);
       restart(this.el.arrival, "on");
     }
   }
@@ -293,7 +300,7 @@ export class Panel {
   /** 연출이 끝났다. 끊긴 시간으로 돌아간다(머리말의 규칙). */
   endLive() {
     this.hideArrival();
-    if (this._mode !== "arrival") return;
+    if (!this.auto || this._mode !== "arrival") return;
     const p = this._paused || { mode: "landscape", landT: 0, landSec: LANDSCAPE_SEC };
     this._paused = null;
     if (p.mode === "session" && this._session) {
@@ -347,6 +354,7 @@ export class Panel {
       }
     }
 
+    if (!this.auto) return;
     if (this._mode === "landscape") {
       this._landT += dt;
       if (this._landT >= this._landSec) this._startSession();
@@ -358,6 +366,24 @@ export class Panel {
 }
 
 const pad2 = (n) => String(n).padStart(2, "0");
+
+/**
+ * 보고서 한 장(stats/index.js StatDeck.render 의 조각)을 카드 요소들에 꽂는다. 전시 패널과 인터랙티브
+ * 보고서가 같이 쓴다 — 통계를 두 벌로 그리지 않고 같은 조각을 같은 자리에 꽂기만 한다(HANDOFF-map 25.2).
+ * @param {object} e  num · idx · label · headline · chart · extra · period · legend 요소
+ */
+export function fillReport(e, c) {
+  // 설문의 단계 표시줄과 같은 꼴 — 명조 장 번호 · 자간 넓은 이름 · 오른쪽 "01 / 09"
+  e.num.textContent = c.index ? pad2(c.index) : "";
+  e.idx.textContent = c.index ? `${pad2(c.index)} / ${pad2(c.total)}` : "";
+  e.label.textContent = c.label || "";
+  e.headline.innerHTML = keepTogether(c.headline || "");   // insights.js 가 참여자 글을 이미 esc 했다
+  e.chart.innerHTML = c.html || "";
+  e.chart.dataset.view = c.view || "";
+  e.extra.textContent = c.extra || "";
+  e.period.textContent = c.period || "";
+  e.legend.innerHTML = c.legend || "";
+}
 
 /**
  * 강조한 낱말과 그 뒤의 조사를 한 덩어리로 묶는다 — "25%" / "가"나 "“돌아온" / "사람”이라고"

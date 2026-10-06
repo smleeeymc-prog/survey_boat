@@ -15,7 +15,18 @@ import { waveHeightAt } from "../shared/ocean-core.js";
 import { seaHeightAt } from "./ocean.js";
 import { SlotPool } from "./motion.js";
 
-export function runSelfChecks(scene) {
+// 전시 화면(index.html)의 패널 DOM. 인터랙티브(explore.html)는 자기 목록을 넘긴다(8번).
+const EXHIBIT_IDS = ["panel", "countNum", "countPlus", "mNext", "mBarFill", "mNextIdx", "mNextLabel", "stageDim",
+  "mNextTag", "report", "rNum", "rIdx", "rLabel",
+  "rHeadline", "statRows", "rExtra", "rPeriod", "rLegend",
+  "arrival", "logNo", "arrivalText", "arrivalSign",
+  "logFrom", "logStatus", "logCargo", "logLogged"];
+
+/**
+ * @param scene 장면(world.js MapWorld) — fleet · cam · landmarks · tilt
+ * @param {{domIds?: string[]}} [o] 이 페이지에 꼭 있어야 하는 요소 id
+ */
+export function runSelfChecks(scene, { domIds = EXHIBIT_IDS } = {}) {
   const D = C.WAVE_WRAP_DOMAIN;
 
   // 0) importmap이 선언한 three 버전과 실제로 로드된 리비전이 같은가.
@@ -127,11 +138,7 @@ export function runSelfChecks(scene) {
   );
 
   // 8) 패널 DOM. id 하나만 오타 나도 통계가 조용히 안 바뀐다.
-  for (const id of ["panel", "countNum", "countPlus", "mNext", "mBarFill", "mNextIdx", "mNextLabel", "stageDim",
-                    "mNextTag", "report", "rNum", "rIdx", "rLabel",
-                    "rHeadline", "statRows", "rExtra", "rPeriod", "rLegend",
-                    "arrival", "logNo", "arrivalText", "arrivalSign",
-                    "logFrom", "logStatus", "logCargo", "logLogged"]) {
+  for (const id of domIds) {
     console.assert(document.getElementById(id), `[selfCheck] #${id} 엘리먼트가 없음`);
   }
 

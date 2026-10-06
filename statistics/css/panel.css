@@ -539,6 +539,8 @@ html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filte
 /* 차례로 선다 — 선 → 문장 → 서명 → 기록 넷. 선은 떠 있는 시간에 걸쳐 찬다. */
 .arrival.on .log-rule     { animation: r-wipe .9s var(--ease-io) .5s both; }
 .arrival.on .log-progress { animation: r-fill var(--hold, 8s) linear .5s both; }
+/* 머무는 시간이 정해지지 않은 카드(인터랙티브에서 고른 배 — 닫을 때까지)는 선을 채우지 않는다 */
+.arrival.untimed .log-progress { animation: none; transform: scaleX(0); }
 .arrival.on .arrival-text { animation: r-rise 1s var(--ease-out) .7s both; }
 .arrival.on .arrival-sign { animation: r-fade .8s var(--ease-out) 1.3s both; }
 .arrival.on .log-row      { animation: r-rise .7s var(--ease-out) both; }

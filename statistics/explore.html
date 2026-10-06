@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko" data-glass="lens" data-page="explore">
+<head>
+<meta charset="utf-8" />
+<!-- 페이지 전체 확대는 막는다 — 두 손가락은 바다(렌즈 줌)와 통계 틀(틀 안 확대)이 받는다. 설문과 같은 이유 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>머무름의 지도 — 둘러보기</title>
+<meta name="description" content="참여자들이 남긴 문장이 배가 되어 모인 바다를 직접 둘러보고, 배를 눌러 문장을 읽고, 통계를 골라 보는 화면" />
+<meta name="theme-color" content="#05070b" />
+<link rel="stylesheet" href="./shared/tokens.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" />
+<!-- 전시 화면과 같은 껍데기·통계·틸트시프트 CSS를 그대로 읽고, 인터랙티브에만 있는 틀(explore.css)을 얹는다 -->
+<link rel="stylesheet" href="./css/panel.css" />
+<link rel="stylesheet" href="./css/stats.css" />
+<link rel="stylesheet" href="./css/tilt-shift.css" />
+<link rel="stylesheet" href="./css/explore.css" />
+</head>
+<body>
+<!--
+  ===========================================================================
+  머무름의 지도 — 인터랙티브 입구 (HANDOFF-map 25·26장)
+  · 전시 송출(index.html)과 같은 바다·배·통계다. 장면은 js/world.js, 통계는 js/stats/ 를 같이 쓴다.
+  · 바다: 좌우로 끌어 둘러보고(양 끝이 있다), 두 손가락으로 당겨 본다. 당긴 상태에선 상하좌우로 옮긴다.
+  · 배를 누르면 새 배가 도착할 때처럼 그 배로 줌하고 아래에 문장 카드가 뜬다.
+  · 통계 보기: 아래 가운데 버튼. 지역·상태로 거르면 그 범위 사람들의 통계로 다시 그려진다.
+  · 쿼리: ?mock=1 목업 · ?emu=1 에뮬레이터 · ?me=<기록 id> 그 배로 먼저 다가간다 · ?time= · ?debug=1
+  ===========================================================================
+-->
+<div id="stage">
+<canvas id="scene"></canvas>
+<div class="tiltBlur top" aria-hidden="true"></div>
+<div class="tiltBlur bottom" aria-hidden="true"></div>
+<div class="sceneVignette" aria-hidden="true"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="liquid-lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="2" seed="7" result="noise" />
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="26" xChannelSelector="R" yChannelSelector="G" />
+  </filter>
+</svg>
+<div class="scrimTop" aria-hidden="true"></div>
+<div class="stageDim" id="stageDim" aria-hidden="true"></div>
+
+<!-- 바다를 끌고 당기고 누르는 층 — 캔버스 위, 글자들 아래(js/explore/view-control.js) -->
+<div class="ex-touch" id="exTouch" role="application" aria-label="바다 — 끌어서 둘러보고, 두 손가락으로 당겨 보고, 배를 눌러 문장을 읽어요"></div>
+
+<header class="masthead" id="panel">
+  <p class="m-title">그래도, 여기 살고 있습니다</p>
+  <p class="m-count"><span id="countNum">0</span><span class="p-plus" id="countPlus" aria-hidden="true">+1</span></p>
+  <p class="m-sub">개의 문장이 이곳에 머물러 있습니다</p>
+</header>
+
+<!-- 둘러보기 안내 — 처음 들어왔을 때(자기 배를 먼저 봤으면 그다음에). 손이 닿으면 몇 초 뒤 사라진다 -->
+<div class="ex-guide" id="exGuide" aria-hidden="true">
+  <div class="ex-guide-in">
+    <div class="ex-guide-anim" aria-hidden="true">
+      <svg class="ex-g-swipe" viewBox="0 0 120 64">
+        <path class="ex-g-arrow" d="M14 32h92M24 22 14 32l10 10M96 22l10 10-10 10" />
+        <circle class="ex-g-finger" cx="60" cy="32" r="9" />
+      </svg>
+      <svg class="ex-g-pinch" viewBox="0 0 64 64">
+        <path class="ex-g-arrow" d="M25 39 9 55M9 55h9M9 55v-9M39 25l16-16M55 9h-9M55 9v9" />
+        <circle class="ex-g-f1" cx="27" cy="37" r="7.5" />
+        <circle class="ex-g-f2" cx="37" cy="27" r="7.5" />
+      </svg>
+    </div>
+    <p class="ex-guide-lead">바다를 좌우로 밀어 둘러보세요</p>
+    <ul class="ex-guide-list">
+      <li><i class="ex-ic ex-ic-pinch" aria-hidden="true"></i>두 손가락으로 벌리면 가까이 볼 수 있어요</li>
+      <li><i class="ex-ic ex-ic-tap" aria-hidden="true"></i>배를 누르면 그 배에 실린 문장이 열려요</li>
+      <li><i class="ex-ic ex-ic-chart" aria-hidden="true"></i>아래 ‘통계 보기’로 사람들의 이야기를 모아 봐요</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 새 배 알림 — 다른 배를 보고 있거나 통계를 보는 중에 새 문장이 오면, 끊지 않고 알리기만 한다 -->
+<button class="ex-toast" id="exToast" type="button" aria-live="polite">
+  <span class="ex-toast-dot" aria-hidden="true"></span><span class="ex-toast-text">새 배가 도착했어요</span><b>보기</b>
+</button>
+
+<!-- 통계 보기 — 아래 가운데 알약 버튼 -->
+<button class="ex-open" id="exOpen" type="button">
+  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 16.5h14M5.5 14V9M10 14V4.5M14.5 14V7.5" /></svg>통계 보기
+</button>
+
+<!-- 배 카드 — 전시의 "방금 도착한 문장"과 같은 마크업 + 닫기. 채우는 건 js/panel.js -->
+<aside class="arrival" id="arrival"><div class="arrival-in">
+  <div class="log-top">
+    <p class="log-tag" id="logTag">방금 도착한 문장</p>
+    <p class="log-no" id="logNo"></p>
+  </div>
+  <div class="log-rule" aria-hidden="true"><i class="log-progress"></i></div>
+  <p class="arrival-text" id="arrivalText"></p>
+  <p class="arrival-sign" id="arrivalSign"></p>
+  <dl class="log-rows">
+    <div class="log-row"><dt>출발한 곳</dt><dd id="logFrom"></dd></div>
+    <div class="log-row"><dt>지금의 자리</dt><dd id="logStatus"></dd></div>
+    <div class="log-row"><dt>싣고 온 것</dt><dd id="logCargo"></dd></div>
+    <div class="log-row"><dt>기록 시각</dt><dd class="num" id="logLogged"></dd></div>
+  </dl>
+  <button class="ex-close" id="exCardClose" type="button" aria-label="문장 닫기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" /></svg></button>
+</div></aside>
+
+<!--
+  통계 보기 — 보고서를 넘겨 보는 책. 필터(지역·상태) · 장 한 장(전시와 같은 카드, 틀 안에서 확대·스크롤) · 이전/목차/다음.
+  카드를 채우는 건 전시와 같은 StatDeck 조각이다(js/explore/report.js) — 통계를 따로 그리지 않는다.
+-->
+<section class="ex-stats" id="exStats" aria-hidden="true" aria-label="통계 보기">
+  <div class="ex-stats-top">
+    <p class="ex-stats-title">통계 보기<span id="exScope"></span></p>
+    <button class="ex-x" id="exStatsClose" type="button" aria-label="통계 닫기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" /></svg></button>
+  </div>
+  <div class="ex-filters">
+    <div class="ex-chips" id="exRegion" role="radiogroup" aria-label="지역"></div>
+    <div class="ex-chips" id="exState" role="radiogroup" aria-label="상태"></div>
+  </div>
+  <div class="ex-frame" id="exFrame">
+    <div class="ex-sizer" id="exSizer">
+      <article class="report" id="report" aria-live="polite">
+        <div class="r-top">
+          <p class="r-chapter"><b class="r-num" id="rNum"></b><span class="r-name" id="rLabel"></span></p>
+          <p class="r-idx" id="rIdx"></p>
+        </div>
+        <div class="r-rule" aria-hidden="true"><i class="r-progress"></i></div>
+        <p class="r-headline" id="rHeadline"></p>
+        <div class="r-chart" id="statRows"></div>
+        <div class="r-foot">
+          <p class="r-extra" id="rExtra"></p>
+          <p class="r-period"><span id="rPeriod"></span><span class="r-legend" id="rLegend"></span></p>
+        </div>
+      </article>
+    </div>
+  </div>
+  <p class="ex-zoomhint" id="exZoomHint">두 손가락으로 차트를 키워 볼 수 있어요</p>
+  <nav class="ex-nav" aria-label="장 이동">
+    <button class="ex-nav-b" id="exPrev" type="button" aria-label="이전 장"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg></button>
+    <button class="ex-nav-toc" id="exToc" type="button" aria-haspopup="true" aria-expanded="false">목차<b id="exPos"></b></button>
+    <button class="ex-nav-b" id="exNext" type="button" aria-label="다음 장"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 4.5 13 10l-5.5 5.5" /></svg></button>
+  </nav>
+  <div class="ex-toc" id="exTocList" role="menu" hidden></div>
+</section>
+
+<div id="hud"></div>
+</div><!-- /#stage -->
+<script src="./shared/survey-taxonomy.js"></script>
+<script src="./shared/record-schema.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="./js/explore/main.js"></script>
+</body>
+</html>

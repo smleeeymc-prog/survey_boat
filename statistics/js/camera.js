@@ -16,6 +16,10 @@
  *
  * 평소 구성(세로 FOV 50): 수평선이 화면 위에서 28%, 그 위 하늘 띠에 제목 카드가 앉는다.
  *   수평선 화면 위치 = 0.5 − 0.5·tan(pitch)/tan(fov/2),  pitch = atan(높이/시선거리)
+ *
+ * [10-06] 인터랙티브 입구(explore.html)는 관람객이 고개(좌우·위아래)와 렌즈를 직접 움직인다 — view.
+ * 카메라는 여전히 원점에 서 있다(돌고 당기기만). 전시 화면은 view 를 안 건드려 예전과 같다.
+ * 배를 크게 보여주는 줌은 "평소 시선" 대신 "지금 view" 에서 출발해 돌아온다.
  * ========================================================================== */
 
 import * as THREE from "three";
@@ -43,7 +47,12 @@ export class TourCamera {
     this.interactive = interactive;
     this.yawOffset = 0;
     this.pitchOffset = 0;
+    // 관람객이 움직인 시점 — 평소 시선에서 고개를 yaw(+ = 화면 왼쪽)·pitch(+ = 아래)만큼, 렌즈는 tan(화각/2)
+    this.view = { yaw: 0, pitch: 0, tan: TAN_HALF };
   }
+
+  /** 평소 렌즈 tan(화각/2) — 인터랙티브가 줌 한계를 이것의 배수로 잡는다 */
+  static get HOME_TAN() { return TAN_HALF; }
 
   /**
    * 카메라 앞 depth 만큼 떨어진 수면에서, 화면 가로 절반이 월드로 몇 단위인지 (평소 화각).
@@ -95,16 +104,18 @@ export class TourCamera {
     const sway = Math.sin((this.t / CAM_SWAY_SEC) * Math.PI * 2) * CAM_SWAY;
     this.pos.set(0, CAM_HEIGHT + bob, 0);
 
-    let yaw = sway, pitch = HOME_PITCH, tanHalf = TAN_HALF;
+    const V = this.view;
+    const yaw0 = sway + V.yaw, pitch0 = HOME_PITCH + V.pitch, tan0 = V.tan;
+    let yaw = yaw0, pitch = pitch0, tanHalf = tan0;
     const z = this._zoom, k = this._zoomT;
     if (z && k > 0) {
       const pan = camEase(Math.min(1, k / 0.75));
       const lens = camEase(Math.max(0, (k - 0.15) / 0.85));
-      yaw = sway + (z.yaw - sway) * pan;
-      pitch = HOME_PITCH + (z.pitch - HOME_PITCH) * pan;
+      yaw = yaw0 + (z.yaw - yaw0) * pan;
+      pitch = pitch0 + (z.pitch - pitch0) * pan;
       // 렌즈는 배율이 고르게 변하도록 tan(화각/2) 의 로그로 섞는다 — 화각을 직선으로 섞으면
       // 끝으로 갈수록 확 당겨진다.
-      tanHalf = Math.exp(Math.log(TAN_HALF) + (Math.log(z.tanHalf) - Math.log(TAN_HALF)) * lens);
+      tanHalf = Math.exp(Math.log(tan0) + (Math.log(z.tanHalf) - Math.log(tan0)) * lens);
     }
     // 시선 = 원점에서 (yaw, pitch) 방향. yaw 0 이 +Z.
     const c = Math.cos(pitch);
