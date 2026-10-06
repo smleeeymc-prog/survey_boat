@@ -461,7 +461,6 @@ const RIPPLE_STRENGTH = 0.55;   // 전체 밝기
 // 배가 선회하는 동안 자국이 따라 돌지 않고 그 자리에 누워 있었다.
 // 카메라 기본 각도. 셰이더 앵커(_updateSpecAnchor)와 드래그 제한이 같은 값을 봐야 한다.
 const BASE_YAW = -0.45, BASE_PITCH = 0.60;
-const basePitchOf = () => BASE_PITCH;
 // 상하로 둘러볼 때 반짝임이 카메라를 따라가는 비율.
 // 실측: 0이면 반짝임 중심이 세로로 63%p 쓸려가고, 0.7이면 17%p — 예전 움직임의 27%다.
 const SPEC_PITCH_FOLLOW = 0.7;
@@ -575,6 +574,10 @@ const CAM_RADIUS = (function () {
 // 두 손가락 줌(PC는 휠). 1 = 단계별 기본 거리. 작을수록 가까이. 가까이 갈수록 바라보는 지점이
 // 배 가운데로 옮겨 가서 배 쪽으로 파고든다. 단계가 바뀌면 1로 천천히 돌아온다.
 const ZOOM_MIN = 0.4, ZOOM_MAX = 1.4;
+// 결과(병) 화면만 더 넓게 — 병을 손에 들고 보듯 바짝 당기거나 멀리 놓고 본다(10-06 사용자)
+const ZOOM_MIN_RESULT = 0.3, ZOOM_MAX_RESULT = 2.0;
+/** -π~π 로 접는다. 결과 화면에서 몇 바퀴를 돌렸든 빠져나올 때 가까운 쪽으로 돌아오게. */
+const wrapAngle = (a) => a - Math.PI * 2 * Math.round(a / (Math.PI * 2));
 
 // 화면 구도 — 질문 판(ui/survey.css .qpanel, 화면 아래 약 40%)과 겹치지 않게 배를 화면 위쪽으로
 // 올린다(시안 B′). shift = 화면 높이 대비 위로 올리는 비율(camera.setViewOffset — 원근은 그대로
@@ -1045,7 +1048,7 @@ class BottleScene {
       if (pts.size === 2) {
         const d = spread();
         if (pinchDist > 0 && d > 0 && !pageZoomed()) {
-          this._zoomTarget = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (this._zoomTarget ?? 1) * (pinchDist / d)));
+          this._zoomTarget = this._clampZoom((this._zoomTarget ?? 1) * (pinchDist / d));
         }
         pinchDist = d;
         return;
@@ -1054,13 +1057,10 @@ class BottleScene {
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
       if (this.bottleT > 0.5) {
-        // 병이 뜬 뒤에는 각도 제한을 풀고, 지금 보고 있던 각도에서 그대로 이어서
-        // 병 둘레를 아크로 돈다. 좌우는 끝없이, 위아래는 뒤집히지 않게만 막는다.
+        // 병이 뜬 뒤에는 각도 제한을 다 푼다 — 좌우도 위아래도 끝없이 돈다(10-06 사용자: "360도 다 돌려 볼 수 있게").
+        // 꼭대기·바닥을 넘어가도 화면이 뒤집혀 튀지 않는 건 _placeCamera가 카메라 위쪽(up)을 시선과 같이 돌려서다.
         this.orbitYaw -= dx * 0.005;
-        // 제한은 orbitPitch가 아니라 "실제 시선각(basePitch + orbitPitch)"에 걸어야 한다.
-        // 예전처럼 orbitPitch를 ±1.45로 묶으면 basePitch 0.60이 더해져 아래로는 -0.85(-49도)까지밖에
-        // 못 내려가, 병 바닥을 올려다볼 수 없었다. 이제 위아래로 ±1.45(±83도)까지 균등하게 열린다.
-        this.orbitPitch = Math.max(-1.45 - basePitchOf(), Math.min(1.45 - basePitchOf(), this.orbitPitch + dy * 0.004));
+        this.orbitPitch += dy * 0.004;
       } else {
         // 망원렌즈 + 제한된 회전 범위: 섬/배경을 모델링해야 하는 각도 범위를 좁게 유지
         this.orbitYaw = Math.max(-0.85, Math.min(0.85, this.orbitYaw - dx * 0.0032));
@@ -1084,7 +1084,7 @@ class BottleScene {
     // PC: 휠로 줌
     c.addEventListener("wheel", (e) => {
       e.preventDefault();
-      this._zoomTarget = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (this._zoomTarget ?? 1) * Math.exp(e.deltaY * 0.0012)));
+      this._zoomTarget = this._clampZoom((this._zoomTarget ?? 1) * Math.exp(e.deltaY * 0.0012));
     }, { passive: false });
   }
 
@@ -1138,6 +1138,7 @@ class BottleScene {
         // 접촉 거리장 — 물체마다 한 벌. tex는 굽기 전까지 null이고 meta.z(세기)가 0이라
         // 셰이더가 아예 건드리지 않는다.
         uSdfBoat: { value: null },
+        uHullCut: { value: 0 },   // 1이면 배 윤곽 안쪽의 수면을 지운다 — 배가 깊이 잠겨도 갑판 위로 물이 뚫고 나오지 않게
         uSdfBoatXf: { value: new THREE.Vector4(0, 0, 1, 0) },     // xy=월드 위치, zw=cos/sin(-yaw)
         uSdfBoatGrid: { value: new THREE.Vector4(0, 0, 1, 1) },   // xy=격자 최소 모서리, zw=1/격자크기
         uSdfBoatMeta: { value: new THREE.Vector4(1.5, RIPPLE_SDF_MAXD, 0, 0) }, // x=단면 위치(0~3), y=거리배율, z=세기
@@ -1242,6 +1243,7 @@ ${GERSTNER_GLSL}
         uniform float uWaveShift;
         uniform vec3 uRippleColor;
         uniform sampler2D uSdfBoat;
+        uniform float uHullCut;
         uniform vec4 uSdfBoatXf;
         uniform vec4 uSdfBoatGrid;
         uniform vec4 uSdfBoatMeta;
@@ -1432,6 +1434,14 @@ ${GERSTNER_GLSL}
             float r = length(toL.xz) / ${LAMP.waterRadius.toFixed(3)};
             float face = 0.45 + 0.55 * clamp(dot(normal, normalize(toL)), 0.0, 1.0);
             color += uLampColor * exp(-r * r) * face * uLampOn;
+          }
+          // 배 안쪽의 물은 그리지 않는다. 수면은 배 속까지 이어진 한 장이라, 착수하며 깊이 잠기거나 마루가 높으면
+          // 갑판 위로 물이 뚫고 보였다(10-06 사용자). 배 거리장은 부호가 있다(안쪽이 음수). 윤곽에서 0.03은 남겨
+          // 선체와 물 사이에 틈이 생기지 않게 한다. 단면 범위를 넘으면 맨 끝 단면(갑판 쪽, 더 넓다)을 쓴다.
+          if (uHullCut > 0.5) {
+            vec2 rel = vWorldPos.xz - uSdfBoatXf.xy;
+            vec2 loc = vec2(rel.x * uSdfBoatXf.z - rel.y * uSdfBoatXf.w, rel.x * uSdfBoatXf.w + rel.y * uSdfBoatXf.z);
+            if (contactDist(uSdfBoat, loc, uSdfBoatGrid, uSdfBoatMeta) < -0.03) discard;
           }
           if (uRippleOn > 0.5) {
             vec2 pXZ = vWorldPos.xz;
@@ -3252,13 +3262,14 @@ ${GERSTNER_GLSL}
     const apply = (bake, obj, yaw, strength, xf, grid, meta) => {
       // 인트로에서 배는 하늘에 있고 boat.visible이 false다. 그때도 그리면 배가
       // 떨어지기 전부터 수면에 접촉면이 나타난다.
-      if (!bake || !obj.visible) { meta.z = 0; return; }
+      if (!bake || !obj.visible) { meta.z = 0; return false; }
       // 수면이 구워 둔 단면 범위를 벗어나면(물체가 물에서 떠올랐거나 잠겼으면) 사라진다
       const rel = -obj.position.y - bake.restY;
       const span = RIPPLE_SLICES[3] - RIPPLE_SLICES[0];
       const over = Math.max(RIPPLE_SLICES[0] - rel, rel - RIPPLE_SLICES[3]);
       strength *= Math.max(0, 1 - over / (span * 0.5));
-      if (strength <= 0.001) { meta.z = 0; return; }
+      // 세기가 0이어도 자리는 계속 맞춘다 — 배 안쪽 물 지우기(uHullCut)는 단면 범위 밖(착수 출렁임)에서도 필요하다
+      if (strength <= 0.001) strength = 0;
       const c = Math.cos(yaw), sn = Math.sin(yaw);   // 굽기와 같은 역회전
       xf.set(obj.position.x, obj.position.z, c, sn);
       grid.set(bake.x0, bake.z0, bake.invSX, bake.invSZ);
@@ -3266,11 +3277,12 @@ ${GERSTNER_GLSL}
       // x*sin(기울기)만큼 올라가므로, 그만큼 더 얕은 단면을 읽어야 한다.
       meta.set(sliceOf(bake, obj.position.y), RIPPLE_SDF_MAXD, strength,
                Math.sin(obj.rotation.z) / step);
+      return true;
     };
     // 섬 — 멀어져 흐려지는 동안 물결도 같이 옅어진다
     const islandFade = THREE.MathUtils.smoothstep(this.shoreBlend, 0.0, SHORE_FADE_UNTIL);
-    apply(this._sdfBoat, this.boat, this.boat.rotation.y, 1.0,
-          wu.uSdfBoatXf.value, wu.uSdfBoatGrid.value, wu.uSdfBoatMeta.value);
+    wu.uHullCut.value = apply(this._sdfBoat, this.boat, this.boat.rotation.y, 1.0,
+          wu.uSdfBoatXf.value, wu.uSdfBoatGrid.value, wu.uSdfBoatMeta.value) ? 1 : 0;
     apply(this._sdfIsland, this.islandGroup, this.islandGroup.rotation.y, islandFade,
           wu.uSdfIslandXf.value, wu.uSdfIslandGrid.value, wu.uSdfIslandMeta.value);
 
@@ -3672,6 +3684,9 @@ ${GERSTNER_GLSL}
       this.bottleTarget = 0;
       this.bottleRevealed = false;
       // 병을 둘러볼 때만 열리는 넓은 각도가 다음 단계로 새어 나가지 않게 일반 범위로 접는다.
+      // 결과 화면에서 몇 바퀴 돌렸든 가까운 쪽으로 접은 뒤 일반 범위로 (안 접으면 그 바퀴 수만큼 되감긴다)
+      this.orbitYaw = wrapAngle(this.orbitYaw);
+      this.orbitPitch = wrapAngle(this.orbitPitch);
       this._easeOrbitTo(
         Math.max(-0.85, Math.min(0.85, this.orbitYaw)),
         Math.max(-0.2, Math.min(0.55, this.orbitPitch))
@@ -4028,6 +4043,12 @@ ${GERSTNER_GLSL}
     }
   }
 
+  /** 손가락·휠 줌의 한계. 병 화면은 더 넓다. */
+  _clampZoom(z) {
+    const res = this._zoomStep === "result";
+    return Math.max(res ? ZOOM_MIN_RESULT : ZOOM_MIN, Math.min(res ? ZOOM_MAX_RESULT : ZOOM_MAX, z));
+  }
+
   /** 둘러보던 각도를 카메라 전환과 같은 곡선으로 목적지까지 옮긴다. */
   _easeOrbitTo(yaw, pitch) {
     if (Math.abs(yaw - this.orbitYaw) < 1e-4 && Math.abs(pitch - this.orbitPitch) < 1e-4) {
@@ -4091,7 +4112,15 @@ ${GERSTNER_GLSL}
     // 병을 둘러볼 때는 수면 아래로도 내려갈 수 있어야 아래에서 올려다보는 각이 나온다.
     // 수면 아래로 내려가는 건 병을 둘러볼 때만 허용한다. 바닥을 bt로 풀어줘야
     // 병에서 빠져나오는 동안 카메라가 갑자기 위로 튀지 않는다.
-    this.camera.position.y = Math.max(this.camera.position.y, 0.16 * (1 - bt));
+    // [버그 10-06] 예전 바닥은 0.16·(1−bt)라 병이 다 떠도 0에서 멈췄다 — 아래로 돌리면 카메라가 수면에 눌려
+    // 높이만 깎이고 앞뒤 거리는 줄어, 돌릴 때 저절로 줌인되는 것처럼 보였다. 병 화면에선 바닥을 아예 치운다.
+    const floorY = 0.16 * (1 - bt) - 1e3 * bt;
+    this.camera.position.y = Math.max(this.camera.position.y, floorY);
+    // 카메라 위쪽 = 시선각(pitch)을 따라 도는 방향. 늘 시선과 직각이라 꼭대기·바닥을 넘어가도 화면이
+    // 한 번에 뒤집히지 않고 이어서 돈다. 평소 각도(±90도 안)에서는 거의 (0,1,0)이라 다른 단계는 그대로다.
+    if (bt > 0) {
+      this.camera.up.set(-Math.sin(yaw) * Math.sin(pitch), Math.cos(pitch), -Math.cos(yaw) * Math.sin(pitch)).normalize();
+    } else this.camera.up.set(0, 1, 0);
     // 인트로: 시점을 통째로 수직 이동시킨다. 카메라와 바라보는 지점을 같은 양만큼 올리므로
     // 각도는 그대로고 프레임만 위로 미끄러진다. 충분히 올라가면 바다가 안개 너머로 밀려나
     // 하늘만 남는다(수면 제한보다 뒤에 더해야 올라간 높이가 깎이지 않는다).
