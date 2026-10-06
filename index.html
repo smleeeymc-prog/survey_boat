@@ -155,7 +155,7 @@ import { GLB_NODES, KEYWORD_NODES, CODE_MADE_NODES, SIDE_PROPS, CLOVER } from ".
 import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 import { SCENE_LOOK, HEMI, AO } from "./statistics/shared/look-tokens.js";
 // 배 겉모습(레퍼런스 색·튜브 톤·램프·번짐 모양·선체 부품 판정) — 지도와 같이 쓴다 (09-30~)
-import { BOAT_PAINT, TUBE_TINT, TUBE_FX_EDGE, LAMP, GLOW_LIGHTHOUSE, GLOW_LAMP, markHullParts, lampTwinZ, paintMaterials }
+import { BOAT_PAINT, TUBE_TINT, TUBE_FX_EDGE, LAMP, GLOW_LIGHTHOUSE, GLOW_LAMP, markHullParts, lampTwinZ, paintParts }
   from "./statistics/shared/boat-look.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
@@ -369,6 +369,18 @@ function _buildSplashCurve() {
   return out;
 }
 const SPLASH_CURVE = _buildSplashCurve();
+
+// 판자 이음매 — 밝은 나무엔 어두운 선, 어두운 나무엔 밝은 선(10-06 사용자: 갑판을 진남·먹색으로 칠하면 검은 이음매가 묻혔다).
+// line = 이음매 한가운데 1 · 판자 안쪽 0, base = 그 판자의 칠 색(선형). 갑판(나무 셰이더)과 캐빈 지붕(페인트 셰이더)이 같이 쓴다.
+const SEAM_TONE_GLSL = `
+  vec3 woodSeamTone(vec3 col, vec3 base, float line, float amt) {
+    float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    float dark = 1.0 - smoothstep(0.04, 0.12, lum);
+    vec3 shade = col * (1.0 - amt * line);
+    vec3 pale = mix(base, vec3(1.0), 0.45) * 0.55;         // 그 나무 색이 바랜 듯한 밝은 선 — 하얗게 튀지 않게 한 톤 눌러서
+    vec3 glow = mix(col, max(col, pale), line * 0.7);
+    return mix(shade, glow, dark);
+  }`;
 
 const REENTER_ZOOM_FROM = 1.7;
 const REENTER_ZOOM_SEC = 1.8;
@@ -2106,8 +2118,9 @@ ${GERSTNER_GLSL}
     const C = (hex) => new THREE.Color(hex);
     Object.assign(shader.uniforms, {
       uPaintMin: { value: bb.min.clone() }, uPaintSize: { value: bb.getSize(new THREE.Vector3()) },
-      uPaintDim: { value: dim.clone() }, uPaintCol: { value: C(color) },
-      uPaintRoof: { value: C(BOAT_PAINT.cabinRoof) }, uPaintGlass: { value: C(BOAT_PAINT.glass) },
+      // 벽 색·지붕 색은 배 색 단계가 바꾼다(setPaint) — 공유 슬롯(_tintSlot)이라 컴파일 전후 상관없이 같은 객체
+      uPaintDim: { value: dim.clone() }, uPaintCol: this._tintSlot(decor ? "cabin" : "funnelStep", color),
+      uPaintRoof: this._tintSlot("cabinRoof", BOAT_PAINT.cabinRoof), uPaintGlass: { value: C(BOAT_PAINT.glass) },
       uPaintTrim: { value: C(BOAT_PAINT.trim) }, uPaintHandle: { value: C(BOAT_PAINT.handle) },
     });
     (this._paintU = this._paintU || {})[decor ? "cabin" : "funnelStep"] = shader.uniforms;   // 6.17
@@ -2125,6 +2138,7 @@ ${GERSTNER_GLSL}
         uniform vec3 uPaintDim, uPaintCol, uPaintRoof, uPaintGlass, uPaintTrim, uPaintHandle;
         varying vec3 vPaintP; varying vec3 vPaintN;
         float paintHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+        ${SEAM_TONE_GLSL}
         // 둥근 모서리 사각형까지의 거리 (안쪽 음수). b = 반폭·반높이, r = 모서리 반지름
         float paintRR(vec2 p, vec2 b, float r) {
           vec2 q = abs(p) - b + r;
@@ -2167,7 +2181,8 @@ ${GERSTNER_GLSL}
               // 지붕 — 짙은 판자 (배 길이 방향으로 길게, 폭 0.022마다 이음매)
               float v = q.y / 0.022, idx = floor(v), f = fract(v);
               float seam = smoothstep(0.0, max(0.08, fwidth(v) * 1.5), f) * smoothstep(1.0, 1.0 - max(0.08, fwidth(v) * 1.5), f);
-              col = uPaintRoof * (0.9 + floor(paintHash(idx + 3.0) * 3.0) * 0.08) * mix(0.62, 1.0, seam);
+              col = uPaintRoof * (0.9 + floor(paintHash(idx + 3.0) * 3.0) * 0.08);
+              col = woodSeamTone(col, uPaintRoof, 1.0 - seam, 0.38);   // 어두운 지붕이면 이음매가 밝은 선으로(갑판과 같은 식)
             } else if (face == 0 && vPaintN.x < 0.0) {
               // 뱃머리 쪽 면 — 창 넷을 한 줄로
               float m = 0.12 * W, slot = (W - 2.0 * m) / 4.0;
@@ -2594,16 +2609,16 @@ ${GERSTNER_GLSL}
     this._hullBase = hull.material.color.clone();
     this._deckBase = new THREE.Color(BOAT_PAINT.deck);
     this._deckColU = { value: this._deckBase.clone() };
-    if (this._paintPending) { const p = this._paintPending; this._paintPending = null; this.setPaint(p.hull, p.deck, true); }
+    if (this._paintPending) { const p = this._paintPending; this._paintPending = null; this.setPaint(p.hull, p.deck, { instant: true, pure: p.pure }); }
     hull.updateMatrix();
     const toShip = hull.matrix.clone();                         // 선체 로컬 → 배 로컬 (선체는 Ship의 자식)
     const toShipN = new THREE.Matrix3().getNormalMatrix(toShip);
     this._markDeckFaces(hull, toShip);
     this._markHullParts(hull, toShip);
     patchMaterial(hull.material, "wood", (shader) => {
-      shader.uniforms.uMastCol = { value: new THREE.Color(BOAT_PAINT.mast) };
-      shader.uniforms.uStairRailCol = { value: new THREE.Color(BOAT_PAINT.stairRail) };
-      shader.uniforms.uStairTreadCol = { value: new THREE.Color(BOAT_PAINT.stairTread) };
+      shader.uniforms.uMastCol = this._tintSlot("mast", BOAT_PAINT.mast);
+      shader.uniforms.uStairRailCol = this._tintSlot("stairRail", BOAT_PAINT.stairRail);
+      shader.uniforms.uStairTreadCol = this._tintSlot("stairTread", BOAT_PAINT.stairTread);
       shader.uniforms.uDeckCol = this._deckColU;   // 배 색 단계가 바꾼다(setPaint) — 컴파일 전에도 잡을 수 있게 바깥 객체
       this._hullPaintU = shader.uniforms;   // 색 눈금 맞출 때 콘솔·검증 스크립트가 만진다(6.17)
       shader.uniforms.uHullToShip = { value: toShip };
@@ -2629,6 +2644,7 @@ ${GERSTNER_GLSL}
           uniform vec3 uMastCol, uStairRailCol, uStairTreadCol, uDeckCol;
           varying vec3 vWoodP; varying vec3 vWoodN; varying float vWoodDeck; varying float vWoodPart;
           float woodHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+          ${SEAM_TONE_GLSL}
           // 판자 이음매: 판자 안쪽은 1, 이음매 선에서 0 (멀어서 선이 픽셀보다 가늘면 흐리게 — 반짝임 방지)
           float woodSeam(float v, float w) {
             float f = fract(v), aa = max(w, fwidth(v) * 1.5);
@@ -2671,7 +2687,9 @@ ${GERSTNER_GLSL}
             // 물 아래는 짙은 바닥 칠 (띠 없이 색만 — 흰 흘수선 띠는 배가 떨어지기 전에도 보여서 뺐다)
             float below = (1.0 - deck) * (1.0 - smoothstep(-${SHIP_DRAFT.toFixed(3)} + 0.005, -${SHIP_DRAFT.toFixed(3)} + 0.008, p.y));
             wood = mix(wood, base * vec3(0.55, 0.40, 0.42), below);
-            wood *= mix(0.6, 1.0, seam) * mix(0.62, 1.0, butt);
+            // 이음매: 밝은 나무엔 어두운 선, 어두운 나무(배 색 단계의 진남·먹색 등)엔 밝은 선 — 어두운 판자에 검은 선은 안 보인다
+            wood = woodSeamTone(wood, mix(sideCol, uDeckCol, deck), 1.0 - seam, 0.4);
+            wood = woodSeamTone(wood, mix(sideCol, uDeckCol, deck), 1.0 - butt, 0.38);
             diffuseColor.rgb = mix(diffuseColor.rgb, wood, uWoodAmt * mix(uWoodSideAmt, 1.0, deck));
           }
           // 마스트·계단 — 무늬 없이 제 색(_markHullParts). 나무 켜고 끄기와 무관하게 늘 칠한다.
@@ -3445,35 +3463,56 @@ ${GERSTNER_GLSL}
     this._applyRockColor(hex);
   }
 
+  /** 배 색이 바꾸는 나머지 부분의 색 슬롯(마스트·계단·캐빈 벽·굴뚝 받침·캐빈 지붕). 셰이더와 setPaint 가 같은 객체를 쥔다 */
+  _tintSlot(key, hex) {
+    this._tintU = this._tintU || {};
+    this._tintBase = this._tintBase || {};
+    if (!this._tintU[key]) {
+      this._tintBase[key] = new THREE.Color(hex);
+      this._tintU[key] = { value: this._tintBase[key].clone() };
+    }
+    return this._tintU[key];
+  }
+
   /**
-   * 배 색 (Ⅵ 색 단계). hullId = BOAT_COLORS id, deckId = id 또는 "auto"(원톤 — 갑판이 선체를 따라 물든다).
-   * 색 계산은 statistics/shared/boat-look.js paintMaterials (지도와 같은 식). 0.35초쯤에 걸쳐 옮겨 간다(_updatePaint).
-   * instant = 바로 맞춘다(모델이 늦게 뜬 경우).
+   * 배 색 (Ⅵ 색 단계). hull = 팔레트 id 또는 "#rrggbb", deck = 같은 것 또는 "auto"(원톤).
+   * opts.instant = 바로 맞춘다(모델이 늦게 뜬 경우·이어 쓰기), opts.pure = 원색 그대로(시험).
+   * 색 계산은 statistics/shared/boat-look.js paintParts — 선체·갑판에 더해 캐빈 벽·굴뚝 받침·마스트·계단·캐빈 지붕까지.
+   * 0.35초쯤에 걸쳐 옮겨 간다(_updatePaint).
    */
-  setPaint(hullId = "base", deckId = "auto", instant = false) {
-    if (!this._hullMat) { this._paintPending = { hull: hullId, deck: deckId }; return; }
-    const key = hullId + "/" + deckId;
+  setPaint(hullId = "base", deckId = "auto", opts = {}) {
+    if (typeof opts === "boolean") opts = { instant: opts };
+    const { instant = false, pure = false } = opts;
+    if (!this._hullMat) { this._paintPending = { hull: hullId, deck: deckId, pure }; return; }
+    const key = `${hullId}/${deckId}/${pure ? 1 : 0}`;
     if (this._paintKey === key && !instant) return;
     this._paintKey = key;
-    const m = paintMaterials(hullId, deckId, (globalThis.SURVEY_TAXONOMY || {}).BOAT_COLORS);
-    this._paintTo = {
-      hull: m.hull === null ? this._hullBase.clone() : new THREE.Color(m.hull),
-      deck: m.deck === null ? this._deckBase.clone() : new THREE.Color(m.deck),
-    };
-    if (instant) { this._hullMat.color.copy(this._paintTo.hull); this._deckColU.value.copy(this._paintTo.deck); }
+    const m = paintParts(hullId, deckId, (globalThis.SURVEY_TAXONOMY || {}).BOAT_COLORS, { pure });
+    const P = BOAT_PAINT;
+    const slots = [
+      [this._hullMat.color, m.hull, this._hullBase],
+      [this._deckColU.value, m.deck, this._deckBase],
+    ];
+    for (const [k, def] of [["cabin", P.cabin], ["funnelStep", P.funnelStep], ["mast", P.mast],
+                            ["stairRail", P.stairRail], ["stairTread", P.stairTread], ["cabinRoof", P.cabinRoof]]) {
+      const slot = this._tintSlot(k, def);
+      slots.push([slot.value, m[k], this._tintBase[k]]);
+    }
+    this._paintTo = slots.map(([cur, hex, base]) => [cur, hex === null ? base.clone() : new THREE.Color(hex)]);
+    if (instant) { for (const [cur, to] of this._paintTo) cur.copy(to); this._paintTo = null; }
   }
 
   _updatePaint(dt) {
     const p = this._paintTo;
     if (!p) return;
     const k = Math.min(1, dt * 9);
-    this._hullMat.color.lerp(p.hull, k);
-    this._deckColU.value.lerp(p.deck, k);
-    // 거의 닿으면 정확히 맞추고 멈춘다 — 스냅샷(SNAP_POSE)이 같은 답이면 같은 색이 되게
-    if (Math.abs(this._hullMat.color.r - p.hull.r) + Math.abs(this._hullMat.color.g - p.hull.g) + Math.abs(this._hullMat.color.b - p.hull.b)
-      + Math.abs(this._deckColU.value.r - p.deck.r) + Math.abs(this._deckColU.value.g - p.deck.g) + Math.abs(this._deckColU.value.b - p.deck.b) < 1e-3) {
-      this._hullMat.color.copy(p.hull); this._deckColU.value.copy(p.deck); this._paintTo = null;
+    let left = 0;
+    for (const [cur, to] of p) {
+      cur.lerp(to, k);
+      left += Math.abs(cur.r - to.r) + Math.abs(cur.g - to.g) + Math.abs(cur.b - to.b);
     }
+    // 거의 닿으면 정확히 맞추고 멈춘다 — 스냅샷(SNAP_POSE)이 같은 답이면 같은 색이 되게
+    if (left < 2e-3) { for (const [cur, to] of p) cur.copy(to); this._paintTo = null; }
   }
 
   applyKeywords(keywords) {
@@ -3720,7 +3759,7 @@ ${GERSTNER_GLSL}
     this.applyRegion(appState.region);
     this.setMode(appState.stateId || "stay");
     this.applyKeywords(appState.keywords);
-    this.setPaint(appState.hullColor || "base", appState.tone === "two" ? (appState.deckColor || "base") : "auto");
+    this.setPaint(appState.hullColor || "base", appState.tone === "two" ? (appState.deckColor || "base") : "auto", { pure: !!appState.pure });
 
     this._setCamStep(step);
 

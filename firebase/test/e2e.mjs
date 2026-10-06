@@ -155,9 +155,9 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".qnext").click();                        // Ⅳ 나눔
   for (const i of keywordIdx) await page.locator(".kw-word").nth(i).click();   // Ⅴ 키워드
   await page.locator(".qnext").click();
-  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (원판 위 0~1 자리)
+  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (명암 판 위 0~1 자리)
   if (color && color.wheel) {
-    const box = await page.locator(".paint-wheel").boundingBox();
+    const box = await page.locator(".paint-sv").boundingBox();
     await page.mouse.click(box.x + box.width * color.wheel[0], box.y + box.height * color.wheel[1]);
   } else if (color) {
     if (color.deck !== undefined) await page.locator(".paint-mode", { hasText: "투톤" }).click();

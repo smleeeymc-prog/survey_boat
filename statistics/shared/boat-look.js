@@ -217,20 +217,21 @@ function seenToMaterial(hex) {
 
 /**
  * 설문 색 단계(낮) 조명에서 재서 푼 재질 색 — 배가 띨 목표색(seenTarget·deckSeenForHull)이 그 부분 픽셀(휘도 50~75% 띠의
- * 평균)이 되도록 렌더 → 재기 → 고치기를 여섯 번 되풀이했다(10-06, 고정 자세 SNAP_POSE, 오차 0~2 / 255).
+ * 평균)이 되도록 렌더 → 재기 → 고치기를 여섯 번 되풀이했다(10-06, 고정 자세 SNAP_POSE, 오차 0~3 / 255 —
+ * 진남·자두 투톤 갑판만 12·7: 어두운 갑판은 이음매가 밝은 선으로 바뀌어(woodSeamTone) 재는 띠에 섞인다).
  * 표가 우선이고, 표에 없는 id(팔레트에 새로 더한 색)는 아래 PAINT_RENDER_GAIN 식으로 어림한다.
  * 팔레트 hex·SEEN_*·DECK_* 를 바꾸면 이 표를 다시 풀 것:  node tools/calibrate-paint.mjs (설문 HANDOFF.md 6.25)
  *   hull 선체 · deckAuto 원톤 갑판(선체를 따라 물든 색) · deck 투톤 갑판
  */
 export const PAINT_TABLE = {
-  red:     { hull: 0xd45a3c, deckAuto: 0xe08e66, deck: 0xc3502e },
-  orange:  { hull: 0xde8057, deckAuto: 0xe4a168, deck: 0xce7141 },
-  yellow:  { hull: 0xceaa5c, deckAuto: 0xc1b25c, deck: 0xbd953d },
-  green:   { hull: 0x95872d, deckAuto: 0x9cb86c, deck: 0x877f26 },
-  blue:    { hull: 0x398b8e, deckAuto: 0x4fb1ce, deck: 0x328184 },
-  navy:    { hull: 0x2b3d73, deckAuto: 0x847ac3, deck: 0x314078 },
-  purple:  { hull: 0x923c6a, deckAuto: 0xd37188, deck: 0x863b64 },
-  black:   { hull: 0x2f1d33, deckAuto: 0x9a6a83, deck: 0x3c2a46 },
+  red:     { hull: 0xd35b3e, deckAuto: 0xdb8c66, deck: 0xcb4d29 },
+  orange:  { hull: 0xe08056, deckAuto: 0xe09f67, deck: 0xcd7040 },
+  yellow:  { hull: 0xcfa95c, deckAuto: 0xc0b05a, deck: 0xbb943d },
+  green:   { hull: 0x94882e, deckAuto: 0x99b56b, deck: 0x867e25 },
+  blue:    { hull: 0x4278b8, deckAuto: 0x859ae0, deck: 0x456fa6 },
+  navy:    { hull: 0x2b3d73, deckAuto: 0x8279c1, deck: 0x101361 },
+  purple:  { hull: 0x933c6b, deckAuto: 0xd07087, deck: 0x852458 },
+  black:   { hull: 0x2f1d34, deckAuto: 0x976983, deck: 0x1a0313 },
 };
 
 /** 동그라미 색 → 그 부분(기본 색 base)이 띨 화면 색 — 위 SEEN_* 만큼만 옮긴다 */
@@ -322,12 +323,20 @@ const hexNum = (h) => parseInt(String(h).slice(1), 16);
  * 그 부분이 띨 화면 색. value = 팔레트 id | "#rrggbb", part = "hull" | "deck". 기본('base'·빈 값)이면 null.
  * 팔레트·컬러휠 같은 식(seenTarget) — 팔레트는 고르기 쉽게 미리 골라 둔 동그라미일 뿐이다.
  */
-export function paintTarget(value, part, palette) {
+export function paintTarget(value, part, palette, pure = false) {
   if (!value || value === "base") return null;
   let pad = null;
   if (COLOR_HEX_RE.test(value)) pad = hexNum(value);
   else { const c = (palette || []).find((x) => x.id === value); if (c && c.id !== "base") pad = hexNum(c.hex); }
-  return pad === null ? null : seenTarget(pad, part === "deck" ? BASE_DECK_SEEN : BASE_HULL_SEEN);
+  if (pad === null) return null;
+  // 원색 그대로(시험, 10-06 사용자): 고른 색을 누르지 않고 그대로 띤다
+  return pure ? pad : seenTarget(pad, part === "deck" ? BASE_DECK_SEEN : BASE_HULL_SEEN);
+}
+
+/** 원색 그대로일 때 원톤 갑판 — 선체와 같은 색조·채도, 밝기만 기본 배처럼 갑판이 한 톤 밝게(판자가 선체와 구별되게) */
+function deckPureForHull(hullSeen) {
+  const o = hexToOklch(hullSeen), b = hexToOklch(BASE_HULL_SEEN), d = hexToOklch(BASE_DECK_SEEN);
+  return oklchToHex({ h: o.h, C: o.C, L: clamp01(o.L + (d.L - b.L)) });
 }
 
 /**
@@ -351,12 +360,13 @@ function fitSeen(part, hex) {
 }
 const SEEN_L_MIN = 0.26;
 
-/** 선체·갑판이 띨 화면 색 → { hull, deck } (null = 기본). deckValue "auto" = 원톤 */
-export function paintSeen(hullValue, deckValue, palette) {
-  const hull = fitSeen("hull", paintTarget(hullValue, "hull", palette));
+/** 선체·갑판이 띨 화면 색 → { hull, deck } (null = 기본). deckValue "auto" = 원톤. opts.pure = 원색 그대로(시험) */
+export function paintSeen(hullValue, deckValue, palette, opts = {}) {
+  const pure = !!opts.pure;
+  const hull = fitSeen("hull", paintTarget(hullValue, "hull", palette, pure));
   const deck = deckValue === "auto" || deckValue === undefined
-    ? (hull === null ? null : fitSeen("deck", deckSeenForHull(hull)))
-    : fitSeen("deck", paintTarget(deckValue, "deck", palette));
+    ? (hull === null ? null : fitSeen("deck", pure ? deckPureForHull(hull) : deckSeenForHull(hull)))
+    : fitSeen("deck", paintTarget(deckValue, "deck", palette, pure));
   return { hull, deck };
 }
 
@@ -394,11 +404,11 @@ export function materialFromSeen(part, seenHex) {
 }
 
 /**
- * 고른 색 → 재질 색 { hull, deck } (null = 원래 재질 그대로). 팔레트 id 는 표, 컬러휠·표에 없는 색은 응답 곡선.
+ * 고른 색 → 재질 색 { hull, deck } (null = 원래 재질 그대로). 팔레트 id 는 표, 컬러휠·원색 그대로는 응답 격자.
  */
-export function paintMaterials(hullValue, deckValue, palette) {
-  const T = PAINT_TABLE;
-  const seen = paintSeen(hullValue, deckValue, palette);
+export function paintMaterials(hullValue, deckValue, palette, opts = {}) {
+  const T = opts.pure ? {} : PAINT_TABLE;   // 표는 누른 목표색에 맞춰 푼 것이라 원색 그대로엔 격자로
+  const seen = paintSeen(hullValue, deckValue, palette, opts);
   const auto = deckValue === "auto" || deckValue === undefined;
   const hull = seen.hull === null ? null : (T[hullValue] ? T[hullValue].hull : materialFromSeen("hull", seen.hull));
   let deck = null;
@@ -408,3 +418,41 @@ export function paintMaterials(hullValue, deckValue, palette) {
   }
   return { hull, deck };
 }
+
+/* ── 나머지 부분도 톤에 맞춘다 (10-06 사용자) ─────────────────────────────────
+ *   원톤  캐빈 벽·굴뚝 받침·마스트·계단 — 선체가 기본에서 옮겨 간 만큼 색조를 옮기고 채도는 비율로, **밝기는 그대로**.
+ *         캐빈 지붕은 갑판과 같은 색.
+ *   투톤  선체 묶음 = 선체 · 캐빈 벽 · 굴뚝 받침,  갑판 묶음 = 갑판 · 계단 · 마스트 · 캐빈 지붕(= 갑판 색).
+ * 재질 색에 바로 건다(밝기를 지키므로 눈금 표가 필요 없다). 원색 그대로(시험)는 색조·채도를 고른 색 그대로 쓴다.
+ */
+const TINT_RATIO_MAX = 1.4, TINT_C_MAX = 0.12;
+export function tintKeepLight(baseMat, fromSeen, toSeen, pure = false) {
+  const e = hexToOklch(baseMat), f = hexToOklch(fromSeen), t = hexToOklch(toSeen);
+  const h = pure ? t.h : (((e.h + (t.h - f.h)) % 360) + 360) % 360;
+  const C = pure ? t.C : Math.min(TINT_C_MAX, e.C * Math.min(TINT_RATIO_MAX, f.C > 1e-3 ? t.C / f.C : 1));
+  return oklchToHex({ L: e.L, C, h });
+}
+
+/**
+ * 배 전체의 재질 색 — { hull, deck, cabin, funnelStep, mast, stairRail, stairTread, cabinRoof } (null = 원래 그대로).
+ * 화면(설문 씬)은 이것만 부르면 된다. 지도도 같은 식으로 나머지 부분을 칠할 수 있다(HANDOFF-map 26).
+ */
+export function paintParts(hullValue, deckValue, palette, opts = {}) {
+  const pure = !!opts.pure;
+  const auto = deckValue === "auto" || deckValue === undefined;
+  const seen = paintSeen(hullValue, deckValue, palette, opts);
+  const mats = paintMaterials(hullValue, deckValue, palette, opts);
+  const P = BOAT_PAINT;
+  const tint = (base, from, to) => (to === null ? null : tintKeepLight(base, from, to, pure));
+  const deckFrom = auto ? BASE_HULL_SEEN : BASE_DECK_SEEN, deckTo = auto ? seen.hull : seen.deck;
+  return {
+    hull: mats.hull, deck: mats.deck,
+    cabin: tint(P.cabin, BASE_HULL_SEEN, seen.hull),
+    funnelStep: tint(P.funnelStep, BASE_HULL_SEEN, seen.hull),
+    mast: tint(P.mast, deckFrom, deckTo),
+    stairRail: tint(P.stairRail, deckFrom, deckTo),
+    stairTread: tint(P.stairTread, deckFrom, deckTo),
+    cabinRoof: mats.deck,
+  };
+}
+

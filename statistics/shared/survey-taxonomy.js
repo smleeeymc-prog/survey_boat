@@ -55,7 +55,7 @@ var SURVEY_TAXONOMY = (function () {
 
   const KEYWORDS = ["일","관계","가족","창작","익숙함","주거","불안","자유","소속감","우연"];
 
-  // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 지도 톤에 맞춘 작품 색 8개(주홍·테라코타·머스터드·올리브·청록·진남·자두·먹색)를
+  // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 지도 톤에 맞춘 작품 색 8개(주홍·테라코타·머스터드·올리브·청색·진남·자두·먹색)를
   // 빨주노초파남보흑 순으로. id 는 무지개 칸 이름이고 이름(label)이 실제 색이다.
   // hex = 고르는 판의 동그라미 색. 배는 기본 배에서 이 색 쪽으로 채도·밝기를 일부만 옮겨 띤다(statistics/shared/boat-look.js
   // seenTarget — 컬러휠과 같은 식). 볕 받는 면은 눈에 더 밝게 읽혀서, 이렇게 옮긴 배가 동그라미와 비슷하게 보인다(설문 HANDOFF 6.25).
@@ -70,7 +70,7 @@ var SURVEY_TAXONOMY = (function () {
     {id:"orange", label:"테라코타", hex:"#9a5a3a"},
     {id:"yellow", label:"머스터드", hex:"#95792a"},
     {id:"green",  label:"올리브",   hex:"#5f6630"},
-    {id:"blue",   label:"청록",     hex:"#24676a"},
+    {id:"blue",   label:"청색",     hex:"#2c5a88"},
     {id:"navy",   label:"진남",     hex:"#26355e"},
     {id:"purple", label:"자두",     hex:"#6a2f50"},
     {id:"black",  label:"먹색",     hex:"#2a292d"},
