@@ -333,18 +333,40 @@ const CLOUD_FADE_SPAN = INTRO_LIFT * 0.55;
 const BOAT_DROP_LEAD = 0.5;      // 카메라가 멈추기 몇 초 전에 배가 나타나는지
 // 뽁(0.16초) → 낙하(0.61초) → 출렁이며 자리 잡기(4.2초) = 약 5초.
 // 예전엔 착수 뒤 한 번만 잠겼다 떠서 끝났다(10-06 사용자: "한 번만 내려갔다 올라온다").
-// 지금은 위아래 폭이 조금씩 줄며 몇 번 울렁이다 제자리로 온다 — 감쇠 진동.
+// 출렁임은 사인 곡선이 아니라 물에 뜬 물체를 간단히 흘려 본 결과다(BOAT_FLOAT, _buildSplashCurve):
+//   물속(쉬는 높이 아래) — 깊이 잠길수록 부력이 세게 밀어 올리고 물 저항이 크다. 빨리 받아 내고 튀어 오른다.
+//   물 위(쉬는 높이 위) — 자기 무게가 끌어내린다. 올라가며 감속해 꼭대기에서 잠깐 뜨고, 내려올 때 가속이 붙는다
+//   (사용자: "올라갈 땐 ease out, 내려갈 땐 ease in"). 물 위는 부력이 약해 꼭대기가 바닥보다 둥글고 길다.
+// 실측 폭: −0.27 → +0.14 → −0.067 → +0.036 → −0.017 → +0.009 → 0 (약 3.7초에 멎는다).
 const BOAT_POP_SEC = 0.16;
 const BOAT_FALL_SEC = 0.61;
 const BOAT_SETTLE_SEC = 4.2;
 const BOAT_DROP_SEC = BOAT_POP_SEC + BOAT_FALL_SEC + BOAT_SETTLE_SEC;
 const BOAT_DROP_HEIGHT = 1.7;
-const BOAT_DROP_DIP = 0.30;      // 출렁임 시작 폭 — 첫 잠김은 약 0.24(감쇠 때문에 이보다 얕다)
-const BOAT_SETTLE_PERIOD = 1.2;  // 한 번 내려갔다 올라오는 데 걸리는 시간
-const BOAT_SETTLE_DECAY = 0.8;   // 클수록 빨리 잦아든다. 0.8이면 폭이 1.2초마다 약 40%로
-// 질문 화면은 출렁임이 끝날 때까지 기다리지 않는다 — 첫 잠김에서 수면 위로 돌아오는 순간
+const BOAT_FLOAT = {
+  entryV: -2.7,       // 착수 직후 속도 — 낙하 끝 속도(약 8.4)의 3분의 1. 나머지는 물보라가 먹는다
+  waterK: 40,         // 물속 복원력(부력)
+  waterDrag: 4.6,     // 물속 저항
+  airK: 26,           // 물 위 복원력(무게) — 물속보다 약해 꼭대기가 둥글다
+  airDrag: 0.5,       // 물 위 저항
+};
+// 질문 화면은 출렁임이 끝날 때까지 기다리지 않는다 — 첫 잠김에서 수면으로 돌아오는 순간
 // (예전 연출이 끝나던 때와 비슷)에 '자리 잡음'을 알리고, 나머지 울렁임은 질문 뒤에서 이어진다.
-const BOAT_SETTLED_AT = BOAT_POP_SEC + BOAT_FALL_SEC + BOAT_SETTLE_PERIOD * 0.5;
+const BOAT_SETTLED_AT = BOAT_POP_SEC + BOAT_FALL_SEC + 0.45;
+
+/** 착수 뒤 높이 곡선을 1/240초 간격 표로 미리 흘려 둔다 — 프레임 속도와 상관없이 언제나 같은 모양. */
+function _buildSplashCurve() {
+  const F = BOAT_FLOAT, dt = 1 / 240, n = Math.ceil(BOAT_SETTLE_SEC / dt) + 1;
+  const out = new Float32Array(n);
+  let y = 0, v = F.entryV;
+  for (let i = 0; i < n; i++) {
+    out[i] = y;
+    const a = y < 0 ? -F.waterK * y - F.waterDrag * v : -F.airK * y - F.airDrag * v;
+    v += a * dt; y += v * dt;
+  }
+  return out;
+}
+const SPLASH_CURVE = _buildSplashCurve();
 
 const REENTER_ZOOM_FROM = 1.7;
 const REENTER_ZOOM_SEC = 1.8;
@@ -3298,13 +3320,13 @@ ${GERSTNER_GLSL}
       this._dropOffset = BOAT_DROP_HEIGHT * (1 - p * p * p);
       return;
     }
-    // 착수 — 감쇠 진동. 떨어지던 힘으로 먼저 잠기고(sin이 0에서 아래로), 위아래 폭이 지수로 줄며 울렁인다.
-    // 마지막 15%는 폭을 0으로 부드럽게 접어, 끝나는 순간 파도 흔들림으로 끊김 없이 넘어간다.
+    // 착수 — 미리 흘려 둔 출렁임 표(SPLASH_CURVE)를 읽는다. 마지막 15%는 남은 폭(이미 0.005 아래)을
+    // 0으로 부드럽게 접어, 끝나는 순간 파도 흔들림으로 끊김 없이 넘어간다.
     const t = sec - BOAT_POP_SEC - BOAT_FALL_SEC;
-    const s = t / BOAT_SETTLE_SEC;
-    const tail = 1 - THREE.MathUtils.smoothstep(s, 0.85, 1);
-    this._dropOffset = -BOAT_DROP_DIP * Math.exp(-BOAT_SETTLE_DECAY * t)
-      * Math.sin((2 * Math.PI * t) / BOAT_SETTLE_PERIOD) * tail;
+    const f = Math.min(SPLASH_CURVE.length - 1.001, t * 240);
+    const i = Math.floor(f);
+    const y = SPLASH_CURVE[i] + (SPLASH_CURVE[i + 1] - SPLASH_CURVE[i]) * (f - i);
+    this._dropOffset = y * (1 - THREE.MathUtils.smoothstep(t / BOAT_SETTLE_SEC, 0.85, 1));
   }
 
   /**
