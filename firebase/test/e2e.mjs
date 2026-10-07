@@ -235,6 +235,14 @@ try {
     return { rec: m.records.at(-1).record_id === id, queuedOrArriving: (m.arriving && m.arriving.record.record_id === id) || m.pending.some((r) => r.record_id === id) || m.boats.some((b) => b.record.record_id === id) };
   }, mine.id);
   check("지도: 열어 둔 채 제출하면 onInsert (새 배로 들어온다)", inserted.rec && inserted.queuedOrArriving, JSON.stringify(inserted));
+  // 배 색·소품 칠이 지도 기록까지 온다 — 예전엔 저장소가 기본 필드만 옮겨 DB 에만 있고 지도엔 없었다(10-07)
+  const mapPaint = await map.evaluate((id) => {
+    const r = window.__map.records.find((x) => x.record_id === id) || {};
+    const b = window.__map.boats.find((x) => x.record.record_id === id) || (window.__map.arriving && window.__map.arriving.record.record_id === id ? window.__map.arriving : null);
+    return { hull: r.hull_color, deck: r.deck_color, tube: r.tube_color, styled: !!(b && b.style && b.style.paint && b.style.paint.hull !== null && b.style.props.tube !== null) };
+  }, mine.id);
+  check("지도: 배 색·소품 칠이 기록에 따라와 그 배를 칠한다 (navy · auto · 튜브 purple)",
+    mapPaint.hull === "navy" && mapPaint.deck === "auto" && mapPaint.tube === "purple", JSON.stringify(mapPaint));
   const arrivalText = await waitFor(() => map.evaluate(() => document.getElementById("arrivalText").textContent), { label: "방금 도착한 문장", timeout: 60000 })
     .catch(() => "");
   check("지도: '방금 도착한 문장'에 그 문장이 뜬다", arrivalText.includes("지도가 이 문장을 받아야 한다"), arrivalText);

@@ -156,7 +156,7 @@ import { THREE_VERSION, THREE_REVISION } from "./statistics/shared/deps.js";
 import { SCENE_LOOK, HEMI, AO } from "./statistics/shared/look-tokens.js";
 // 배 겉모습(레퍼런스 색·튜브 톤·램프·번짐 모양·선체 부품 판정) — 지도와 같이 쓴다 (09-30~)
 import { BOAT_PAINT, TUBE_TINT, TUBE_FX_EDGE, LAMP, GLOW_LIGHTHOUSE, GLOW_LAMP, markHullParts, lampTwinZ, paintParts,
-  PROP_KEYS, propPaint }
+  PROP_KEYS, propPaint, PROP_RECOLOR_GLSL, CAT_COAT_GLSL, CAT_COAT_LOOK, CAT_LINE_LIGHT }
   from "./statistics/shared/boat-look.js";
 
 // 모델도 shared/ 와 같은 이유로 statistics/ 안의 것을 쓴다: 지도는 Vercel에서 Root
@@ -3582,57 +3582,51 @@ ${GERSTNER_GLSL}
     // 고양이 털 무늬
     const cu = {
       on: { value: 0 }, fur: { value: new THREE.Color() }, stripe: { value: new THREE.Color() }, white: { value: new THREE.Color() },
-      line: { value: new THREE.Color(0xf4efe6) }, whiteMode: { value: 0 }, whiteH: { value: 0.4 }, stripeOn: { value: 0 },
-      y: { value: new THREE.Vector2(0, 1) }, c: { value: new THREE.Vector2() },
+      line: { value: new THREE.Color(CAT_LINE_LIGHT) }, whiteMode: { value: 0 }, whiteH: { value: 0.4 }, stripeOn: { value: 0 },
+      // 메시 좌표(y = 위)의 높이 범위 · 말린 중심(xz) · 반지름 · 얼굴 방향(메시 +x) — 흰 털 높이·줄무늬 기준(boat-look.js CAT_COAT_GLSL)
+      y: { value: new THREE.Vector2(0, 1) }, c: { value: new THREE.Vector2() }, r: { value: 1 }, face: { value: new THREE.Vector2(1, 0) },
     };
     this._propU.cat = cu;
     const cat = ship.getObjectByName(GLB_NODES.cat);
-    if (cat) cat.traverse((m) => {   // 메시 좌표(y = 위)의 높이 범위와 웅크린 중심 — 흰 털 높이·줄무늬 기준
+    if (cat) cat.traverse((m) => {
       if (!m.isMesh) return;
       m.geometry.computeBoundingBox();
       const b = m.geometry.boundingBox;
       cu.y.value.set(b.min.y, b.max.y);
       cu.c.value.set((b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2);
+      cu.r.value = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2;
     });
     for (const mat of own(GLB_NODES.cat)) patchMaterial(mat, "cat-coat", (sh) => this._catCoatShader(sh, cu));
     // 모델보다 먼저 들어온 칠(이어 쓰기 등)
     if (this._propsPending) { const p = this._propsPending; this._propsPending = null; this.setProps(p.props, p.catCoat); }
   }
 
-  /** 텍셀이 열쇠 색(key, 선형)에 가까우면 to 로 바꿔 칠한다 — 밝기는 텍셀/열쇠 비로 남겨 그린 결이 산다 */
+  /** 텍셀이 열쇠 색(key, 선형)에 가까우면 to 로 바꿔 칠한다 — 식은 지도와 같이 쓰는 boat-look.js PROP_RECOLOR_GLSL */
   _recolorShader(shader, key, to, on, tol) {
     Object.assign(shader.uniforms, { uRcKey: { value: key }, uRcTo: to, uRcOn: on });
     shader.fragmentShader = shader.fragmentShader
       .replace("void main() {", `uniform vec3 uRcKey, uRcTo; uniform float uRcOn;
+${PROP_RECOLOR_GLSL}
         void main() {`)
       .replace("#include <map_fragment>", `#include <map_fragment>
         #ifdef USE_MAP
         if (uRcOn > 0.5) {
-          vec3 rcTex = sampledDiffuseColor.rgb;
-          float rcW = 1.0 - smoothstep(${(tol * 0.5).toFixed(3)}, ${tol.toFixed(3)}, distance(rcTex, uRcKey));
-          float rcK = max(dot(uRcKey, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
-          vec3 rcRep = uRcTo * clamp(dot(rcTex, vec3(0.2126, 0.7152, 0.0722)) / rcK, 0.0, 1.4);
-          diffuseColor.rgb = mix(diffuseColor.rgb, diffuse * rcRep, rcW);
+          vec4 rc = propRecolor(sampledDiffuseColor.rgb, uRcKey, uRcTo, ${tol.toFixed(3)});
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuse * rc.rgb, rc.a);
         }
         #endif`);
   }
 
   /**
-   * 고양이 털 무늬(10-07 사용자). 삼색(calico)은 텍스처 그대로, 나머지는 **단색으로 덮는다** — 텍스처의 밝기 결을 남기면 단색 털에
-   * 얼룩이 비쳤다. 텍스처에서 가져오는 건 셋뿐:
-   *   선 — 눈·입·발가락을 그린 아주 짙은 갈색(#402010 부근). 짙은 빨강 그늘(초록이 거의 0)과는 초록/빨강 비로 가른다.
-   *        밑 털이 어두우면(턱시도·올블랙) 밝은 선으로 바꾼다 — 검은 털에 짙은 선은 안 보인다.
-   *   분홍 — 귀 안. 그대로.
-   *   흰 털 자리 — 턱시도·치즈태비의 가슴·입·앞발: 얼굴 쪽 반(메시 +x)의 아래쪽(웅크린 고양이의 아래 whiteH)에서 주황·갈색 얼룩이
-   *        아닌 곳. 텍스처엔 가슴·발 구분이 없어 높이로 가른다(흰 털을 다 남기면 젖소 무늬가 된다).
-   * 치즈태비 줄무늬는 텍스처에 없어서 3D로 그린다: 고양이가 둥글게 말려 있어 척추가 말린 중심을 한 바퀴 돈다 —
-   * 중심에서 바깥으로 뻗는 방사형 줄이면 등에서는 가로 줄, 바깥 고리를 도는 꼬리에서는 고리 무늬가 된다.
-   * 줄마다 굵기·기울기를 조금씩 흔들어 손으로 그린 듯하게, 아래쪽(옆구리 끝)으로 갈수록 옅게.
+   * 고양이 털 무늬(10-07 사용자) — 삼색은 텍스처 그대로, 나머지는 단색으로 덮고 선·귀 안 분홍·흰 털 자리만 텍스처에서.
+   * 치즈태비 줄은 말린 중심에서 뻗는 3D 방사형. 식은 지도와 같이 쓰는 boat-look.js CAT_COAT_GLSL(설명도 거기), 색표는 CAT_COAT_LOOK.
+   * 여기서는 메시 좌표를 함수가 받는 모양(높이 0~1, 말린 중심 기준·반지름으로 나눈·얼굴 방향 +x 인 xz)으로만 바꾼다.
    */
   _catCoatShader(shader, u) {
     Object.assign(shader.uniforms, {
       uCoatOn: u.on, uCoatFur: u.fur, uCoatStripe: u.stripe, uCoatWhite: u.white, uCoatLine: u.line,
-      uCoatWhiteMode: u.whiteMode, uCoatWhiteH: u.whiteH, uCoatStripeOn: u.stripeOn, uCoatY: u.y, uCoatC: u.c,
+      uCoatWhiteMode: u.whiteMode, uCoatWhiteH: u.whiteH, uCoatStripeOn: u.stripeOn,
+      uCoatY: u.y, uCoatC: u.c, uCoatR: u.r, uCoatFace: u.face,
     });
     shader.vertexShader = shader.vertexShader
       .replace("void main() {", `varying vec3 vCoatP;
@@ -3640,48 +3634,19 @@ ${GERSTNER_GLSL}
       .replace("#include <begin_vertex>", `#include <begin_vertex>
         vCoatP = position;`);
     shader.fragmentShader = shader.fragmentShader
-      .replace("void main() {", `uniform float uCoatOn, uCoatWhiteMode, uCoatWhiteH, uCoatStripeOn;
-        uniform vec3 uCoatFur, uCoatStripe, uCoatWhite, uCoatLine; uniform vec2 uCoatY, uCoatC;
+      .replace("void main() {", `uniform float uCoatOn, uCoatWhiteMode, uCoatWhiteH, uCoatStripeOn, uCoatR;
+        uniform vec3 uCoatFur, uCoatStripe, uCoatWhite, uCoatLine; uniform vec2 uCoatY, uCoatC, uCoatFace;
         varying vec3 vCoatP;
+${CAT_COAT_GLSL}
         void main() {`)
       .replace("#include <map_fragment>", `#include <map_fragment>
         #ifdef USE_MAP
         if (uCoatOn > 0.5) {
-          vec3 tex = sampledDiffuseColor.rgb;
-          vec3 s = sqrt(tex);                                   // 대략 sRGB 로 — 분류는 눈에 보이는 값으로
-          float mx = max(s.r, max(s.g, s.b)), mn = min(s.r, min(s.g, s.b));
-          float sat = (mx - mn) / max(mx, 1e-3);
-          float L = dot(s, vec3(0.2126, 0.7152, 0.0722));
-          float line = (1.0 - smoothstep(0.2, 0.27, L)) * smoothstep(0.24, 0.32, s.g / max(s.r, 1e-3));
-          // 귀 안 분홍(#f888a8)은 파랑이 초록보다 크다 — 살구빛 털(#f8c898)·주황은 반대라 이것으로 갈린다
-          float pink = smoothstep(0.02, 0.07, s.b - s.g) * smoothstep(0.15, 0.25, s.r - s.g);
-          // 주황·갈색 얼룩(채도 높고 너무 어둡지 않음). 그 밖(흰 털·살구빛·선·선 가장자리)은 흰 털 자리에서 흰색이 된다 —
-          // 흰 털만 고르면 입 선 가장자리 텍셀이 빠져 흰 입에 검은 테가 생겼다
-          float patchTex = smoothstep(0.38, 0.5, sat) * smoothstep(0.22, 0.3, L);
+          vec2 d = (vCoatP.xz - uCoatC) / uCoatR;
+          vec2 q = vec2(dot(d, uCoatFace), uCoatFace.x * d.y - uCoatFace.y * d.x);
           float h = (vCoatP.y - uCoatY.x) / max(uCoatY.y - uCoatY.x, 1e-4);
-          // 털 바탕 — 줄무늬(치즈태비)
-          vec3 fur = uCoatFur;
-          if (uCoatStripeOn > 0.5) {
-            vec2 q = vCoatP.xz - uCoatC;
-            float th = atan(q.y, q.x), r = length(q);
-            // 줄 13개를 한 바퀴에. 기울기·굵기를 흔들고, 바깥(옆구리)으로 가며 살짝 휘게
-            float band = sin(13.0 * th + 1.1 * sin(2.0 * th + 0.7) + 30.0 * r + 14.0 * (h - 0.6));
-            float thick = 0.32 + 0.2 * sin(5.0 * th + 1.3) + 0.15 * sin(60.0 * r + 3.0 * th);   // 줄이 군데군데 가늘어지거나 끊긴다
-            float st = smoothstep(thick - 0.08, thick + 0.08, band)
-                     * smoothstep(0.3, 0.55, h)                       // 아래쪽(옆구리 끝)으로 옅게
-                     * smoothstep(0.03, 0.065, r);                    // 말린 중심 근처는 줄이 모여 바람개비가 된다 — 비운다
-            fur = mix(uCoatFur, uCoatStripe, st);
-          }
-          // 흰 털 자리: 0 없음 · 1 전부(올화이트) · 2 아래쪽의 원래 흰 털만(턱시도·치즈태비)
-          // 아래쪽 흰 털은 얼굴 쪽 반(가슴·앞발 — 메시 +x)에만. 등 뒤 아래 가장자리에 흰 점이 튀지 않게
-          float front = smoothstep(-0.02, 0.01, vCoatP.x - uCoatC.x);
-          float wm = uCoatWhiteMode > 1.5 ? (1.0 - patchTex) * front * (1.0 - smoothstep(uCoatWhiteH - 0.04, uCoatWhiteH + 0.04, h))
-                   : step(0.5, uCoatWhiteMode);
-          vec3 base = mix(fur, uCoatWhite, wm);
-          // 선: 밑이 어두우면 밝은 선, 밝으면 원래 짙은 선
-          vec3 lineCol = dot(base, vec3(0.2126, 0.7152, 0.0722)) < 0.12 ? uCoatLine : tex;
-          vec3 col = mix(base, lineCol, line);
-          diffuseColor.rgb = diffuse * mix(col, tex, pink);
+          diffuseColor.rgb = diffuse * catCoat(sampledDiffuseColor.rgb, h, q, uCoatFur, uCoatStripe, uCoatWhite, uCoatLine,
+            uCoatWhiteMode, uCoatWhiteH, uCoatStripeOn);
         }
         #endif`);
   }
@@ -3706,14 +3671,8 @@ ${GERSTNER_GLSL}
       }
     }
     this._setCloverColor(propPaint(props.clover, pal));
-    // 털 무늬 — 바탕 털 · 줄 · 흰 털(sRGB), 흰 털 자리(0 없음 · 1 전부 · 2 아래쪽), 줄무늬. 삼색은 텍스처 그대로(없음)
-    const coats = {
-      white:  { fur: 0xf7efe4, white: 0xf7efe4, whiteMode: 1 },   // 살짝 따뜻하게 — 하늘빛을 받으면 푸르게 뜬다
-      cheese: { fur: 0xe8913c, stripe: 0xb85c20, white: 0xf8e4c4, whiteMode: 2, whiteH: 0.34, stripeOn: 1 },
-      tuxedo: { fur: 0x242120, white: 0xf5f0e8, whiteMode: 2, whiteH: 0.32 },   // 눈은 검은 머리(흰 선), 입·가슴·앞발만 희게
-      black:  { fur: 0x242120, whiteMode: 0 },
-    };
-    const cu = this._propU.cat, c = coats[catCoat];
+    // 털 무늬 색표는 지도와 같이 쓴다(boat-look.js CAT_COAT_LOOK). 삼색은 없음 = 텍스처 그대로
+    const cu = this._propU.cat, c = CAT_COAT_LOOK[catCoat];
     cu.on.value = c ? 1 : 0;
     if (c) {
       cu.fur.value.setHex(c.fur); cu.stripe.value.setHex(c.stripe ?? c.fur); cu.white.value.setHex(c.white ?? c.fur);

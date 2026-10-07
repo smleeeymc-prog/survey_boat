@@ -1060,3 +1060,34 @@ statistics/
   (올화이트 #f7efe4 · 치즈 #e8913c · 턱시도/올블랙 #242120 · 삼색은 그대로)도 충분하다.
 
 **보안 규칙:** 새 필드가 든 규칙을 사용자가 콘솔에 게시해야 저장된다(설문 HANDOFF 13.14). 그 전엔 설문이 색·무늬를 빼고 보낸다.
+
+## 28. 설문 세션 알림 — 지도 배에 참여자가 고른 칠을 넣었다 (2026-10-07, 사용자 요청으로 설문 세션이 직접)
+
+> 사용자: "이제 머무름의 지도에 반영하고 DB 만들어보자." → 확인 질문에 "설문과 똑같이 배마다 반영(그대로 진행)" · "실DB 점검".
+> 26·27장에서 지도 세션 몫이라 적어 둔 일을 사용자 요청으로 설문 세션이 했다. 지도 구조(전시·인터랙티브 둘 다)는 그대로다.
+
+**무엇이 바뀌었나**
+- `style.js` — 배의 모습이 전부 답에서 온다: `{ keywords, paint, props, catCoat }`. `paint` = `boat-look.js paintParts(hull_color, deck_color)`
+  (칠할 곳마다 재질 hex 또는 null = 기본), `props` = `propPaint`(그 키워드를 고른 배만), `catCoat` = `cat_coat`(없으면 삼색).
+  **`STYLE_SOURCE`·난수 선체 색조(`hullTint`)는 걷어냈다** — 색 없는 기록(옛 기록·규칙 게시 전)은 기본 배 모습.
+- `boat-paint.js` — **배 칸 표 `BoatPaintTable`**: 열 = 배 칸(인스턴스 i, 80), 행 = `PAINT_ROWS` 18(선체·갑판·마스트·계단 둘·캐빈·굴뚝 받침·
+  캐빈 지붕·창·창 테·손잡이 + 튜브·보드·클로버(알파 = 칠함) + 고양이 넷). 실수 RGBA 텍스처, 선형 색, 지도 조명 배수(`MAP_PAINT_GAIN`)는 여기서 곱한다
+  (칠한 캐빈 지붕은 갑판 배수 — 설문처럼 갑판과 같은 색으로 보이게). 선체·캐빈·굴뚝 받침 셰이더는 uniform 대신 이 표를 읽고,
+  튜브·서핑보드(아틀라스 텍셀 열쇠 색 → 고른 색)·클로버(그림에 배수)·고양이(털 무늬) 패치가 새로 붙었다.
+  셰이더 조각은 설문과 같은 파일 `shared/boat-look.js`의 `PROP_RECOLOR_GLSL`·`CAT_COAT_GLSL`·`CAT_COAT_LOOK`.
+- `fleet.js` — 칠하는 조각마다 정점 속성 `_slot`(몇 번 배인지). 몸체는 인스턴스 i = 배 i 고정, 키워드 요소는 `_layoutProps`가 배정할 때 적는다.
+  `applyStyle(i, style)` → `paint.write(i, style)`. 예전 `instanceColor`·`vertexColors`·`tintMeshes`는 뺐다. 거울상으로 옮긴 요소는 `b.mirrored`
+  (고양이 무늬가 얼굴 방향을 다시 잰다 — `catFrame`).
+- `store.js` — 목업 기록에도 배 색·소품 칠·고양이 무늬를 섞는다(`mockPaint`, 순번 시드 — 기존 목업 순서는 그대로).
+- `selfcheck.js` — 선체 색조 그룹 검사 대신 칠 표·`_slot` 검사.
+- **[버그] `shared/record-store.js dbDocToRecord`가 `FIELDS`만 옮겨서, DB에 저장된 배 색(10-06~)이 지도·아카이브에 한 번도 안 왔다.**
+  선택 필드(`PAINT_FIELDS`)도 싣게 고쳤다. E2E에 "지도 기록에 색·소품 칠이 따라와 그 배를 칠한다"를 더했다(43/43).
+
+**확인** — 목업 전시·인터랙티브 콘솔 에러·assert 0, 근접 렌더(튜브 노랑·보드 빨강·클로버 자두·검은 갑판 계단·고양이 무늬 다섯이 설문과 같다),
+단일 파일 시안 빌드·실행(배 47척), `check-insights` 41/41, E2E 43/43, 규칙·저장소 테스트 26/26.
+지도 조명에서 잰 선체 반응은 설문과 거의 같아(선형, 기울기 0.315 · 바닥 0.0095) 재질 값을 그대로 쓴다 — 지도 배가 쨍해 보이면 설문 색 단계도 같이 쨍한 것이다(원색).
+**실DB(ibda-2026-exhibition)** — 시험 기록 `1hdTe40q9T8FJFWZhqfO`(문장 "[시험] 색 저장 확인 — 지워도 됩니다")를 실제로 내서 `hull_color navy · deck_color #f2e6d0 ·
+tube_color yellow · cat_coat tuxedo`가 저장되고, 실DB 인터랙티브 지도(`?me=`)에서 그 배가 그 칠로 뜨는 것까지 봤다.
+
+**지도 세션이 볼 것** — 표 행을 늘리면 `PAINT_ROWS`·셰이더의 `rowOf` 한 곳. 배 칸 수(`FLEET_CAPACITY`)를 바꾸면 표 폭이 따라간다.
+

@@ -27,7 +27,7 @@
  * ========================================================================== */
 
 import { REGIONS, STATES, KEYWORDS } from "./config.js";
-import { makeRng } from "./motion.js";
+import { makeRng, hashSeed } from "./motion.js";
 import { dbMode } from "../shared/db-config.js";
 import { dbListenPublic, dbSdkReachable } from "../shared/record-store.js";
 
@@ -60,6 +60,30 @@ const MOCK_TEXTS = [
 ];
 
 /** 목업 저장소 — 백엔드 없이 화면을 통째로 굴려보기 위한 것. */
+/**
+ * 목업 배 색·소품 칠·고양이 무늬(10-07) — 지도에서 배마다 다른 칠이 보이게. 실제처럼 기본 배도 꽤 남긴다.
+ * 순번에서 시드를 따로 뽑는다 — MockStore 의 rng 를 더 부르면 뒤따르는 목업 기록(문장·지역·키워드)이 전부 달라진다.
+ */
+function mockPaint(n, kws) {
+  const T = globalThis.SURVEY_TAXONOMY || {};
+  const ids = (T.BOAT_COLORS || []).map((c) => c.id).filter((id) => id !== "base");
+  const coats = (T.CAT_COATS || []).map((c) => c.id);
+  if (!ids.length) return {};
+  const r = makeRng(hashSeed(`paint-${n}`));
+  const hex = () => {   // 컬러휠로 고른 색 흉내 — HSL 에서
+    const h = r() * 360, sat = 0.45 + 0.45 * r(), l = 0.3 + 0.4 * r();
+    const f = (k) => { const a = sat * Math.min(l, 1 - l), t = (k + h / 30) % 12; return l - a * Math.max(-1, Math.min(t - 3, 9 - t, 1)); };
+    return "#" + [f(0), f(8), f(4)].map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+  };
+  const pick = () => { const x = r(); return x < 0.3 ? "base" : x < 0.85 ? ids[(r() * ids.length) | 0] : hex(); };
+  const out = { hull_color: pick(), deck_color: r() < 0.3 ? pick() : "auto" };
+  for (const p of T.PROP_PAINTS || []) {
+    if (!kws.includes(p.keyword)) continue;
+    out[p.field] = p.kind === "coat" ? coats[(r() * coats.length) | 0] : (r() < 0.4 ? "base" : pick());
+  }
+  return out;
+}
+
 export class MockStore {
   /**
    * @param {number} seedCount 시작할 때 이미 쌓여 있는 기록 수
@@ -96,6 +120,7 @@ export class MockStore {
       consent_archive: true,
       moderation_status: "public",
       schema_version: globalThis.RECORD_SCHEMA.SCHEMA_VERSION,
+      ...mockPaint(this.n, kws),
     };
   }
 

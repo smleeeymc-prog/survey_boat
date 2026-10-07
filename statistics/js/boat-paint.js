@@ -15,26 +15,139 @@
  *
  * ── 재질 패치 (18.3) ──────────────────────────────────────────────────────
  * 재질의 onBeforeCompile 은 하나뿐이다. 구운 AO 가 이미 쓰므로 material-patch.js 로 겹쳐 건다.
- * 칠은 #include <map_fragment> 바로 뒤, 즉 인스턴스 색조(color_fragment)가 곱해지기 **전**에 넣는다
- * → 배마다 다른 선체 색조(hullTint, 흰색 근처 ±10%)가 갑판·마스트에도 똑같이 옅게 남는다.
- *   설문(배 1척, 색조 없음)은 normal_fragment_maps 뒤에서 덮어쓴다. 지도에서 같은 자리에 두면
- *   갑판·부품에서만 색조가 사라져, 한 배의 선체와 갑판이 서로 다른 배처럼 보인다.
+ * 칠은 #include <map_fragment> 바로 뒤에 넣는다.
+ *
+ * ── 배마다 다른 칠 (10-07, HANDOFF-map 28장) ─────────────────────────────────
+ * 참여자가 설문에서 고른 배 색(선체·갑판 + 캐빈 벽·창·마스트·계단 톤)·소품 칠(튜브·서핑보드·클로버)·고양이 털 무늬를
+ * 배마다 그린다. 색은 style.js 가 기록에서 설문과 같은 식(shared/boat-look.js paintParts·propPaint)으로 풀고,
+ * 여기 BoatPaintTable 이 **배 칸(인스턴스 i)마다 한 열**인 작은 표 텍스처(80 × PAINT_ROWS)에 적는다.
+ * 셰이더는 정점 속성 _slot(그 인스턴스가 몇 번 배인지)으로 자기 배의 열을 읽는다 — 몸체 조각은 인스턴스 i = 배 i,
+ * 키워드 요소는 그 요소를 단 배만 채우므로 _slot 이 따로 필요하다(fleet.js _layoutProps).
+ * uniform 이 아니라 표인 이유: 배 80척이 draw call 하나를 나눠 쓰므로 배마다 다른 값은 인스턴스 쪽에서 와야 하고,
+ * 칠할 곳이 열 몇 개라 정점 속성으로 하나씩 실으면 속성 한도(16)에 닿는다.
+ * 고른 색이 없으면(옛 기록·목업 일부) 지금까지의 기본 칠 그대로다.
  * ========================================================================== */
 
 import * as THREE from "three";
-import { BOAT_PAINT, TUBE_TINT, markHullParts, lampTwinZ } from "../shared/boat-look.js";
-import { GLB_NODES, KEYWORD_NODES, MAP_PAINT_GAIN, CABIN_DECOR } from "./config.js";
+import { BOAT_PAINT, TUBE_TINT, markHullParts, lampTwinZ, PROP_KEYS, PROP_RECOLOR_GLSL,
+  CAT_COAT_GLSL, CAT_COAT_LOOK, CAT_LINE_LIGHT } from "../shared/boat-look.js";
+import { GLB_NODES, KEYWORD_NODES, MAP_PAINT_GAIN, CABIN_DECOR, CLOVER } from "./config.js";
 import { patchMaterial } from "./material-patch.js";
 
 const LAMP_NODE = KEYWORD_NODES["관계"][0];
 const FUNNEL_STEP_NODE = "Funnel_step";   // 설문 _installPaint 와 같은 이름 (GLB 노드)
 
-/** 칠 색 — 설문 값(BOAT_PAINT)에 지도 조명용 배수(MAP_PAINT_GAIN)를 곱한다. BOAT_PAINT 는 고치지 않는다(18.7). */
-function paintColor(key) {
-  const c = new THREE.Color(BOAT_PAINT[key]);
+/** 지도 조명용 배수(MAP_PAINT_GAIN)를 곱한다. 고른 색에도 같은 배수 — 기본 배와 칠한 배가 같은 조명 눈금에 선다 */
+function gained(c, key) {
   const g = MAP_PAINT_GAIN[key];
   if (g) c.multiply(Array.isArray(g) ? new THREE.Color(g[0], g[1], g[2]) : new THREE.Color(g, g, g));
   return c;
+}
+/** 칠 색 — 설문 값(BOAT_PAINT)에 지도 조명용 배수를 곱한다. BOAT_PAINT 는 고치지 않는다(18.7). */
+function paintColor(key) {
+  return gained(new THREE.Color(BOAT_PAINT[key]), key);
+}
+
+/* ── 0) 배마다 칠 — 배 칸 표 ──────────────────────────────────────────────── */
+
+/** 표의 행(칠할 곳). 배 색 열한 칸 + 소품 셋(알파 = 칠함) + 고양이 넷 */
+export const PAINT_ROWS = [
+  "hull", "deck", "mast", "stairRail", "stairTread", "cabin", "funnelStep", "cabinRoof", "glass", "trim", "handle",
+  "tube", "board", "clover", "catFur", "catStripe", "catWhite", "catParam",
+];
+const ROW = Object.fromEntries(PAINT_ROWS.map((k, i) => [k, i]));
+const BOAT_KEYS = PAINT_ROWS.slice(0, ROW.tube);
+// 칠한 캐빈 지붕은 갑판과 같은 색(설문 paintParts) — 지도에서도 갑판과 같아 보이게 갑판 배수를 쓴다
+const GAIN_KEY = { cabinRoof: "deck" };
+
+/** 셰이더 쪽 — 표와 그 크기, 배 칸 하나 읽기. 행 번호는 글자로 박는다 */
+const PAINT_TABLE_GLSL = `
+uniform sampler2D uBoatPaint; uniform vec2 uBoatPaintSize;
+vec4 boatPaint(float slot, float row) { return texture2D(uBoatPaint, (vec2(slot, row) + 0.5) / uBoatPaintSize); }
+`;
+const rowOf = (k) => `${ROW[k].toFixed(1)}`;
+
+/**
+ * 배 칸 표. 열 = 배 칸(인스턴스 i), 행 = PAINT_ROWS. 선형 색을 그대로 담는다(배수가 1을 넘을 수 있어 실수 텍스처).
+ * 재질마다 patch 때 uniforms 를 같은 객체로 쥐므로 write 한 번이면 모든 조각이 같이 바뀐다.
+ */
+export class BoatPaintTable {
+  /**
+   * @param {number} capacity 배 칸 수(FLEET_CAPACITY)
+   * @param {{hull: THREE.Color}} glb GLB에서 온 기본 색(선체 옆면 = GLB 선체 재질 색)
+   */
+  constructor(capacity, glb) {
+    this.capacity = capacity;
+    this.data = new Float32Array(capacity * PAINT_ROWS.length * 4);
+    this.texture = new THREE.DataTexture(this.data, capacity, PAINT_ROWS.length, THREE.RGBAFormat, THREE.FloatType);
+    this.texture.magFilter = this.texture.minFilter = THREE.NearestFilter;
+    this.texture.generateMipmaps = false;
+    this.texture.needsUpdate = true;
+    this.uniforms = {
+      uBoatPaint: { value: this.texture },
+      uBoatPaintSize: { value: new THREE.Vector2(capacity, PAINT_ROWS.length) },
+    };
+    // 기본 칠 — 고른 색이 없는 칸(옛 기록)은 이 색. 지금까지 모든 배에 같이 칠하던 값이다
+    this.base = {};
+    for (const k of BOAT_KEYS) this.base[k] = k === "hull" ? glb.hull.clone() : paintColor(k);
+    this._c = new THREE.Color();
+    this._tubeDiv = new THREE.Color().setRGB(...TUBE_TINT);
+    this._leaf = new THREE.Color(CLOVER.leaf);
+    for (let i = 0; i < capacity; i++) this.write(i, null);
+  }
+
+  _set(i, row, r, g, b, a = 1) {
+    const o = (row * this.capacity + i) * 4;
+    this.data[o] = r; this.data[o + 1] = g; this.data[o + 2] = b; this.data[o + 3] = a;
+  }
+  _setColor(i, row, c, a = 1) { this._set(i, row, c.r, c.g, c.b, a); }
+
+  /**
+   * 배 칸 i 에 칠을 적는다. style = style.js makeStyle 결과(null 이면 기본 배).
+   *   style.paint  = paintParts 결과 — 칠할 곳마다 재질 hex(설문 조명 기준) 또는 null(기본)
+   *   style.props  = { tube, board, clover } 재질 hex 또는 null,  style.catCoat = CAT_COATS id
+   */
+  write(i, style) {
+    const paint = (style && style.paint) || {}, props = (style && style.props) || {};
+    const c = this._c;
+    for (const k of BOAT_KEYS) {
+      const hex = paint[k];
+      if (hex === null || hex === undefined) this._setColor(i, ROW[k], this.base[k]);
+      else this._setColor(i, ROW[k], gained(c.setHex(hex), GAIN_KEY[k] || k));
+    }
+    // 튜브 — 재질 색에 톤 누름(TUBE_TINT)이 곱해지므로 그만큼 미리 나눈다(설문 setProps 와 같다)
+    if (props.tube == null) this._set(i, ROW.tube, 0, 0, 0, 0);
+    else { c.setHex(props.tube); this._set(i, ROW.tube, c.r / this._tubeDiv.r, c.g / this._tubeDiv.g, c.b / this._tubeDiv.b, 1); }
+    if (props.board == null) this._set(i, ROW.board, 0, 0, 0, 0);
+    else this._setColor(i, ROW.board, c.setHex(props.board));
+    // 클로버 — 그림(잎 CLOVER.leaf·잎맥)에 곱할 배수. 잎은 고른 색, 잎맥은 그만큼 같이 옮겨 짙은 채로
+    if (props.clover == null) this._set(i, ROW.clover, 1, 1, 1, 0);
+    else { c.setHex(props.clover); this._set(i, ROW.clover, c.r / this._leaf.r, c.g / this._leaf.g, c.b / this._leaf.b, 1); }
+    // 고양이 — 바탕 털(알파 = 칠함) · 줄(알파 = 줄무늬) · 흰 털(알파 = 흰 털 자리 0·1·2) · 흰 털 높이
+    const coat = CAT_COAT_LOOK[style && style.catCoat];
+    if (!coat) this._set(i, ROW.catFur, 0, 0, 0, 0);   // 삼색 = 텍스처 그대로
+    else {
+      this._setColor(i, ROW.catFur, c.setHex(coat.fur), 1);
+      this._setColor(i, ROW.catStripe, c.setHex(coat.stripe ?? coat.fur), coat.stripeOn ? 1 : 0);
+      this._setColor(i, ROW.catWhite, c.setHex(coat.white ?? coat.fur), coat.whiteMode);
+      this._set(i, ROW.catParam, coat.whiteH ?? 0.4, 0, 0, 1);
+    }
+    this.texture.needsUpdate = true;
+  }
+}
+
+/** 재질에 배 칸 표를 붙이는 공통 부분 — 정점 속성 _slot → vBoatSlot, 표 uniform */
+function withPaintTable(shader, table) {
+  Object.assign(shader.uniforms, table.uniforms);
+  shader.vertexShader = shader.vertexShader
+    .replace("void main() {", `attribute float _slot; varying float vBoatSlot;
+      void main() {`)
+    .replace("#include <begin_vertex>", `#include <begin_vertex>
+      vBoatSlot = _slot;`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace("void main() {", `varying float vBoatSlot;
+${PAINT_TABLE_GLSL}
+      void main() {`);
 }
 
 /* ── 1) 지오메트리: 굽는 단계에서 한 번 ──────────────────────────────────── */
@@ -185,23 +298,111 @@ export function concatGeometries(a, b) {
 
 /**
  * 재질에 배 칠을 건다. fleet.js 가 재질을 복제·AO 패치한 뒤 부른다.
- * 역할에 해당하지 않는 재질은 그대로 둔다.
+ * 역할에 해당하지 않는 재질은 그대로 둔다. 칠하는 재질은 배 칸 표(table)를 읽는다 — 그 지오메트리엔 _slot 이 있어야 한다(fleet.js).
+ * @returns {boolean} 배 칸 표를 읽는 재질인가(= _slot 속성이 필요한가)
  */
-export function applyBoatPaint(b, mat) {
+export function applyBoatPaint(b, mat, table) {
   if (b.role === "hull" && b.geo.attributes._part) {
-    patchMaterial(mat, "boat-hull", hullShader);
+    patchMaterial(mat, "boat-hull", (s) => hullShader(s, table));
   } else if (b.role === "cabin") {
     const level = CABIN_DECOR ? 2 : 1;
     mat.color.set(0xffffff);
-    patchMaterial(mat, `boat-paint-cabin${level}`, (s) => paintBoxShader(s, b.geo, level, "cabin"));
+    patchMaterial(mat, `boat-paint-cabin${level}`, (s) => paintBoxShader(s, b.geo, level, "cabin", table));
   } else if (b.child && b.child.name === FUNNEL_STEP_NODE) {
     mat.color.set(0xffffff);
-    patchMaterial(mat, "boat-paint-funnelStep", (s) => paintBoxShader(s, b.geo, 0, "funnelStep"));
+    patchMaterial(mat, "boat-paint-funnelStep", (s) => paintBoxShader(s, b.geo, 0, "funnelStep", table));
   } else if (b.node === GLB_NODES.tube) {
     // 튜브(가족)만 톤을 누른다 — 순백·순홍이라 어두운 선체 위에서 혼자 떠 보였다(설문 6.15).
     // 광택·테두리 빛 몫(TUBE_FX_EDGE)은 fleet.js 가 surface-fx.js 에 넘긴다.
     mat.color.setRGB(...TUBE_TINT);
-  }
+    patchMaterial(mat, "boat-paint-tube", (s) => propRecolorShader(s, table, "tube", PROP_KEYS.tube.key, 0.16));
+  } else if (b.node === "Surfboard") {
+    patchMaterial(mat, "boat-paint-board", (s) => propRecolorShader(s, table, "board", PROP_KEYS.board.key, 0.16));
+  } else if (b.node === GLB_NODES.cat) {
+    const frame = catFrame(b);
+    patchMaterial(mat, "boat-paint-cat", (s) => catCoatShader(s, table, frame));
+  } else return false;
+  return true;
+}
+
+/** 클로버 데칼 재질 — 고른 잎 색을 그림에 곱한다(설문은 캔버스를 다시 그리지만 지도는 80척이 한 그림을 나눠 쓴다) */
+export function applyCloverPaint(mat, table) {
+  patchMaterial(mat, "boat-paint-clover", (shader) => {
+    withPaintTable(shader, table);
+    shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+      { vec4 cp = boatPaint(vBoatSlot, ${rowOf("clover")}); if (cp.a > 0.5) diffuseColor.rgb *= cp.rgb; }`);
+  });
+}
+
+/** 튜브·서핑보드 — 아틀라스 텍셀 중 열쇠 색(빨강·하늘색)인 곳만 고른 색으로(boat-look.js PROP_RECOLOR_GLSL) */
+function propRecolorShader(shader, table, row, keyHex, tol) {
+  withPaintTable(shader, table);
+  shader.uniforms.uRcKey = { value: new THREE.Color(keyHex) };   // sRGB hex → 선형(텍스처 값과 같은 공간)
+  shader.fragmentShader = shader.fragmentShader
+    .replace("void main() {", `uniform vec3 uRcKey;
+${PROP_RECOLOR_GLSL}
+      void main() {`)
+    .replace("#include <map_fragment>", `#include <map_fragment>
+      #ifdef USE_MAP
+      {
+        vec4 pc = boatPaint(vBoatSlot, ${rowOf(row)});
+        if (pc.a > 0.5) {
+          vec4 rc = propRecolor(sampledDiffuseColor.rgb, uRcKey, pc.rgb, ${tol.toFixed(3)});
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuse * rc.rgb, rc.a);
+        }
+      }
+      #endif`);
+}
+
+/**
+ * 고양이 메시의 틀 — 털 무늬 식(CAT_COAT_GLSL)이 받는 좌표(높이 0~1, 말린 중심 기준·반지름으로 나눈·얼굴 방향 +x 인 xz)를 만들 값.
+ * 지도 지오메트리는 배 좌표로 구워져 있어(뱃머리 보정 회전·카메라 쪽 거울상까지) 고양이 메시 +x(얼굴 쪽)가 어디를 보는지 다시 잰다.
+ */
+function catFrame(b) {
+  b.geo.computeBoundingBox();
+  const bb = b.geo.boundingBox;
+  const f = new THREE.Vector3(1, 0, 0).transformDirection(b.child.matrixWorld);
+  if (b.mirrored) f.z = -f.z;   // 거울상으로 옮겼으면 얼굴 방향도 뒤집힌다(fleet.js mirrorAcrossCenterline)
+  const face = new THREE.Vector2(f.x, f.z).normalize();
+  return {
+    y: new THREE.Vector2(bb.min.y, bb.max.y),
+    c: new THREE.Vector2((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2),
+    r: Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2,
+    face,
+  };
+}
+
+/** 고양이 털 무늬 — 설문과 같은 식(boat-look.js CAT_COAT_GLSL), 무늬 값은 배 칸 표에서 */
+function catCoatShader(shader, table, frame) {
+  withPaintTable(shader, table);
+  Object.assign(shader.uniforms, {
+    uCatY: { value: frame.y }, uCatC: { value: frame.c }, uCatR: { value: frame.r }, uCatFace: { value: frame.face },
+    uCatLine: { value: new THREE.Color(CAT_LINE_LIGHT) },
+  });
+  shader.vertexShader = shader.vertexShader
+    .replace("void main() {", `varying vec3 vCatP;
+      void main() {`)
+    .replace("#include <begin_vertex>", `#include <begin_vertex>
+      vCatP = transformed;   // 인스턴스 행렬 전 = 구운 배 좌표`);
+  shader.fragmentShader = shader.fragmentShader
+    .replace("void main() {", `uniform vec2 uCatY, uCatC, uCatFace; uniform float uCatR; uniform vec3 uCatLine;
+      varying vec3 vCatP;
+${CAT_COAT_GLSL}
+      void main() {`)
+    .replace("#include <map_fragment>", `#include <map_fragment>
+      #ifdef USE_MAP
+      {
+        vec4 fur = boatPaint(vBoatSlot, ${rowOf("catFur")});
+        if (fur.a > 0.5) {
+          vec4 st = boatPaint(vBoatSlot, ${rowOf("catStripe")}), wh = boatPaint(vBoatSlot, ${rowOf("catWhite")});
+          float whiteH = boatPaint(vBoatSlot, ${rowOf("catParam")}).r;
+          vec2 d = (vCatP.xz - uCatC) / uCatR;
+          vec2 q = vec2(dot(d, uCatFace), uCatFace.x * d.y - uCatFace.y * d.x);
+          float h = (vCatP.y - uCatY.x) / max(uCatY.y - uCatY.x, 1e-4);
+          diffuseColor.rgb = diffuse * catCoat(sampledDiffuseColor.rgb, h, q, fur.rgb, st.rgb, wh.rgb, uCatLine, wh.a, whiteH, st.a);
+        }
+      }
+      #endif`);
 }
 
 /**
@@ -210,14 +411,9 @@ export function applyBoatPaint(b, mat) {
  * 판자 이음매는 fwidth 로 픽셀보다 가늘면 흐리게 한다 — 지도는 배가 작아 대부분 흐려져 붉은 갈색 면으로
  * 보이지만, 판자마다 다른 색 단계는 남는다.
  */
-function hullShader(shader) {
-  Object.assign(shader.uniforms, {
-    uMastCol: { value: paintColor("mast") },
-    uStairRailCol: { value: paintColor("stairRail") },
-    uStairTreadCol: { value: paintColor("stairTread") },
-    uDeckCol: { value: paintColor("deck") },
-  });
-  hullShader.uniforms = shader.uniforms;   // 색 눈금 잴 때 검증 스크립트가 만진다(18.7)
+function hullShader(shader, table) {
+  withPaintTable(shader, table);
+  hullShader.uniforms = shader.uniforms;   // 색 눈금 잴 때 검증 스크립트가 만진다(18.7) — 지금 색은 표(table.base)에
   shader.vertexShader = shader.vertexShader
     .replace("void main() {", `
       attribute float _deck;
@@ -232,7 +428,6 @@ function hullShader(shader) {
       vBoatPart = _part;`);
   shader.fragmentShader = shader.fragmentShader
     .replace("void main() {", `
-      uniform vec3 uMastCol, uStairRailCol, uStairTreadCol, uDeckCol;
       varying vec3 vBoatP; varying vec3 vBoatN; varying float vBoatDeck; varying float vBoatPart;
       float boatHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
       // 판자 이음매: 판자 안쪽은 1, 이음매 선에서 0 (선이 픽셀보다 가늘면 흐리게 — 반짝임 방지)
@@ -243,6 +438,12 @@ function hullShader(shader) {
       void main() {`)
     .replace("#include <map_fragment>", `#include <map_fragment>
       {
+        // 이 배의 칠(배 칸 표) — 고른 색이 없으면 기본 칠. 옆면은 선체 색(기본 = GLB 선체 재질 색)
+        vec3 uDeckCol = boatPaint(vBoatSlot, ${rowOf("deck")}).rgb;
+        vec3 uMastCol = boatPaint(vBoatSlot, ${rowOf("mast")}).rgb;
+        vec3 uStairRailCol = boatPaint(vBoatSlot, ${rowOf("stairRail")}).rgb;
+        vec3 uStairTreadCol = boatPaint(vBoatSlot, ${rowOf("stairTread")}).rgb;
+        diffuseColor.rgb = boatPaint(vBoatSlot, ${rowOf("hull")}).rgb;
         // 갑판 = 위를 보는 면 중 markDeckFaces 가 바닥으로 고른 것 (뱃전 윗단·계단·돛대는 빠진다)
         float deck = step(0.65, vBoatN.y) * step(0.5, vBoatDeck);
         if (deck > 0.5) {
@@ -269,16 +470,14 @@ function hullShader(shader) {
  * 지도의 구운 지오메트리는 이미 배 좌표라 노드 배율을 따로 곱하지 않는다(치수 = 상자 크기).
  * @param {0|1|2} level 0 굴뚝 받침(페인트·결) · 1 캐빈 색(페인트·결·지붕 판자) · 2 캐빈 창·문까지
  */
-function paintBoxShader(shader, geo, level, key) {
+function paintBoxShader(shader, geo, level, key, table) {
   geo.computeBoundingBox();
   const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3());
+  withPaintTable(shader, table);
   Object.assign(shader.uniforms, {
     uPaintMin: { value: bb.min.clone() }, uPaintSize: { value: size.clone() }, uPaintDim: { value: size.clone() },
-    uPaintCol: { value: paintColor(key) }, uPaintRoof: { value: paintColor("cabinRoof") },
-    uPaintGlass: { value: paintColor("glass") }, uPaintTrim: { value: paintColor("trim") },
-    uPaintHandle: { value: paintColor("handle") },
   });
-  (paintBoxShader.uniforms ||= {})[key] = shader.uniforms;   // 18.7 색 눈금
+  (paintBoxShader.uniforms ||= {})[key] = shader.uniforms;   // 18.7 색 눈금 — 지금 색은 표(table.base)에
   shader.vertexShader = shader.vertexShader
     .replace("void main() {", `
       uniform vec3 uPaintMin, uPaintSize;
@@ -289,7 +488,9 @@ function paintBoxShader(shader, geo, level, key) {
       vPaintN = objectNormal;`);
   shader.fragmentShader = shader.fragmentShader
     .replace("void main() {", `
-      uniform vec3 uPaintDim, uPaintCol, uPaintRoof, uPaintGlass, uPaintTrim, uPaintHandle;
+      uniform vec3 uPaintDim;
+      // 이 배의 칠 — main 첫머리에서 배 칸 표로 채운다(창 그리는 함수가 같이 쓰므로 전역)
+      vec3 uPaintCol, uPaintRoof, uPaintGlass, uPaintTrim, uPaintHandle;
       varying vec3 vPaintP; varying vec3 vPaintN;
       float paintHash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
       // 둥근 모서리 사각형까지의 거리 (안쪽 음수). b = 반폭·반높이, r = 모서리 반지름
@@ -313,6 +514,11 @@ function paintBoxShader(shader, geo, level, key) {
       void main() {`)
     .replace("#include <map_fragment>", `#include <map_fragment>
       {
+        uPaintCol = boatPaint(vBoatSlot, ${rowOf(key)}).rgb;
+        uPaintRoof = boatPaint(vBoatSlot, ${rowOf("cabinRoof")}).rgb;
+        uPaintGlass = boatPaint(vBoatSlot, ${rowOf("glass")}).rgb;
+        uPaintTrim = boatPaint(vBoatSlot, ${rowOf("trim")}).rgb;
+        uPaintHandle = boatPaint(vBoatSlot, ${rowOf("handle")}).rgb;
         vec3 P = clamp(vPaintP, 0.0, 1.0);
         vec3 an = abs(vPaintN);
         // 면 가르기: 법선이 가장 큰 축. X면은 (z, y), Z면은 (x, y), 위아래는 (x, z)

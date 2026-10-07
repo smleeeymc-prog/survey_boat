@@ -485,3 +485,64 @@ export function propPaint(value, palette) {
   return pad === null ? null : seenToMaterial(pad);
 }
 
+/* ── 소품 칠 · 고양이 털 무늬 셰이더 조각 (10-07) — 설문 index.html 과 지도 statistics/js/boat-paint.js 가 같이 쓴다 ──
+ * 둘 다 GLSL 함수 하나라 화면마다 uniform(설문, 배 1척)이냐 배 칸 표(지도, 배 80척)냐만 다르다. 설문 HANDOFF 6.26.
+ */
+
+/**
+ * 아틀라스 텍셀(tex, 선형)이 열쇠 색(key)에 가까우면 to 로 칠한다 — 밝기는 텍셀/열쇠 비로 남겨 그린 결이 산다.
+ * 반환 rgb = 칠할 색(재질 색을 곱하기 전), a = 섞는 몫. 쓰는 쪽: diffuseColor.rgb = mix(diffuseColor.rgb, diffuse * r.rgb, r.a)
+ */
+export const PROP_RECOLOR_GLSL = `
+vec4 propRecolor(vec3 tex, vec3 key, vec3 to, float tol) {
+  float w = 1.0 - smoothstep(tol * 0.5, tol, distance(tex, key));
+  float k = max(dot(key, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+  return vec4(to * clamp(dot(tex, vec3(0.2126, 0.7152, 0.0722)) / k, 0.0, 1.4), w);
+}
+`;
+
+/** 털 무늬 색표(sRGB) — fur 바탕 털 · stripe 줄 · white 흰 털, whiteMode 0 없음 · 1 전부 · 2 아래쪽(whiteH), stripeOn 줄무늬. 삼색은 텍스처 그대로 */
+export const CAT_COAT_LOOK = {
+  white:  { fur: 0xf7efe4, white: 0xf7efe4, whiteMode: 1 },   // 살짝 따뜻하게 — 하늘빛을 받으면 푸르게 뜬다
+  cheese: { fur: 0xe8913c, stripe: 0xb85c20, white: 0xf8e4c4, whiteMode: 2, whiteH: 0.34, stripeOn: 1 },
+  tuxedo: { fur: 0x242120, white: 0xf5f0e8, whiteMode: 2, whiteH: 0.32 },   // 눈은 검은 머리(흰 선), 입·가슴·앞발만 희게
+  black:  { fur: 0x242120, whiteMode: 0 },
+};
+export const CAT_LINE_LIGHT = 0xf4efe6;   // 검은 털 위 눈·입 선
+
+/**
+ * 고양이 털 무늬. 삼색 텍스처를 단색으로 덮고, 텍스처에서는 셋만 가져온다:
+ *   선 — 눈·입·발가락을 그린 아주 짙은 갈색(#402010 부근). 짙은 빨강 그늘(초록이 거의 0)과는 초록/빨강 비로 가른다.
+ *        밑 털이 어두우면 밝은 선(lineLight)으로 — 검은 털에 짙은 선은 안 보인다.
+ *   분홍 — 귀 안(#f888a8 — 파랑 > 초록이라 살구빛 털과 갈린다). 그대로.
+ *   흰 털 자리(whiteMode 2) — 얼굴 쪽 반의 아래쪽(h < whiteH)에서 주황·갈색 얼룩이 아닌 곳.
+ * 치즈태비 줄은 3D: 고양이가 둥글게 말려 척추가 말린 중심을 한 바퀴 돈다 → 중심에서 뻗는 방사형 줄 13개
+ * (등에선 가로 줄, 바깥 고리를 도는 꼬리에선 고리). 굵기·기울기를 흔들고 군데군데 끊기게, 아래로 옅게, 중심 근처는 비운다.
+ * @glsl tex 텍스처 색(선형) · h 높이 0~1(메시 y 범위) · q (위치 xz − 말린 중심) / 반지름, 얼굴 방향이 +x 가 되게 돌린 값
+ */
+export const CAT_COAT_GLSL = `
+vec3 catCoat(vec3 tex, float h, vec2 q, vec3 fur, vec3 stripeCol, vec3 white, vec3 lineLight, float whiteMode, float whiteH, float stripeOn) {
+  vec3 s = sqrt(tex);                                   // 대략 sRGB 로 — 분류는 눈에 보이는 값으로
+  float mx = max(s.r, max(s.g, s.b)), mn = min(s.r, min(s.g, s.b));
+  float sat = (mx - mn) / max(mx, 1e-3);
+  float L = dot(s, vec3(0.2126, 0.7152, 0.0722));
+  float line = (1.0 - smoothstep(0.2, 0.27, L)) * smoothstep(0.24, 0.32, s.g / max(s.r, 1e-3));
+  float pink = smoothstep(0.02, 0.07, s.b - s.g) * smoothstep(0.15, 0.25, s.r - s.g);
+  float patchTex = smoothstep(0.38, 0.5, sat) * smoothstep(0.22, 0.3, L);
+  vec3 f = fur;
+  if (stripeOn > 0.5) {
+    float th = atan(q.y, q.x), r = length(q);
+    float band = sin(13.0 * th + 1.1 * sin(2.0 * th + 0.7) + 3.7 * r + 14.0 * (h - 0.6));
+    float thick = 0.32 + 0.2 * sin(5.0 * th + 1.3) + 0.15 * sin(7.4 * r + 3.0 * th);
+    float st = smoothstep(thick - 0.08, thick + 0.08, band) * smoothstep(0.3, 0.55, h) * smoothstep(0.24, 0.53, r);
+    f = mix(fur, stripeCol, st);
+  }
+  float front = smoothstep(-0.16, 0.08, q.x);
+  float wm = whiteMode > 1.5 ? (1.0 - patchTex) * front * (1.0 - smoothstep(whiteH - 0.04, whiteH + 0.04, h))
+           : step(0.5, whiteMode);
+  vec3 base = mix(f, white, wm);
+  vec3 lineCol = dot(base, vec3(0.2126, 0.7152, 0.0722)) < 0.12 ? lineLight : tex;
+  return mix(mix(base, lineCol, line), tex, pink);
+}
+`;
+

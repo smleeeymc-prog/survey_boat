@@ -126,12 +126,17 @@ function dbEnsureAuth(ctx) {
   return dbAuthPromise;
 }
 
-/** Firestore 문서 → 저장소 계약 기록 (created_at 은 ISO 문자열). 모르는 필드는 버린다. */
+/**
+ * Firestore 문서 → 저장소 계약 기록 (created_at 은 ISO 문자열). 모르는 필드는 버린다.
+ * 선택 필드(배 색·소품 칠 — record-schema.js PAINT_FIELDS)도 싣는다. [버그 10-07] 예전엔 FIELDS 만 옮겨서
+ * DB 에 저장된 배 색이 지도·아카이브까지 오지 못했다(E2E 는 DB 문서를 직접 읽어 못 잡았다 — 지금은 지도 쪽도 본다).
+ */
 export function dbDocToRecord(snap) {
   // 서버 시각이 아직 안 박힌 로컬 스냅샷에선 created_at 이 null 이다 — 추정값으로 읽는다
   const d = snap.data({ serverTimestamps: "estimate" }) || {};
   const out = {};
-  for (const k of dbSchema().FIELDS) if (k in d) out[k] = d[k];
+  const S = dbSchema();
+  for (const k of S.FIELDS.concat(S.PAINT_FIELDS || [])) if (k in d) out[k] = d[k];
   out.record_id = snap.id;
   const ts = d.created_at;
   out.created_at = ts && typeof ts.toDate === "function" ? ts.toDate().toISOString() : new Date().toISOString();

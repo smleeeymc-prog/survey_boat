@@ -251,8 +251,7 @@ export class MapWorld {
 
   _addBoat(record, slot, spawnX) {
     const boat = makeBoat(record, slot, spawnX);
-    // "이 배가 어떻게 생겼는지"는 전부 여기서 한 번 정해진다 (style.js).
-    // 지금은 난수에서 뽑지만, config.js의 STYLE_SOURCE만 바꾸면 실제 답변에서 온다.
+    // "이 배가 어떻게 생겼는지"는 전부 여기서 한 번 정해진다 (style.js — 키워드 요소·배 색·소품 칠·고양이 무늬).
     boat.style = makeStyle(record);
     // 물결의 "드러나는 방향"은 배마다 한 번 정해 두고 바꾸지 않는다 —
     // 계속 돌면 눈이 그걸 쫓게 된다(온보딩 주석).

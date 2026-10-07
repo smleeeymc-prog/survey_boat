@@ -8,7 +8,9 @@
  * GLB의 메쉬 조각(재질 하나 = 조각 하나)마다 InstancedMesh를 하나씩 만들고 전부 같은
  * 인스턴스 행렬을 공유한다. draw call은 조각 수(선체·캐빈·굴뚝·굴뚝 받침 = 4)로 고정 —
  * 배가 80척이든 800척이든 늘지 않는다. 재질은 GLB 원본을 복제해 설문 배와 같은 칠
- * (boat-paint.js)만 얹고, 선체에만 instanceColor를 걸어 배마다 색조를 조금씩 다르게 한다.
+ * (boat-paint.js)을 얹는다. 배마다 다른 칠(참여자가 고른 배 색·소품 칠·고양이 무늬, 10-07)은
+ * 배 칸 표(boat-paint.js BoatPaintTable)에 적고, 칠하는 조각은 정점 속성 _slot 으로 자기 배의 칸을 읽는다.
+ * (예전엔 선체에만 instanceColor로 난수 색조를 곱했다 — 고른 색이 생겨 걷어냈다)
  *
  * 캐빈 색은 키워드에 따라 바뀌지 않는다. 키워드는 배에 나타나는 요소로만 표현한다(사용자 결정,
  * 설문 화면과 같은 규칙). 캐빈·갑판·마스트·계단은 설문 배와 같은 칠(모든 배 공통)을 입는다 —
@@ -44,7 +46,7 @@ import {
 } from "./config.js";
 import { buildCloverGeometry, makeCloverMaterial } from "./clover.js";
 import { patchMaterial } from "./material-patch.js";
-import { prepareBoatGeometry, applyBoatPaint } from "./boat-paint.js";
+import { prepareBoatGeometry, applyBoatPaint, applyCloverPaint, BoatPaintTable } from "./boat-paint.js";
 import { applySurfaceFx } from "./surface-fx.js";
 import { TUBE_FX_EDGE } from "../shared/boat-look.js";
 
@@ -61,9 +63,6 @@ for (const [kw, names] of Object.entries(KEYWORD_NODES)) {
   for (const n of names) if (!CODE_MADE_NODES.includes(n)) NODE_KEYWORD[n] = kw;
 }
 const CLOVER_KEYWORD = Object.keys(KEYWORD_NODES).find((kw) => KEYWORD_NODES[kw].includes(CLOVER_NODE));
-
-// 인스턴스 컬러를 걸 역할 → style의 어느 값을 쓸지. 여기 없는 역할은 GLB 재질 그대로다.
-const TINT_ROLES = { hull: "hullTint" };
 
 // 카메라가 보는 뱃전. 지오메트리는 "뱃머리 = +X, 우현 = +Z"로 구워진다. 배는 모두 같은
 // 헤딩(FLOW_DIR로 정해진다)으로 흐르고, 우현 벡터(0,0,1)를 헤딩 a만큼 돌리면 월드 z 성분이
@@ -197,10 +196,11 @@ export class ShipFleet {
     this.mirrored = [];         // 카메라 쪽 뱃전으로 옮긴 요소 이름 (확인용)
     /** 배 몸체 조각들 — 인스턴스 i = 배 i. @type {{role:string, mesh:THREE.InstancedMesh}[]} */
     this.body = [];
-    /** 키워드 요소들 — 인스턴스는 그 요소를 단 배에만. @type {{kw:string, node:string, mesh:THREE.InstancedMesh, n:number}[]} */
+    /**
+     * 키워드 요소들 — 인스턴스는 그 요소를 단 배에만. slot = 인스턴스마다 몇 번 배인지(칠하는 요소만, 배 칸 표를 읽는다)
+     * @type {{kw:string, node:string, mesh:THREE.InstancedMesh, n:number, slot:THREE.InstancedBufferAttribute|null}[]}
+     */
     this.props = [];
-    /** 인스턴스 컬러를 쓰는 그룹들 — {mesh, key}. key는 style의 어느 값을 읽을지. */
-    this.tintMeshes = [];
 
     const ship = gltfRoot.getObjectByName(GLB_NODES.ship);
     if (!ship) {
@@ -254,19 +254,26 @@ export class ShipFleet {
       const cz = (b.geo.boundingBox.min.z + b.geo.boundingBox.max.z) / 2;
       if ((cz - midZ) * FACE_SIGN < 0) {
         mirrorAcrossCenterline(b.geo, midZ);
+        b.mirrored = true;   // 고양이 털 무늬가 얼굴 방향을 다시 잴 때 본다(boat-paint.js catFrame)
         this.mirrored.push(b.node);
       }
     }
 
     // 2.5) 설문 배와 같은 칠을 할 준비 — 선체 부품·갑판 판정, 램프 한 쌍(boat-paint.js).
-    //      선체 지오메트리가 인덱스를 푼 것으로 바뀌므로, 아래(색조 속성·클로버 투영)는 바뀐 것을 쓴다.
+    //      선체 지오메트리가 인덱스를 푼 것으로 바뀌므로, 아래(칠 속성·클로버 투영)는 바뀐 것을 쓴다.
     this.look = prepareBoatGeometry(baked, ship);
+
+    // 2.7) 배마다 칠 — 배 칸 표. 선체 옆면의 기본 색은 GLB 선체 재질 색(지금까지 모든 배가 그 색이었다)
+    const hullSrc = hull ? (Array.isArray(hull.child.material) ? hull.child.material[0] : hull.child.material) : null;
+    this.paint = new BoatPaintTable(capacity, { hull: hullSrc ? hullSrc.color.clone() : new THREE.Color(0x60322a) });
 
     // 3) InstancedMesh를 만든다.
     for (const b of baked) {
       const mat = cloneMaterial(b.child.material);
       if (b.geo.attributes._ao) patchBakedAO(mat);
-      applyBoatPaint(b, mat);
+      const painted = applyBoatPaint(b, mat, this.paint);
+      // 칠하는 조각은 _slot(몇 번 배인지)을 읽는다 — 몸체는 인스턴스 i = 배 i 로 고정, 요소는 배정할 때 적는다(_layoutProps)
+      const slot = painted ? slotAttribute(b.geo, this.capacity, b.role !== "prop") : null;
       // 광택·테두리 빛·면 색 변주 — AO 값을 같이 쓰므로 AO 패치가 걸린 재질에만, 칠 뒤에(surface-fx.js).
       // 튜브만 광택·테두리 몫을 줄인다(설문과 같다 — 순백·순홍이라 혼자 번쩍였다).
       if (b.geo.attributes._ao) applySurfaceFx(mat, b.node === GLB_NODES.tube ? TUBE_FX_EDGE : 1);
@@ -274,32 +281,9 @@ export class ShipFleet {
 
       if (b.role === "prop") {
         inst.visible = false;
-        this.props.push({ kw: b.kw, node: b.node, mesh: inst, n: 0 });
+        this.props.push({ kw: b.kw, node: b.node, mesh: inst, n: 0, slot });
         this.group.add(inst);
         continue;
-      }
-
-      const tintKey = TINT_ROLES[b.role];
-      if (tintKey) {
-        // 선체는 GLB가 칠해 둔 색(Kapal)을 그대로 두고, 흰색 근처의 색조만 곱한다 —
-        // 원본 색을 버리지 않으면서 배마다 다른 기가 돌게 하는 게 목적이다.
-        inst.instanceColor = new THREE.InstancedBufferAttribute(
-          new Float32Array(this.capacity * 3).fill(1), 3
-        );
-        inst.instanceColor.setUsage(THREE.DynamicDrawUsage);
-
-        // [함정] instanceColor를 넣는 것만으로는 아무 일도 일어나지 않는다.
-        // three.js의 color_vertex 청크는 USE_INSTANCING_COLOR만 있어도 vColor를 채우지만,
-        // color_fragment 청크는 USE_COLOR(=material.vertexColors)일 때만 그 vColor를
-        // diffuseColor에 곱한다. 즉 vertexColors를 켜지 않으면 인스턴스 색이 조용히
-        // 버려진다 — 화면은 멀쩡히 그려지고 색만 안 먹어서 한참 뒤에나 눈치챈다.
-        mat.vertexColors = true;
-        // vertexColors를 켜면 셰이더가 지오메트리의 color 어트리뷰트도 같이 읽는다.
-        // 없으면 기본값이 들어가 새까매지므로, 전부 1인 어트리뷰트를 깔아 둔다
-        // (곱셈의 항등원이라 결과에 영향이 없다).
-        const vcount = b.geo.attributes.position.count;
-        b.geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(vcount * 3).fill(1), 3));
-        this.tintMeshes.push({ mesh: inst, key: tintKey });
       }
       this.body.push({ role: b.role, mesh: inst });
       this.group.add(inst);
@@ -314,10 +298,12 @@ export class ShipFleet {
       } else {
         const mat = makeCloverMaterial();
         mat.fog = true;
+        applyCloverPaint(mat, this.paint);   // 고른 잎 색
+        const slot = slotAttribute(cg, this.capacity, false);
         const inst = makeInstanced(cg, mat, this.capacity, `fleet:${CLOVER_KEYWORD}:${CLOVER_NODE}`);
         inst.renderOrder = 1;          // 선체를 먼저 그리고 그 위에 얹는다
         inst.visible = false;
-        this.props.push({ kw: CLOVER_KEYWORD, node: CLOVER_NODE, mesh: inst, n: 0 });
+        this.props.push({ kw: CLOVER_KEYWORD, node: CLOVER_NODE, mesh: inst, n: 0, slot });
         this.group.add(inst);
       }
     }
@@ -331,7 +317,6 @@ export class ShipFleet {
     this._e = new THREE.Euler();
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
-    this._c = new THREE.Color();
     // 배마다 고른 키워드, 그리고 그 배의 요소들이 각 요소 그룹의 몇 번째 인스턴스인지.
     this.keywordsOf = new Array(this.capacity).fill(EMPTY);
     this._slots = Array.from({ length: this.capacity }, () => []);
@@ -362,16 +347,11 @@ export class ShipFleet {
 
   /**
    * 배 i의 "모습"을 쓴다. 자리가 밀릴 때마다 다시 부르면 되고, 매 프레임 부를 필요는 없다.
-   * style이 어떻게 정해졌는지(난수인지 답변인지)는 여기서 알 필요가 없다 — style.js 몫이다.
-   * @param {{hullTint:number, keywords:string[]}} style
+   * style이 어떻게 정해졌는지는 여기서 알 필요가 없다 — style.js 몫이다.
+   * @param {{keywords:string[], paint:object, props:object, catCoat:string}} style
    */
   applyStyle(i, style) {
-    for (const t of this.tintMeshes) {
-      const hex = style[t.key];
-      this._c.setHex(hex === undefined ? 0xffffff : hex);
-      this._c.toArray(t.mesh.instanceColor.array, i * 3);
-      t.mesh.instanceColor.needsUpdate = true;
-    }
+    if (this.paint) this.paint.write(i, style);
     this.keywordsOf[i] = style.keywords || EMPTY;
     this._dirty = true;
   }
@@ -388,10 +368,14 @@ export class ShipFleet {
       for (const kw of this.keywordsOf[i]) {
         const groups = this.byKeyword[kw];
         if (!groups) continue;
-        for (const p of groups) slots.push(p, p.n++);
+        for (const p of groups) {
+          if (p.slot) p.slot.array[p.n] = i;   // 이 요소 인스턴스는 배 i 의 것 — 배 칸 표에서 i 열을 읽는다
+          slots.push(p, p.n++);
+        }
       }
     }
     for (const p of this.props) {
+      if (p.slot) p.slot.needsUpdate = true;
       p.mesh.count = p.n;
       // 아무 배도 안 쓰는 요소는 그리지 않는다 — draw call이 아예 안 생긴다.
       p.mesh.visible = p.n > 0;
@@ -436,6 +420,19 @@ export class ShipFleet {
     for (const g of this.body) g.mesh.instanceMatrix.needsUpdate = true;
     for (const p of this.props) if (p.n > 0) p.mesh.instanceMatrix.needsUpdate = true;
   }
+}
+
+/**
+ * 배 칸 번호 속성(_slot) — 인스턴스마다 몇 번 배인지. 칠하는 재질이 배 칸 표에서 그 열을 읽는다(boat-paint.js).
+ * fixed = 몸체 조각(인스턴스 i = 배 i), 아니면 요소(_layoutProps 가 채운다).
+ */
+function slotAttribute(geo, capacity, fixed) {
+  const arr = new Float32Array(capacity);
+  if (fixed) for (let i = 0; i < capacity; i++) arr[i] = i;
+  const attr = new THREE.InstancedBufferAttribute(arr, 1);
+  attr.setUsage(fixed ? THREE.StaticDrawUsage : THREE.DynamicDrawUsage);
+  geo.setAttribute("_slot", attr);
+  return attr;
 }
 
 function triCount(geo) {

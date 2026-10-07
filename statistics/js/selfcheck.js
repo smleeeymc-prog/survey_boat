@@ -81,10 +81,15 @@ export function runSelfChecks(scene, { domIds = EXHIBIT_IDS } = {}) {
     fleet.missing.length === 0,
     `[selfCheck] GLB에 없는 노드: ${fleet.missing.join(", ")} — 이름이 바뀌었는지 확인 (shared/glb-nodes.js)`
   );
-  console.assert(
-    fleet.tintMeshes.length >= 1,
-    `[selfCheck] 인스턴스 컬러를 받는 그룹이 없다 — 선체 노드 이름이 바뀌었는지 확인 (선체 색조 채널이 조용히 죽는다)`
-  );
+  // 배마다 칠(10-07) — 칠하는 조각이 배 칸 번호(_slot)를 갖고 있는가. 없으면 그 조각이 모든 배에서 0번 배의 칠로 그려진다
+  console.assert(fleet.paint, "[selfCheck] 배 칸 칠 표가 없다 — fleet.js 2.7)");
+  const hullPiece = fleet.body.find((g) => g.role === "hull");
+  console.assert(hullPiece && hullPiece.mesh.geometry.attributes._slot,
+    "[selfCheck] 선체에 _slot 이 없다 — 선체 노드 이름이 바뀌었는지 확인 (배 색 채널이 조용히 죽는다)");
+  for (const node of [C.GLB_NODES.tube, "Surfboard", C.GLB_NODES.cat, "Clover"]) {
+    const p = fleet.props.find((x) => x.node === node);
+    console.assert(p && p.slot, `[selfCheck] 소품 칠을 받는 요소 "${node}"에 _slot 이 없다 — boat-paint.js applyBoatPaint 의 노드 이름 확인`);
+  }
 
   // 4) 키워드 → 요소가 빠짐없이 이어졌는가. 설문 분류값에 키워드가 늘었는데 매핑을 안 적으면
   //    그 키워드를 고른 배만 아무 표시 없이 떠다닌다.
