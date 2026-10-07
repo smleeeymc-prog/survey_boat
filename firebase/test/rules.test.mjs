@@ -137,6 +137,12 @@ test("필드를 하나씩 틀리게 하면 전부 거절된다", async () => {
     "색 코드 # 없음": good({ hull_color: "a35c2e", deck_color: "auto" }),
     "색 코드 뒤에 글자": good({ hull_color: "#a35c2e;x", deck_color: "auto" }),
     "갑판 색 코드 틀림": good({ hull_color: "red", deck_color: "#zzzzzz" }),
+    "튜브 색 목록 밖": good({ tube_color: "pink" }),
+    "보드 색에 auto": good({ board_color: "auto" }),
+    "클로버 색 코드 대문자": good({ clover_color: "#4E9F4B" }),
+    "고양이 무늬 목록 밖": good({ cat_coat: "tabby" }),
+    "고양이 무늬에 색": good({ cat_coat: "#ffffff" }),
+    "모르는 소품 필드": good({ lamp_color: "red" }),
   };
   for (const [label, rec] of Object.entries(cases)) {
     await assert.doesNotReject(assertFails(put(db, rec)), `통과하면 안 되는데 통과: ${label}`);
@@ -155,6 +161,22 @@ test("배 색: 없어도(옛 기록) · 원톤(auto) · 투톤 · 모든 색 id 
   const id = S.newId();
   const rec = { ...S.makeRecord({ id, region: "천안", state: "leaving", share: "few", text: "색을 고른 배", keywords: [], name: "익명",
     hullColor: "green", deckColor: "auto" }), created_at: serverTimestamp() };
+  assert.deepEqual(S.checkNew(rec), []);
+  await assertSucceeds(put(db, rec));
+});
+
+test("소품 칠(10-07): 튜브·서핑보드·클로버 색과 고양이 무늬 — 있을 때만 값을 본다", async () => {
+  const db = user();
+  await assertSucceeds(put(db, good({ tube_color: "blue", board_color: "#ffd400", clover_color: "base", cat_coat: "tuxedo" })));
+  for (const c of T.CAT_COATS) await assertSucceeds(put(db, good({ cat_coat: c.id })));
+  for (const c of T.BOAT_COLORS) await assertSucceeds(put(db, good({ tube_color: c.id })));
+  // makeRecord 는 고른 키워드의 소품만 싣는다
+  const id = S.newId();
+  const rec = { ...S.makeRecord({ id, region: "아산", state: "stay", share: "many", text: "튜브와 고양이", keywords: ["가족", "주거"], name: "익명",
+    hullColor: "base", deckColor: "auto", props: { tube: "purple", board: "red", clover: "red" }, catCoat: "cheese" }), created_at: serverTimestamp() };
+  assert.equal(rec.tube_color, "purple");
+  assert.equal(rec.cat_coat, "cheese");
+  assert.ok(!("board_color" in rec) && !("clover_color" in rec));
   assert.deepEqual(S.checkNew(rec), []);
   await assertSucceeds(put(db, rec));
 });

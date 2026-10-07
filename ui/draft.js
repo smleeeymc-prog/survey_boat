@@ -23,6 +23,10 @@ const Draft = (() => {
   const COLOR_IDS = (T.BOAT_COLORS || []).map(c => c.id);
   // 컬러휠 색 — 규칙과 같은 모양만(record-schema.js COLOR_HEX_RE)
   const hexOrNull = (v) => (typeof v === "string" && RECORD_SCHEMA.COLOR_HEX_RE.test(v) ? v : null);
+  // 키워드 소품 칠(10-07) — 튜브·서핑보드·클로버 색은 배 색과 같은 모양, 고양이는 털 무늬 id
+  const COAT_IDS = (T.CAT_COATS || []).map(c => c.id);
+  const PROP_IDS = (T.PROP_PAINTS || []).filter(p => p.kind !== "coat").map(p => p.id);
+  const cleanProps = (o) => Object.fromEntries(PROP_IDS.map(id => [id, (o && (oneOf(o[id], COLOR_IDS) || hexOrNull(o[id]))) || "base"]));
 
   /** 설문 상태 → 저장할 값. 질문 단계가 아니면 null(저장 안 함). */
   function pick(s){
@@ -30,7 +34,8 @@ const Draft = (() => {
     return {
       step: s.step, region: s.region, stateId: s.stateId, text: s.text, share: s.share,
       keywords: [...s.keywords], disclose: s.disclose, name: s.name,
-      tone: s.tone, hullColor: s.hullColor, deckColor: s.deckColor, at: Date.now(),
+      tone: s.tone, hullColor: s.hullColor, deckColor: s.deckColor,
+      props: { ...s.props }, catCoat: s.catCoat, at: Date.now(),
     };
   }
 
@@ -53,6 +58,8 @@ const Draft = (() => {
       tone: d.tone === "two" ? "two" : "one",
       hullColor: oneOf(d.hullColor, COLOR_IDS) || hexOrNull(d.hullColor) || "base",
       deckColor: oneOf(d.deckColor, COLOR_IDS) || hexOrNull(d.deckColor) || "base",
+      props: cleanProps(d.props),
+      catCoat: oneOf(d.catCoat, COAT_IDS) || "calico",
       at: d.at,
     };
     // 앞 단계 값이 빠졌으면(분류가 바뀌어 걸러진 경우) 그 단계부터 다시 묻는다.

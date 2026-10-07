@@ -98,7 +98,9 @@ async function solve(part, target) {
 }
 const rows = [];
 for (const c of PAL) {
-  const one = BL.paintSeen(c.id, "auto", ctx.T.BOAT_COLORS), two = BL.paintSeen(c.id, c.id, ctx.T.BOAT_COLORS);
+  // 표(PAINT_TABLE)는 예전 '누름' 방식({ pure: false })에서만 쓴다 — 원색(기본, 10-07)은 응답 격자로 푼다
+  const NP = { pure: false };
+  const one = BL.paintSeen(c.id, "auto", ctx.T.BOAT_COLORS, NP), two = BL.paintSeen(c.id, c.id, ctx.T.BOAT_COLORS, NP);
   const hull = await solve("hull", one.hull);
   const deckAuto = await solve("deck", one.deck);
   const deck = await solve("deck", two.deck);

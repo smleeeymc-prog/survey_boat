@@ -75,13 +75,15 @@ var RecordSync = (function () {
   /* ── 어댑터: 설문 기록 ↔ DB 기록 ───────────────────────── */
   function toRecord(e) {
     return S.makeRecord({ id: e.id, region: e.region, state: e.state, share: e.share,
-      text: e.text, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor });
+      text: e.text, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor,
+      props: e.props, catCoat: e.catCoat });
   }
   function toEntry(r, extra) {
     return Object.assign({
       id: r.record_id, region: r.region, state: r.state, share: r.share, text: r.text,
       keywords: Array.isArray(r.keywords) ? r.keywords.slice() : [], name: r.display_name,
       hullColor: r.hull_color, deckColor: r.deck_color,
+      props: { tube: r.tube_color, board: r.board_color, clover: r.clover_color }, catCoat: r.cat_coat,
     }, extra);
   }
 

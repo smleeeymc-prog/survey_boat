@@ -32,6 +32,9 @@
  *   deck_color         (선택) 갑판 색 — 위와 같고, "auto" = 원톤(선체 색에 맞춰 갑판도 같이 물든다)
  *                      선택 필드인 이유: 이 필드가 생기기 전의 기록·대기열이 그대로 통과해야 하고, 규칙을 배포하기 전에는
  *                      설문이 색만 빼고 다시 보낸다(ui/record-sync.js). 없으면 화면은 "base"(지금 배 색)로 그린다.
+ *   tube_color · board_color · clover_color   (선택) 키워드 소품 색 — 튜브(가족)·서핑보드(소속감)·클로버(우연). 값은 hull_color 와 같은 모양.
+ *                      그 키워드를 고른 기록에만 실린다(10-07). survey-taxonomy.js PROP_PAINTS
+ *   cat_coat           (선택) 고양이(주거) 털 무늬 — survey-taxonomy.js CAT_COATS 의 id. 주거를 고른 기록에만
  * ========================================================================== */
 
 var RECORD_SCHEMA = (function (T) {
@@ -51,8 +54,11 @@ var RECORD_SCHEMA = (function (T) {
     "record_id", "created_at", "region", "state", "share", "text", "keywords",
     "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version",
   ];
-  // 있어도 되고 없어도 되는 필드 — 배 색. 규칙은 FIELDS 는 전부, 이것들은 있을 때만 값을 본다.
-  const PAINT_FIELDS = ["hull_color", "deck_color"];
+  // 있어도 되고 없어도 되는 필드 — 배 색과 소품 칠. 규칙은 FIELDS 는 전부, 이것들은 있을 때만 값을 본다.
+  const PROPS = T.PROP_PAINTS || [];
+  const PROP_COLOR_FIELDS = PROPS.filter((p) => p.kind !== "coat").map((p) => p.field);
+  const CAT_COAT_FIELD = "cat_coat";
+  const PAINT_FIELDS = ["hull_color", "deck_color"].concat(PROP_COLOR_FIELDS, CAT_COAT_FIELD);
   const DECK_AUTO = "auto";
   // 컬러휠 색 — 소문자 6자리만. 규칙에도 같은 식이 들어간다(build-rules.mjs)
   const COLOR_HEX_RE = /^#[0-9a-f]{6}$/;
@@ -83,6 +89,7 @@ var RECORD_SCHEMA = (function (T) {
   const KEYWORDS = T.KEYWORDS;
   const COLOR_IDS = (T.BOAT_COLORS || []).map((c) => c.id);
   const DECK_COLOR_IDS = COLOR_IDS.concat(DECK_AUTO);
+  const CAT_COAT_IDS = (T.CAT_COATS || []).map((c) => c.id);
 
   const isStr = (v) => typeof v === "string";
   // JS trim 은 규칙의 trim(ASCII 공백만)보다 넓다. 여기서 먼저 깎아 보내면 규칙의
@@ -122,6 +129,8 @@ var RECORD_SCHEMA = (function (T) {
     const isHex = (v) => isStr(v) && COLOR_HEX_RE.test(v);
     if ("hull_color" in r && !COLOR_IDS.includes(r.hull_color) && !isHex(r.hull_color)) problems.push("hull_color");
     if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color) && !isHex(r.deck_color)) problems.push("deck_color");
+    for (const f of PROP_COLOR_FIELDS) if (f in r && !COLOR_IDS.includes(r[f]) && !isHex(r[f])) problems.push(f);
+    if (CAT_COAT_FIELD in r && !CAT_COAT_IDS.includes(r[CAT_COAT_FIELD])) problems.push(CAT_COAT_FIELD);
     return problems;
   }
 
@@ -156,13 +165,21 @@ var RECORD_SCHEMA = (function (T) {
    * 설문 답을 새 기록으로. 값 정리(trim·중복 제거·빈 이름 → 익명)는 여기 한 곳에서만 한다.
    * created_at 은 넣지 않는다 — 보내는 쪽(record-store)이 서버 시각을 붙인다.
    */
-  function makeRecord({ id, region, state, share, text, keywords, name, hullColor, deckColor }) {
+  function makeRecord({ id, region, state, share, text, keywords, name, hullColor, deckColor, props, catCoat }) {
     const kws = [];
     for (const k of Array.isArray(keywords) ? keywords : []) if (!kws.includes(k)) kws.push(k);
     const nm = clean(name);
     const paint = {};
     // 색은 둘 다 있을 때만 싣는다 — 한쪽만 있는 기록은 화면이 어떻게 그릴지 애매하다
     if (hullColor !== undefined && deckColor !== undefined) { paint.hull_color = hullColor; paint.deck_color = deckColor; }
+    // 소품 칠 — 그 키워드를 고른 기록에만. 고르지 않은 칠은 기본(base · calico)으로 싣는다(통계에서 '기본 그대로'도 센다)
+    if (props !== undefined || catCoat !== undefined) {
+      for (const p of PROPS) {
+        if (!kws.includes(p.keyword)) continue;
+        if (p.kind === "coat") paint[CAT_COAT_FIELD] = catCoat || CAT_COAT_IDS[0];
+        else paint[p.field] = (props && props[p.id]) || "base";
+      }
+    }
     return {
       ...paint,
       record_id: id,
@@ -177,7 +194,7 @@ var RECORD_SCHEMA = (function (T) {
     };
   }
 
-  /** 배 색 필드가 실렸나 / 뺀 사본 — 색을 모르는 옛 규칙(배포 전)에 거절되면 색만 빼고 다시 보낸다(ui/record-sync.js) */
+  /** 배 색·소품 칠 필드가 실렸나 / 뺀 사본 — 색을 모르는 옛 규칙(배포 전)에 거절되면 색만 빼고 다시 보낸다(ui/record-sync.js) */
   const hasPaint = (r) => !!r && PAINT_FIELDS.some((k) => k in r);
   function withoutPaint(r) {
     const out = Object.assign({}, r);
@@ -194,8 +211,8 @@ var RECORD_SCHEMA = (function (T) {
 
   return {
     TEXT_MAX, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
-    FIELDS, PAINT_FIELDS, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
-    REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS,
+    FIELDS, PAINT_FIELDS, PROP_COLOR_FIELDS, CAT_COAT_FIELD, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
+    REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS, CAT_COAT_IDS,
     newId, checkNew, checkRecord, makeRecord, safeImage, hasPaint, withoutPaint,
   };
 })(globalThis.SURVEY_TAXONOMY);

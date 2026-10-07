@@ -42,7 +42,7 @@ service cloud.firestore {
     }
 
     function validRecord(id, d) {
-      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version", "hull_color", "deck_color"])
+      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version", "hull_color", "deck_color", "tube_color", "board_color", "clover_color", "cat_coat"])
         && d.keys().hasAll(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
         && d.record_id == id
         && id.matches('^[A-Za-z0-9]{20}$')
@@ -62,7 +62,12 @@ service cloud.firestore {
         && d.schema_version == 1
         // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 팔레트 id 중 하나, 또는 컬러휠의 "#rrggbb"
         && (!('hull_color' in d) || d.hull_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.hull_color))
-        && (!('deck_color' in d) || d.deck_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black", "auto"] || paintHex(d.deck_color));
+        && (!('deck_color' in d) || d.deck_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black", "auto"] || paintHex(d.deck_color))
+        // 키워드 소품 칠 — 튜브·서핑보드·클로버 색은 배 색과 같은 모양, 고양이는 털 무늬 id
+        && (!('tube_color' in d) || d.tube_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.tube_color))
+        && (!('board_color' in d) || d.board_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.board_color))
+        && (!('clover_color' in d) || d.clover_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.clover_color))
+        && (!('cat_coat' in d) || d.cat_coat in ["calico", "white", "cheese", "tuxedo", "black"]);
     }
 
     match /records/{id} {

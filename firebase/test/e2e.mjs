@@ -143,7 +143,7 @@ const errorsIn = (logs, allow = []) => logs.filter((l) =>
   ["error", "assert", "pageerror"].includes(l.type) && !allow.some((re) => re.test(l.text)));
 
 /** 설문을 실제로 눌러서 끝까지 — 결과 화면이 뜨면 돌아온다 */
-async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null }) {
+async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null }) {
   if (goto) await page.goto(url);
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
@@ -166,6 +166,11 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
       await page.locator(".paint-part", { hasText: "갑판" }).click();
       await page.locator(".paint-pad").nth(color.deck).click();
     }
+  }
+  // 소품 칠 — props: { 칩 이름: 동그라미 순번 } (고양이는 털 무늬 순번)
+  for (const [label, idx] of Object.entries(props || {})) {
+    await page.locator(".paint-part", { hasText: label }).click();
+    await page.locator(label === "고양이" ? ".paint-coat" : ".paint-pad").nth(idx).click();
   }
   await page.locator(".qnext").click();
   if (name) {                                                  // Ⅶ 공개
@@ -206,7 +211,7 @@ try {
   const survey = await ctxB.newPage();
   const surveyLogs = watch(survey);
   const myText = "지도가 이 문장을 받아야 한다 — 😀 이모지도";
-  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 } });   // 원톤 남색
+  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 }, props: { "튜브": 7 } });   // 원톤 남색 · 튜브 자두
   check("설문: 결과 화면이 뜬다", await survey.locator(".res-sentence").isVisible());
   check("설문: DB로 돌 땐 목업 배지가 없다", await survey.evaluate(() => document.getElementById("proto-badge").hidden));
 
@@ -216,6 +221,9 @@ try {
     mine.share === "many" && mine.keywords.join() === "일,가족", JSON.stringify({ ...mine, created_at: String(mine.created_at) }));
   check("배 색이 기록에 실린다 (원톤 남색 → hull_color navy · deck_color auto)", mine.hull_color === "navy" && mine.deck_color === "auto",
     `${mine.hull_color} / ${mine.deck_color}`);
+  check("소품 칠이 기록에 실린다 (가족 → tube_color purple · 고르지 않은 소품은 없음)",
+    mine.tube_color === "purple" && !("board_color" in mine) && !("clover_color" in mine) && !("cat_coat" in mine),
+    `${mine.tube_color} / ${Object.keys(mine).filter((k) => /_color|_coat/.test(k)).join(",")}`);
   const myThumb = await waitFor(async () => (await adminDocs("thumbs")).find((t) => t.id === mine.id), { label: "thumbs 문서", timeout: 40000 });
   check("thumbs 문서가 생긴다 (WebP, 상한 이하)", myThumb && /^data:image\/(webp|jpeg);base64,/.test(myThumb.data) && myThumb.data.length <= S.THUMB.MAX_CHARS,
     myThumb ? `${myThumb.data.slice(0, 22)}… ${myThumb.data.length}자` : "");
@@ -367,18 +375,18 @@ try {
   const newRules = fs.readFileSync(path.join(HERE, "..", "firestore.rules"), "utf8");
   const oldRules = newRules
     .replace(/d\.keys\(\)\.hasOnly\(\[[^\]]*\]\)/, `d.keys().hasOnly([${S.FIELDS.map((f) => `"${f}"`).join(", ")}])`)
-    .replace(/\n\s*\/\/ 배 색[^\n]*\n[^\n]*hull_color[^\n]*\n[^\n]*deck_color[^\n]*;/, ";")
+    .replace(/\n\s*\/\/ 배 색[\s\S]*?cat_coat[^\n]*;/, ";")   // 배 색 줄부터 소품 칠(마지막 cat_coat) 줄까지
     .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;")
     .replace(/\n    \/\/ 컬러휠로 고른 배 색[^\n]*\n    function paintHex\(v\) \{\n[^\n]*\n    \}\n/, "");
-  check("옛 규칙 만들기 (색 필드 빠짐)", !oldRules.includes("hull_color") && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
+  check("옛 규칙 만들기 (색 필드 빠짐)", !/hull_color|tube_color|cat_coat/.test(oldRules) && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
   await putRules(oldRules);
   const ctxR = await newContext();
   const rp = await ctxR.newPage();
   const rLogs = watch(rp);
   const oldText = "옛 규칙에서도 문장은 들어가야 한다";
-  await runSurvey(rp, { text: oldText, color: { hull: 1, deck: 3 } });   // 투톤 빨강·노랑
+  await runSurvey(rp, { text: oldText, keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 } });   // 투톤 빨강·노랑 · 주거 고양이 턱시도
   const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: "옛 규칙 records 문서", timeout: 40000 });
-  check("옛 규칙: 색을 뺀 기록으로 들어간다", oldDoc && !("hull_color" in oldDoc) && !("deck_color" in oldDoc),
+  check("옛 규칙: 색을 뺀 기록으로 들어간다", oldDoc && !("hull_color" in oldDoc) && !("deck_color" in oldDoc) && !("cat_coat" in oldDoc),
     oldDoc ? Object.keys(oldDoc).join(",") : "");
   await waitFor(async () => (await queueOf(rp)).every((x) => !x.record), { label: "옛 규칙: 대기열의 기록이 빈다", timeout: 20000 });
   check("옛 규칙: 대기열의 기록이 빈다", true);

@@ -57,10 +57,9 @@ var SURVEY_TAXONOMY = (function () {
 
   // 배 색 (Ⅵ 색 단계, 10-06 사용자). 기본 + 지도 톤에 맞춘 작품 색 8개(주홍·테라코타·머스터드·올리브·청색·진남·자두·먹색)를
   // 빨주노초파남보흑 순으로. id 는 무지개 칸 이름이고 이름(label)이 실제 색이다.
-  // hex = 고르는 판의 동그라미 색. 배는 기본 배에서 이 색 쪽으로 채도·밝기를 일부만 옮겨 띤다(statistics/shared/boat-look.js
-  // seenTarget — 컬러휠과 같은 식). 볕 받는 면은 눈에 더 밝게 읽혀서, 이렇게 옮긴 배가 동그라미와 비슷하게 보인다(설문 HANDOFF 6.25).
-  // 그래서 동그라미는 이 계산에 맞춘 세기로 골랐다 — 더 연하게 바꾸면 배가 회색에 가까워진다.
-  // 재질 색은 boat-look.js PAINT_TABLE 이 이 hex 에 맞춰 풀어 둔 값. hex 를 바꾸면 node tools/calibrate-paint.mjs 로 표를 다시 풀 것.
+  // hex = 고르는 판의 동그라미 색. 배는 이 색 그대로 보이게 칠한다(원색 — 10-07 사용자 "원색 버전으로 가자").
+  // 재질 색은 statistics/shared/boat-look.js 의 응답 격자(PAINT_LUT)가 화면 색에서 거꾸로 푼다(설문 HANDOFF 6.25).
+  // (예전 '누름' 방식 — 기본 배에서 이 색 쪽으로 일부만 옮기기 — 은 paintParts(…, { pure: false }) 로 남아 있다. PAINT_TABLE 은 그쪽 표)
   // base 는 지금 배 그대로(선체 #483431 · 갑판 #835e4f 로 보인다, 실측). deckHex 는 투톤 갑판 판에서 '기본' 동그라미 색.
   // 컬러휠로 고른 색은 id 대신 "#rrggbb" 로 기록된다(record-schema.js COLOR_HEX_RE).
   // id 는 보안 규칙에 들어간다 — 색을 더하거나 id를 바꾸면 규칙 재생성·배포(13.3). hex·label 만 바꾸는 건 규칙과 무관하다.
@@ -75,5 +74,23 @@ var SURVEY_TAXONOMY = (function () {
     {id:"purple", label:"자두",     hex:"#6a2f50"},
     {id:"black",  label:"먹색",     hex:"#2a292d"},
   ];
-  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS };
+  // 키워드 소품 칠(10-07 사용자) — 그 키워드를 고른 사람만 색 단계에서 칠한다. 값은 배 색과 같은 모양(BOAT_COLORS id · "#rrggbb").
+  //   swatch = '기본' 동그라미에 보일 원래 색. field = DB 필드(record-schema.js). 고양이는 색 대신 털 무늬(kind "coat" → CAT_COATS).
+  //   화면: index.html _installPropPaint. 지도: HANDOFF-map 27.  id·field 는 보안 규칙에 들어간다(바꾸면 규칙 재생성·배포).
+  const PROP_PAINTS = [
+    {id:"tube",   keyword:"가족",   label:"튜브",     field:"tube_color",   swatch:"#c8352b"},
+    {id:"board",  keyword:"소속감", label:"서핑보드", field:"board_color",  swatch:"#2fa9e6"},
+    {id:"clover", keyword:"우연",   label:"클로버",   field:"clover_color", swatch:"#4e9f4b"},
+    {id:"cat",    keyword:"주거",   label:"고양이",   field:"cat_coat",     kind:"coat"},
+  ];
+  // 고양이(주거) 털 무늬 — 색이 아니라 무늬를 고른다(10-07 사용자). calico 가 지금 텍스처. 화면이 텍셀을 분류해 다시 칠한다
+  // (index.html _catCoatShader). swatch 는 고르는 판 동그라미 그림(CSS background). id 는 보안 규칙에 들어간다.
+  const CAT_COATS = [
+    {id:"calico", label:"삼색",     swatch:"conic-gradient(#f4f1ea 0 40%, #e38b3c 0 70%, #2b2624 0 100%)"},
+    {id:"white",  label:"올화이트", swatch:"#f4f1ea"},
+    {id:"cheese", label:"치즈태비", swatch:"repeating-linear-gradient(135deg, #e7953f 0 5px, #c46a26 5px 8px)"},
+    {id:"tuxedo", label:"턱시도",   swatch:"linear-gradient(to top, #f4f1ea 0 35%, #23201f 35% 100%)"},
+    {id:"black",  label:"올블랙",   swatch:"#23201f"},
+  ];
+  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS, PROP_PAINTS, CAT_COATS };
 })();

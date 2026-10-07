@@ -37,6 +37,11 @@ body{
   background:rgba(22,22,30,.72); color:var(--gold2); font-size:10px; white-space:nowrap;
   padding:3px 9px; border-radius:20px; letter-spacing:.02em; opacity:.8; pointer-events:none;
 }
+/* 질문 단계엔 페이지가 스크롤될 일이 없다(판·표시줄이 다 고정). 그런데 iOS 사파리의 100vh는 주소창이 접힌 높이라
+   주소창이 보일 때 문서가 그만큼 길어져, 팔레트를 쓸어 올리면 페이지가 밀렸다(10-07 사용자: 색 단계에서 화면이 하늘만
+   보이고 이전·다음이 안 눌림). 질문 단계에선 문서를 화면 높이에 묶고 스크롤·당김을 끈다. 아카이브는 제 스크롤 상자가 있다. */
+html.lock, html.lock body{ height:100%; overflow:hidden; overscroll-behavior:none; }
+html.lock #app{ min-height:100%; }
 #app{ width:100%; max-width:520px; min-height:100vh; padding:32px 20px 60px;
   display:flex; flex-direction:column; position:relative; z-index:2;
   pointer-events:none; user-select:none; -webkit-user-select:none; }
@@ -138,7 +143,7 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .kw-word.selected span{ border-bottom:1.5px solid var(--b-gold); padding-bottom:2px; }
 .kw-word:disabled{ opacity:.45; cursor:default; }
 
-/* ── Ⅵ 색 — 위: 왼쪽(원톤·투톤 / 선체·갑판 칩) + 오른쪽(명암 판 + 색조 막대), 아래: 동그라미 팔레트 한 줄 · 원색 그대로 ── */
+/* ── Ⅵ 색 — 위: 왼쪽(원톤·투톤 / 칠할 곳 칩) + 오른쪽(명암 판 + 색조 막대), 아래: 동그라미 팔레트 한 줄(고양이는 털 무늬) ── */
 .paint{ display:flex; flex-direction:column; }
 .paint-top{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .paint-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
@@ -146,12 +151,15 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .paint-mode{ height:36px; padding:0 0 2px; border:0; border-bottom:1.5px solid transparent; background:transparent;
   font-family:var(--serif) !important; font-size:18px; color:rgba(246,242,234,.6); }
 .paint-mode.on{ font-weight:700; color:var(--b-gold); border-bottom-color:var(--b-gold); }
-.paint-mid{ height:34px; display:flex; align-items:center; gap:8px; margin-top:8px; }
-.paint-part{ height:28px; padding:0 13px; border-radius:14px; border:1px solid rgba(246,242,234,.4); background:transparent;
-  font-size:12.5px; font-weight:500; color:rgba(246,242,234,.82); }
+/* 칠할 곳 칩 — 선체·갑판에 소품(최대 둘)이 붙으면 줄을 바꾼다. 투톤의 소품은 늘 둘째 줄(.paint-break) */
+.paint-mid{ min-height:34px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 6px; margin-top:8px; }
+.paint-break{ flex-basis:100%; height:0; }
+.paint-part{ height:28px; padding:0 11px; border-radius:14px; border:1px solid rgba(246,242,234,.4); background:transparent;
+  font-size:12.5px; font-weight:500; color:rgba(246,242,234,.82); white-space:nowrap; }
 .paint-part.on{ background:var(--b-text); border-color:var(--b-text); color:var(--b-ink); font-weight:600; }
 /* 명암 판(dh 전시처럼): 왼쪽 위 흰색 → 오른쪽 위 순색, 아래로 검정. 그 아래 색조 막대. 그림과 고르는 식(HSV)이 같다 */
 .paint-picker{ flex:0 0 auto; width:min(168px, 48%); display:flex; flex-direction:column; gap:9px; }
+.paint-picker.off{ visibility:hidden; }   /* 고양이 — 판은 숨기되 자리는 남겨 화면이 흔들리지 않게 */
 .paint-sv{ position:relative; height:72px; border-radius:8px; touch-action:none; cursor:crosshair;
   box-shadow:0 0 0 1.5px rgba(246,242,234,.38); }
 .paint-hue{ position:relative; height:14px; border-radius:7px; touch-action:none; cursor:ew-resize;
@@ -166,15 +174,13 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
   border:1.5px solid rgba(246,242,234,.38); padding:0; transition:transform .15s ease; }
 .paint-pad::after{ content:""; position:absolute; inset:-7px; }      /* 누르는 자리는 더 넓게 */
 .paint-pad.on{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
-/* 원색 그대로(시험) — 동의 체크와 같은 꼴, 작게 */
-.paint-pure{ display:flex; align-items:center; gap:9px; margin-top:10px; cursor:pointer; align-self:flex-start; }
-.paint-pure .box{ position:relative; flex:0 0 18px; height:18px; }
-.paint-pure input{ appearance:none; -webkit-appearance:none; position:absolute; inset:0; margin:0; border-radius:4px;
-  border:1.5px solid rgba(246,242,234,.7); background:transparent; cursor:pointer; }
-.paint-pure input:checked{ background:var(--b-gold); border-color:var(--b-gold); }
-.paint-pure svg{ position:absolute; left:3px; top:3px; width:12px; height:12px; pointer-events:none; opacity:0; }
-.paint-pure input:checked ~ svg{ opacity:1; }
-.paint-pure .txt{ font-size:12.5px; color:rgba(246,242,234,.82); }
+/* 고양이 털 무늬 다섯 — 동그라미 아래 이름 */
+.paint-pads.coats{ justify-content:space-around; padding-top:10px; }
+.paint-coat{ position:relative; display:flex; flex-direction:column; align-items:center; gap:5px; border:0; background:transparent;
+  padding:0; font-size:11px; color:rgba(246,242,234,.72); }
+.paint-coat .sw{ width:30px; height:30px; border-radius:50%; border:1.5px solid rgba(246,242,234,.38); transition:transform .15s ease; }
+.paint-coat.on .sw{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
+.paint-coat.on .lb{ color:var(--b-gold); font-weight:600; }
 
 /* ── 공개 방식과 동의 ── */
 .disc-tabs{ display:flex; gap:22px; }

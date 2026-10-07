@@ -121,7 +121,10 @@ service cloud.firestore {
         && d.schema_version == ${S.SCHEMA_VERSION}
         // 배 색 — 있어도 되고 없어도 된다(옛 기록·옛 대기열). 있으면 팔레트 id 중 하나, 또는 컬러휠의 "#rrggbb"
         && (!('hull_color' in d) || d.hull_color in ${list(S.COLOR_IDS)} || paintHex(d.hull_color))
-        && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)} || paintHex(d.deck_color));
+        && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)} || paintHex(d.deck_color))
+        // 키워드 소품 칠 — 튜브·서핑보드·클로버 색은 배 색과 같은 모양, 고양이는 털 무늬 id
+${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list(S.COLOR_IDS)} || paintHex(d.${f}))`).join("\n")}
+        && (!('${S.CAT_COAT_FIELD}' in d) || d.${S.CAT_COAT_FIELD} in ${list(S.CAT_COAT_IDS)});
     }
 
     match /${COL.records}/{id} {
