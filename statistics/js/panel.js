@@ -380,6 +380,7 @@ export function fillReport(e, c) {
   e.headline.innerHTML = keepTogether(c.headline || "");   // insights.js 가 참여자 글을 이미 esc 했다
   e.chart.innerHTML = c.html || "";
   e.chart.dataset.view = c.view || "";
+  if (c.mount) c.mount(e.chart);   // 움직이는 그림(views.js orbit)
   e.extra.textContent = c.extra || "";
   e.period.textContent = c.period || "";
   e.legend.innerHTML = c.legend || "";

@@ -28,7 +28,7 @@
  * 움직임을 줄이도록 설정한 환경에서는 CSS가 전부 끄고 마지막 모습만 보여준다.
  * ========================================================================== */
 
-import { esc, num, pct } from "./text.js";
+import { esc, num, pct, josa } from "./text.js";
 
 /** 순위별 글자 크기 배수. 1위만 크고, 뒤로 갈수록 계단식으로 작아진다. */
 const TIERS = [1.00, 0.90, 0.76, 0.76, 0.58, 0.58];
@@ -304,6 +304,39 @@ export const VIEWS = {
     },
   },
 
+  /**
+   * 궤도 — 함께 고른 이유들(10-11 사용자). 키워드 열 개가 원 둘레에 둥글게 서 있고, 가운데에 놓는 자리가 있다.
+   * 하나를 가운데로 끌어 놓으면(빈자리는 비워 둔 채) 나머지 아홉이 태양계처럼 그 키워드를 중심으로 제 방향의 반지름 위에
+   * 다시 선다 — 가운데에서 선이 뻗어 각자에게 이어지고, 거리는 연계(그 키워드를 고른 사람 중 함께 고른 비율)를 따른다.
+   * **멀수록 연계가 강하다**(사용자 지정 — ORBIT_FAR_IS_STRONG). 가운데 키워드를 다시 끌어내면 제자리로, 나머지도 원 둘레로.
+   * 끄는 손맛: 처음엔 제자리에 버티며 조금만 늘어나다가(고무줄) 일정 거리를 넘으면 "쑥" 손가락을 따라 끌려온다.
+   * 전시 화면에는 입력장치가 없어서 결론 문장의 주어 키워드를 스스로 가운데로 끌어오는 시연을 한다(ctx.interactive 가 아닐 때).
+   * render 는 자리만 그리고, 움직임은 mount(카드에 꽂힌 뒤 panel.js fillReport 가 부른다)가 맡는다.
+   */
+  orbit: {
+    accepts: "pairs",
+    render({ freq = {}, order, nodes = [] }, ctx = {}) {
+      const labels = order || nodes.map((n) => n.label);
+      const top = Math.max(1, ...labels.map((k) => freq[k] || 0));
+      const items = labels.map((k, i) => {
+        const [x, y] = orbitHome(i, labels.length);
+        const a = -Math.PI / 2 + (i / labels.length) * Math.PI * 2;   // 낱말은 가운데 바깥쪽(제 방향)에 단다 — 안쪽에 몰려도 덜 겹친다
+        return `<span class="sv-orb-node" data-k="${esc(k)}" style="--i:${i};left:${svgNum(x)}%;top:${svgNum(y)}%;--s:${svgNum(0.6 + 0.7 * Math.sqrt((freq[k] || 0) / top))};--ax:${svgNum(Math.cos(a))};--ay:${svgNum(Math.sin(a))}">
+          <i></i><span class="sv-orb-lab"><b>${esc(k)}</b><em></em></span></span>`;
+      }).join("");
+      const hint = ctx.interactive ? "키워드 하나를 여기로 끌어 오세요" : "";
+      return `<span class="sv-orbit${ctx.interactive ? " live" : ""}" role="img" aria-label="함께 고른 이유들 — 가운데 키워드와의 연계">
+        <span class="sv-orb-sq">
+          <svg class="sv-orb-lines" viewBox="0 0 100 100"></svg>
+          <span class="sv-orb-hub" style="width:${ORBIT.hub * 2}%;height:${ORBIT.hub * 2}%"><span>${hint}</span></span>
+          ${items}
+        </span>
+        <span class="sv-orb-cap">${ctx.interactive ? "멀리 설수록 함께 고른 사람이 많아요" : ""}</span>
+      </span>`;
+    },
+    mount(root, data, ctx = {}) { mountOrbit(root, data, ctx); },
+  },
+
   /* ── scores ────────────────────────────────────────────────────────────── */
 
   /**
@@ -476,3 +509,139 @@ function packCluster(items, aspect) {
 const svgNum = (n) => (Math.round(n * 1000) / 1000).toString();
 
 export { pct };
+
+/* ── 궤도(orbit) — 자리 계산과 끌기 ───────────────────────────────────────────── */
+
+// 정사각 자리 안의 % 좌표(가운데 50,50). ring = 원 둘레, hub = 가운데 자리 반지름, near = 가장 가까이 오는 반지름
+const ORBIT = { ring: 38, hub: 10, near: 20, breakAt: 9, stretch: 4.5, catchUp: 0.32 };
+// 멀수록 연계가 강하다(10-11 사용자 지정). 반대로 바꾸려면 false
+const ORBIT_FAR_IS_STRONG = true;
+// 관람객이 가운데에 놓아 둔 키워드 — 새 문장이 들어와 같은 장을 다시 그려도 그대로 둔다(인터랙티브만)
+const orbitMemo = { center: null };
+
+function orbitHome(i, n) {
+  const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+  return [50 + ORBIT.ring * Math.cos(a), 50 + ORBIT.ring * Math.sin(a)];
+}
+
+function mountOrbit(root, { freq = {}, links = [], order, nodes = [] }, ctx) {
+  const wrap = root.querySelector(".sv-orbit");
+  if (!wrap) return;
+  const sq = wrap.querySelector(".sv-orb-sq"), svg = wrap.querySelector(".sv-orb-lines"), cap = wrap.querySelector(".sv-orb-cap");
+  const labels = order || nodes.map((n) => n.label);
+  const els = new Map([...wrap.querySelectorAll(".sv-orb-node")].map((el) => [el.dataset.k, el]));
+  const idx = new Map(labels.map((k, i) => [k, i]));
+  const pairCount = (a, b) => { for (const l of links) if ((l.a === a && l.b === b) || (l.a === b && l.b === a)) return l.count; return 0; };
+
+  // 정사각 자리 — 차트 칸의 짧은 변에 맞춘다(원이 찌그러지지 않게). 카드가 확대돼도(transform) 칸 크기는 그대로다
+  const fit = () => {
+    const s = Math.max(40, Math.min(wrap.clientWidth, wrap.clientHeight - (cap ? cap.offsetHeight : 0)));
+    sq.style.width = sq.style.height = `${s}px`;
+    svg.style.setProperty("--k", svgNum(100 / s));
+  };
+  fit();
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(fit).observe(wrap);
+
+  const place = (el, x, y) => { el.style.left = `${x}%`; el.style.top = `${y}%`; };
+  let center = null;
+
+  /** 가운데가 c 일 때 각 키워드가 설 자리. c 가 없으면 전부 원 둘레 제자리 */
+  const targets = (c) => {
+    const out = new Map();
+    const nc = c ? freq[c] || 0 : 0;
+    const ps = new Map(labels.filter((k) => k !== c).map((k) => [k, nc ? pairCount(c, k) / nc : 0]));
+    const pmax = Math.max(0, ...ps.values());
+    labels.forEach((k, i) => {
+      if (k === c) { out.set(k, { x: 50, y: 50, p: null }); return; }
+      if (!c) { const [x, y] = orbitHome(i, labels.length); out.set(k, { x, y, p: null }); return; }
+      const t = pmax > 0 ? ps.get(k) / pmax : 0;
+      const r = ORBIT_FAR_IS_STRONG ? ORBIT.near + (ORBIT.ring - ORBIT.near) * t : ORBIT.ring - (ORBIT.ring - ORBIT.near) * t;
+      const a = -Math.PI / 2 + (i / labels.length) * Math.PI * 2;
+      out.set(k, { x: 50 + r * Math.cos(a), y: 50 + r * Math.sin(a), p: ps.get(k), t });
+    });
+    return out;
+  };
+
+  /** 가운데를 c 로(없으면 null) — 나머지가 제 반지름으로 옮겨 가고, 가운데에서 선이 뻗는다 */
+  const setCenter = (c, { remember = true } = {}) => {
+    center = c;
+    if (remember && ctx.interactive) orbitMemo.center = c;
+    const T = targets(c);
+    for (const [k, el] of els) {
+      const t = T.get(k);
+      el.classList.remove("drag");
+      el.classList.toggle("hub", k === c);
+      el.classList.toggle("dim", !!c && k !== c && !(t.p > 0));
+      place(el, t.x, t.y);
+      el.querySelector("em").textContent = c && k !== c ? `${Math.round((t.p || 0) * 100)}%` : "";
+    }
+    wrap.classList.toggle("has-hub", !!c);
+    svg.innerHTML = c ? labels.filter((k) => k !== c).map((k) => {
+      const t = T.get(k);
+      return `<line class="${t.p > 0 ? "" : "zero"}" x1="50" y1="50" x2="${svgNum(t.x)}" y2="${svgNum(t.y)}"
+        style="--i:${idx.get(k)};--w:${svgNum(0.25 + 0.55 * (t.t || 0))}" pathLength="1"></line>`;
+    }).join("") : "";
+    if (cap) {
+      const n = c ? freq[c] || 0 : 0;
+      cap.textContent = !c ? (ctx.interactive ? "멀리 설수록 함께 고른 사람이 많아요" : "")
+        : n ? `“${c}”${josa(c, "을를")} 고른 ${n}명 기준 · 멀리 설수록 함께 고른 사람이 많아요` : `아직 “${c}”${josa(c, "을를")} 고른 사람이 없어요`;
+    }
+  };
+
+  // 다시 그려도 관람객이 놓아 둔 키워드는 그대로(인터랙티브)
+  if (ctx.interactive && orbitMemo.center && els.has(orbitMemo.center)) setCenter(orbitMemo.center);
+
+  // 전시 — 결론의 주어 키워드를 스스로 가운데로 끌어온다(카드가 다 선 뒤)
+  if (!ctx.interactive) {
+    const k = ctx.highlight && (ctx.highlight.from || ctx.highlight.a);
+    if (k && els.has(k)) setTimeout(() => { if (wrap.isConnected) setCenter(k, { remember: false }); }, 1900);
+    return;
+  }
+
+  // ── 끌기 (인터랙티브) ──
+  const toPct = (e) => { const r = sq.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 100, (e.clientY - r.top) / r.height * 100]; };
+  for (const [k, el] of els) {
+    el.addEventListener("click", (e) => e.stopPropagation());   // 틀의 두 번 톡 확대로 새지 않게
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try { el.setPointerCapture(e.pointerId); } catch (_) {}
+      const T = targets(center), home = T.get(k);
+      const [sx, sy] = toPct(e);
+      let free = false, moved = 0, tx = home.x, ty = home.y, cx = home.x, cy = home.y, raf = 0;
+      el.classList.add("drag");
+      // 끄는 동안 카드를 다시 그리면(새 문장이 들어와서) 손에 쥔 키워드가 사라진다 — 쓰는 쪽이 미뤄 두게 알린다
+      wrap.dataset.dragging = "1";
+      // 풀려난 뒤에는 손가락 자리로 매 프레임 빠르게 따라붙는다 — "쑥"
+      const follow = () => { cx += (tx - cx) * ORBIT.catchUp; cy += (ty - cy) * ORBIT.catchUp; place(el, cx, cy); raf = requestAnimationFrame(follow); };
+      const move = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        const [px, py] = toPct(ev);
+        const dx = px - sx, dy = py - sy, d = Math.hypot(dx, dy);
+        moved = Math.max(moved, d);
+        if (!free && d > ORBIT.breakAt) { free = true; raf = requestAnimationFrame(follow); el.classList.add("free"); }
+        if (free) { tx = px; ty = py; return; }
+        // 버티기 — 제자리에서 고무줄처럼 조금만(최대 stretch) 늘어난다
+        const k2 = d ? ORBIT.stretch * Math.tanh(d / ORBIT.breakAt) / d : 0;
+        cx = home.x + dx * k2; cy = home.y + dy * k2; place(el, cx, cy);
+      };
+      const up = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+        cancelAnimationFrame(raf);
+        el.classList.remove("free");
+        delete wrap.dataset.dragging;
+        wrap.dispatchEvent(new CustomEvent("sv-drag-end", { bubbles: true }));
+        const [px, py] = toPct(ev);
+        const onHub = Math.hypot(px - 50, py - 50) < ORBIT.hub * 1.9;
+        if (moved < 1.5) setCenter(center === k ? null : k);               // 톡 — 가운데로 / 가운데 것이면 제자리로
+        else if (!free) setCenter(center);                                  // 버티다 놓음 — 원래 자리로 되돌아간다
+        else if (k === center) setCenter(onHub ? k : null);                 // 가운데 것을 끌어냈다 → 제자리로
+        else setCenter(onHub ? k : center);                                 // 가운데에 놓았으면 새 중심, 아니면 제자리
+      };
+      el.addEventListener("pointermove", move);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+  }
+}
+

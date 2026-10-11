@@ -314,18 +314,20 @@ export class MapWorld {
    * 머무는 시간도 정해져 있지 않을 수 있다(hold = Infinity) — release() 로 푼다.
    *
    * @param {object} boat
-   * @param {{appear?: boolean, hold?: number}} [opts] appear 새로 나타나는 배인가(기본 true) · hold 머무는 초
+   * @param {{appear?: boolean, hold?: number, zoomSec?: number}} [opts] appear 새로 나타나는 배인가(기본 true) ·
+   *   hold 머무는 초 · zoomSec 줌인·줌아웃 초(인터랙티브의 누른 배는 더 빠르다 — config.js EXPLORE_PICK)
    */
-  present(boat, { appear = true, hold = C.ARRIVAL_HOLD_SEC } = {}) {
+  present(boat, { appear = true, hold = C.ARRIVAL_HOLD_SEC, zoomSec = C.ARRIVAL_ZOOM_SEC } = {}) {
     boat.phase = "approach";
     boat.phaseT = 0;
+    boat.hop = false;
     boat.appear = appear;
     boat.holdSec = hold;
     boat.renderScale = appear ? 0 : 1;      // 새 배는 줌이 거의 끝날 때까지 안 보인다
     const slant = Math.hypot(boat.x, C.CAM_HEIGHT - ARRIVAL_AIM_Y, boat.z);
     boat.zoomTan = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
     this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, C.ARRIVAL_FRAME_Y);
-    boat.camSec = C.ARRIVAL_ZOOM_SEC;
+    boat.camSec = zoomSec;
     // 새 배는 지금부터 줌 + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 (늦춰진 속도로) 흘러간다.
     // 격자 좌표(x0)는 이 배가 다시 흐르기 시작하는 순간(return)에 그때의 흐름 거리로 정한다 — 흐름이
     // 늦춰졌다 돌아오는 모양과 상관없이 정확하다. 예전엔 일정한 속도를 가정해 여기서 미리 역산했다.
@@ -336,10 +338,42 @@ export class MapWorld {
     this._emit("incoming", boat);
   }
 
+  /**
+   * 보는 중인 배에서 다른 떠 있는 배로 바로 옮겨 간다(인터랙티브 — 10-11 사용자: 줌아웃했다 다시 줌인하지 말고
+   * 곧장 그 배로). 카메라는 지금 보고 있는 데서 새 배의 줌으로 hopSec 동안 옮겨 간다(camera.js hopFrom) —
+   * 렌즈도 새 배 거리에 맞춰 당기거나 푼다. 보던 배는 그 자리에서 다시 흐른다(떠 있던 배라 격자 그대로).
+   * 새로 나타나는 중인 배(appear — 혼자 멈춰 서 있다)를 보는 중이면 옮겨 가지 않는다 → false(예전처럼 닫고 다시).
+   * 이벤트: 보던 배 "hiding" → 새 배 "incoming" → 옮겨 가기가 끝나면 "shown".
+   * @returns {boolean} 옮겨 갔는가
+   */
+  switchTo(boat, { hold = Infinity, hopSec = C.ARRIVAL_ZOOM_SEC, zoomSec = C.ARRIVAL_ZOOM_SEC } = {}) {
+    const a = this.presenting;
+    if (!a || a.appear || boat === a || boat.phase) return false;
+    a.phase = null; a.renderScale = 1; a.hop = false;
+    this._emit("hiding", a);
+    this.cam.hopFrom();
+    boat.phase = "approach";
+    boat.phaseT = 0;
+    boat.hop = true;
+    boat.appear = false;
+    boat.holdSec = hold;
+    boat.renderScale = 1;
+    const slant = Math.hypot(boat.x, C.CAM_HEIGHT - ARRIVAL_AIM_Y, boat.z);
+    boat.zoomTan = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
+    this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, C.ARRIVAL_FRAME_Y);
+    boat.camSec = hopSec;
+    boat.returnSec = zoomSec;   // 닫을 때 줌아웃은 이 배의 보통 줌 시간으로
+    this.presenting = boat;
+    this._emit("incoming", boat);
+    return true;
+  }
+
   /** 머무는 중인 연출을 지금 푼다(인터랙티브의 닫기). 다가가는 중이었으면 그 자리에서 되돌아간다. */
   release() {
     const b = this.presenting;
     if (!b || b.phase === "return") return;
+    // 옮겨 가던 중이면 지금 보고 있는 데를 줌 끝으로 굳히고 거기서부터 푼다
+    if (b.hop) { this.cam.endHop(); b.hop = false; if (b.returnSec) b.camSec = b.returnSec; this._startReturn(b, 1); return; }
     // 다가가던 중이면 그만큼 당겨진 데서부터 풀어야 카메라가 튀지 않는다
     const k = b.phase === "approach" ? Math.min(1, b.phaseT / b.camSec) : 1;
     this._startReturn(b, k);
@@ -356,7 +390,8 @@ export class MapWorld {
   _cancelPresent() {
     const b = this.presenting;
     this.presenting = null;
-    if (b) { b.phase = null; b.renderScale = 1; }
+    if (b) { b.phase = null; b.renderScale = 1; b.hop = false; }
+    this.cam.endHop();
     this._emit("cancel", b);
   }
 
@@ -368,6 +403,19 @@ export class MapWorld {
     b.phaseT += dt;
     // 떠 있는 배를 보는 중이면 카메라가 그 배를 따라간다(흐름이 늦춰졌을 뿐 멈추진 않았다 — present 머리말)
     if (!b.appear && b.phase !== "return") this.cam.setZoomTarget(b.x, ARRIVAL_AIM_Y, b.z, b.zoomTan, C.ARRIVAL_FRAME_Y);
+
+    if (b.phase === "approach" && b.hop) {
+      this.cam.setZoomProgress(1);
+      this.cam.setHopProgress(b.phaseT / b.camSec);
+      if (b.phaseT >= b.camSec) {
+        this.cam.endHop();
+        b.hop = false;
+        if (b.returnSec) b.camSec = b.returnSec;
+        b.phase = "hold"; b.phaseT = 0;
+        this._emit("shown", b);
+      }
+      return;
+    }
 
     if (b.phase === "approach") {
       this.cam.setZoomProgress(b.phaseT / b.camSec);

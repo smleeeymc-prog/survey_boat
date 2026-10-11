@@ -42,6 +42,8 @@ export class ReportView {
     this.el.next.addEventListener("click", () => this.step(1));
     this.el.toc.addEventListener("click", () => this._toggleToc());
     this._bindZoom();
+    // 손을 뗀 뒤 키워드들이 제자리로 옮겨 앉는 것(.75s)까지 보고 나서 바꿔 끼운다
+    this.el.frame.addEventListener("sv-drag-end", () => { if (this._stillPending) setTimeout(() => this.render("still"), 900); });
     window.addEventListener("resize", () => { if (this.open) this._layout(true); });
   }
 
@@ -109,6 +111,9 @@ export class ReportView {
    */
   render(how = "still") {
     if (!this.open) return;
+    // 궤도 그림을 끄는 중이면 다시 그리기를 손을 뗄 때까지 미룬다(views.js orbit — sv-drag-end)
+    if (how === "still" && this.el.report.querySelector("[data-dragging]")) { this._stillPending = true; return; }
+    this._stillPending = false;
     const vis = this._visible();
     const k = Math.max(0, vis.indexOf(this.at));
     this.deck.goTo(this.at);
@@ -117,7 +122,7 @@ export class ReportView {
     const box = this.panel.el.chart;
     const aspect = box && box.clientHeight ? box.clientWidth / box.clientHeight : undefined;
     const recs = this.records();
-    const c = this.deck.render(recs, { aspect });
+    const c = this.deck.render(recs, { aspect, interactive: true });   // 궤도 그림은 손으로 끈다
     c.index = k + 1;
     c.total = vis.length;
     const scope = this._scopeLabel();

@@ -144,7 +144,7 @@ export const INSIGHTS = {
       value: `${l.a} + ${l.b}`,
       headline: `${qe(from)}${josa(from, "을를")} 고른 사람의 ${em(ps)}${josa(ps, "이가")} ${qe(to)}도 골랐습니다.`,
       extra: `함께 고른 문장 ${num(l.count)}개`,
-      highlight: { a: l.a, b: l.b },
+      highlight: { a: l.a, b: l.b, from },   // from = 결론의 주어 — 궤도 그림이 전시에서 스스로 가운데로 끌어온다
     };
   },
 

@@ -43,6 +43,8 @@ export class TourCamera {
     this.target = new THREE.Vector3();
     this._zoom = null;        // { yaw, pitch, tanHalf } — 줌 끝에서 볼 방향과 렌즈
     this._zoomT = 0;          // 0 = 평소, 1 = 완전히 당긴 상태
+    this._hop = null;         // { from, p } — 줌한 채로 다른 배로 옮겨 가는 중(hopFrom). from 에서 _zoom 으로 p 만큼
+    this._look = null;        // 지난 update 에서 실제로 본 { yaw, pitch, tanHalf }
     this._fov = CAM_FOV;
     this.interactive = interactive;
     this.yawOffset = 0;
@@ -95,6 +97,27 @@ export class TourCamera {
     this._speedTarget = 1 - 0.85 * this._zoomT;
   }
 
+  /**
+   * 줌한 채로 다른 곳으로 옮겨 간다(인터랙티브 — 배를 보다가 다른 배를 눌렀을 때). 지금 실제로 보고 있는
+   * 시선·렌즈에서 출발해 새 _zoom(setZoomTarget)으로 곧장 — 평소 시선으로 물러났다 다시 들어가지 않는다.
+   * 렌즈도 그 배 거리에 맞춰 바로 당기거나 푼다. 진행은 setHopProgress, 줌 진행(_zoomT)은 1로 둔다.
+   */
+  hopFrom() {
+    if (!this._look) return;
+    this._hop = { from: { ...this._look }, p: 0 };
+    this._zoomT = 1;
+    this._speedTarget = 0.15;
+  }
+
+  setHopProgress(p) { if (this._hop) this._hop.p = Math.max(0, Math.min(1, p)); }
+
+  /** 옮겨 가기를 끝낸다. 도중에 끝내면(닫기) 지금 보고 있는 데를 줌 목표로 굳혀 — 거기서부터 풀어야 튀지 않는다 */
+  endHop() {
+    if (!this._hop) return;
+    if (this._hop.p < 1 && this._look) this._zoom = { ...this._look };
+    this._hop = null;
+  }
+
   update(dt) {
     this.speedMul += (this._speedTarget - this.speedMul) * Math.min(1, dt * 1.2);
     this.t += dt * this.speedMul;
@@ -107,7 +130,18 @@ export class TourCamera {
     const V = this.view;
     const yaw0 = sway + V.yaw, pitch0 = HOME_PITCH + V.pitch, tan0 = V.tan;
     let yaw = yaw0, pitch = pitch0, tanHalf = tan0;
-    const z = this._zoom, k = this._zoomT;
+    let z = this._zoom;
+    const k = this._zoomT;
+    if (k <= 0) this._hop = null;
+    if (z && k > 0 && this._hop) {
+      // 옮겨 가는 중 — 고개와 렌즈를 같은 곡선으로 함께(둘 다 줌한 상태라 배가 화면 밖으로 빠질 일이 적다)
+      const f = this._hop.from, e = camEase(this._hop.p);
+      z = {
+        yaw: f.yaw + (z.yaw - f.yaw) * e,
+        pitch: f.pitch + (z.pitch - f.pitch) * e,
+        tanHalf: Math.exp(Math.log(f.tanHalf) + (Math.log(z.tanHalf) - Math.log(f.tanHalf)) * e),
+      };
+    }
     if (z && k > 0) {
       const pan = camEase(Math.min(1, k / 0.75));
       const lens = camEase(Math.max(0, (k - 0.15) / 0.85));
@@ -117,6 +151,7 @@ export class TourCamera {
       // 끝으로 갈수록 확 당겨진다.
       tanHalf = Math.exp(Math.log(tan0) + (Math.log(z.tanHalf) - Math.log(tan0)) * lens);
     }
+    this._look = { yaw, pitch, tanHalf };
     // 시선 = 원점에서 (yaw, pitch) 방향. yaw 0 이 +Z.
     const c = Math.cos(pitch);
     this.target.set(Math.sin(yaw) * c * 100, CAM_HEIGHT + bob - Math.sin(pitch) * 100, Math.cos(yaw) * c * 100);

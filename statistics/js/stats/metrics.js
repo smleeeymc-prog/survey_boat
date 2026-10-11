@@ -117,6 +117,12 @@ export const METRICS = [
     build: (rs) => coOccurrence(rs, (r) => r.keywords, 8, 14),
   },
   {
+    // 궤도 그림(views.js orbit)용 — 키워드 10개 전부(아무도 안 고른 것까지)와 모든 짝. 가운데에 놓은 키워드를 기준으로
+    // 나머지와의 연계(그 키워드를 고른 사람 중 함께 고른 비율)를 그 자리에서 계산한다. order = 원 둘레의 자리 순서
+    id: "keywordLinks", label: "함께 고른 이유들", shape: "pairs",
+    build: (rs) => ({ ...coOccurrence(rs, (r) => r.keywords, KEYWORDS.length, Infinity), order: KEYWORDS }),
+  },
+  {
     id: "state", label: "지금 사람들이 서 있는 자리", shape: "rows",
     build: (rs) => rowsOf(rs, (r) => STATE_LABEL[r.state] || r.state),
   },

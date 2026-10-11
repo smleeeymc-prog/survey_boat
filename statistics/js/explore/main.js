@@ -170,8 +170,26 @@ class Explore {
     this.focus = { kind, boat };
     this._setMode("focus");
     this.guide.hide();
-    // 누른 배는 닫을 때까지 머문다. 새로 온 배·자기 배는 전시처럼 정해진 시간 뒤 줌아웃
-    this.world.present(boat, { appear, hold: kind === "pick" ? Infinity : C.ARRIVAL_HOLD_SEC });
+    // 누른 배는 닫을 때까지 머물고, 줌인·줌아웃이 전시보다 2배 빠르다(EXPLORE_PICK).
+    // 새로 온 배·자기 배는 전시처럼 정해진 시간 뒤 줌아웃
+    const pick = kind === "pick";
+    this.world.present(boat, { appear, hold: pick ? Infinity : C.ARRIVAL_HOLD_SEC,
+      zoomSec: pick ? C.EXPLORE_PICK.pickZoomSec : C.ARRIVAL_ZOOM_SEC });
+  }
+
+  /**
+   * 배를 보는 중에 다른 배로 — 줌아웃했다 다시 들어가지 않고 곧장 옮겨 간다(world.switchTo). 지금 보는 배가
+   * 새로 나타난 배라 옮겨 갈 수 없으면 예전처럼 닫고 나서 그 배로(next).
+   */
+  _switchTo(b) {
+    const P = C.EXPLORE_PICK;
+    if (this.world.switchTo(b, { hold: Infinity, hopSec: P.hopSec, zoomSec: P.pickZoomSec })) {
+      this.focus = { kind: "pick", boat: b };
+      this.next = null;
+      return;
+    }
+    this.next = b;
+    this.world.release();
   }
 
   _onPresent(ev, b) {
@@ -199,9 +217,9 @@ class Explore {
     if (this.mode !== "browse" && this.mode !== "focus") return;
     const b = pickBoat(this.world, x, y);
     if (this.world.presenting) {
-      // 보는 중에 바다를 누르면 닫는다. 다른 배를 눌렀으면 닫고 그 배로
-      if (b && b !== this.world.presenting) this.next = b;
-      this.world.release();
+      // 보는 중에 빈 바다를 누르면 닫는다(원래 보던 화면으로). 다른 배를 눌렀으면 그 배로 곧장 옮겨 간다
+      if (b && b !== this.world.presenting) { this._switchTo(b); return; }
+      if (!b) this.world.release();
       return;
     }
     if (b) this._present(b, "pick");
@@ -212,7 +230,7 @@ class Explore {
     const b = this.world.boatOf(record.record_id);
     if (!b) return;
     if (this.mode === "stats") this._closeStats();
-    if (this.world.presenting) { if (b !== this.world.presenting) this.next = b; this.world.release(); return; }
+    if (this.world.presenting) { if (b !== this.world.presenting) this._switchTo(b); return; }
     this._present(b, "pick");
   }
 

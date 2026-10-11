@@ -40,6 +40,10 @@ export const EXPLORE_VIEW = { pan: 0.2, zoomMax: 4, over: 0.06 };
 //   toast       "새 배가 도착했어요" 알림이 떠 있는 시간
 //   meWait      ?me=<기록 id> 로 왔는데 그 기록이 아직 안 보이면 이만큼 기다린다(DB 반영이 늦을 때)
 export const EXPLORE_TIME = { guideHide: 3, toast: 7, meWait: 8 };
+// 인터랙티브에서 누른 배를 보러 가는 줌(10-11 사용자: 전시 ARRIVAL_ZOOM_SEC 의 2배 빠르기).
+//   pickZoomSec  누른 배로 줌인·닫을 때 줌아웃에 걸리는 초 — 새로 온 배·자기 배는 전시와 같은 ARRIVAL_ZOOM_SEC
+//   hopSec       배를 보는 중에 다른 배를 누르면 줌아웃했다 다시 들어가지 않고 그 배로 바로 옮겨 간다 — 그 초
+export const EXPLORE_PICK = { pickZoomSec: 1.6, hopSec: 1.2 };
 
 // 지도 전용: 배 크기. 온보딩은 3.38(배 1척이 주인공)이지만, 지도는 배 수십 척과
 // 넓은 바다를 한 화면에 담아야 하므로 절반 이하로 줄인다. 파도 파장(2.2/1.3/0.8)은

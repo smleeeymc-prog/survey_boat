@@ -45,7 +45,8 @@ export const SLIDES = [
   { metric: "motives", insight: "motiveContrast", view: "motives", tagline: "Same word, other reasons", explore: { state: false } },
   { metric: "reason", insight: "concentration", view: "spread", tagline: "What people chose" },
   { metric: "regionReason", insight: "placeTop", view: "places", sec: 10, tagline: "Reasons by place", explore: false },
-  { metric: "keywordPairs", insight: "strongestPair", view: "network", sec: 10, tagline: "Chosen together" },
+  // 궤도 — 전시에선 결론의 주어 키워드를 스스로 가운데로 끌어오는 시연, 인터랙티브에선 관람객이 끌어 놓는다(10-11)
+  { metric: "keywordLinks", insight: "strongestPair", view: "orbit", sec: 12, tagline: "Chosen together" },
   { metric: "state", insight: "topState", view: "bars", tagline: "Where people stand", explore: { state: false } },
   { metric: "regionState", insight: "regionalColor", view: "heatmap", sec: 11, tagline: "Place and position", explore: false },
   { metric: "settleTemp", insight: "settle", view: "thermo", tagline: "Settling temperature", explore: false },
@@ -115,7 +116,9 @@ export class StatDeck {
       period: periodOf(records) + (metric.votes ? " · 키워드는 한 문장에 두 개까지" : ""),
       legend: view.legend ? view.legend(data) : "",
       // box.aspect = 차트 자리의 가로/세로 — 무리 짓는 그림(버블)이 자리 모양을 닮게 한다
-      html: view.render(data, { highlight: ins.highlight, aspect: box.aspect }),
+      html: view.render(data, { highlight: ins.highlight, aspect: box.aspect, interactive: !!box.interactive }),
+      // 움직이는 그림(궤도)은 카드에 꽂힌 뒤 손을 붙인다 — panel.js fillReport 가 부른다
+      mount: view.mount ? (el) => view.mount(el, data, { highlight: ins.highlight, interactive: !!box.interactive }) : null,
       sec: s.sec ?? STAT_ROTATE_SEC,
     };
   }

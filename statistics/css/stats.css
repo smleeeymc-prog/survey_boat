@@ -362,6 +362,74 @@
   background: rgba(var(--sv-seq), calc(.05 + var(--t) * .87));
 }
 
+/* ── orbit — 함께 고른 이유들 (궤도, 10-11) ──────────────────────────────────
+   정사각 자리(js 가 칸의 짧은 변으로 잡는다) 안에 % 좌표로 선다. 자리를 옮길 때는 left/top 이 부드럽게 —
+   끄는 동안(.drag)만 즉시 따라간다. 선은 가운데에서 그어져 나간다(pathLength 1 + dashoffset). */
+.sv-orbit { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; font-size: 1.1em; }
+.sv-orb-sq { position: relative; flex: none; }
+.sv-orb-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.sv-orb-lines line {
+  stroke: var(--sv-lead); stroke-opacity: .75; stroke-linecap: round;
+  stroke-width: calc(var(--w, .3) * .5em * var(--k, 1));   /* --k = 100/자리 px(js fit) — 굵기는 자리 크기가 아니라 글자를 따른다 */
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: sv-orb-draw .7s var(--ease-out) forwards; animation-delay: calc(.15s + var(--i) * .03s);
+}
+.sv-orb-lines line.zero { stroke: var(--sv-rest); stroke-opacity: .45; stroke-dasharray: .03 .03; animation: none; stroke-dashoffset: 0; }
+@keyframes sv-orb-draw { to { stroke-dashoffset: 0; } }
+.report.still .sv-orb-lines line { stroke-dashoffset: 0; }   /* 움직임 없이 바꿔 끼울 때(.still — 애니메이션이 꺼진다)도 선은 다 그어져 있게 */
+.sv-orb-hub {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  border-radius: 50%; border: 1.5px dashed rgba(246, 242, 234, .35);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  transition: border-color .4s, opacity .4s;
+}
+.sv-orb-hub span { font-size: .72em; line-height: 1.3; color: var(--t3); padding: 0 .4em; word-break: keep-all; }
+.sv-orbit.has-hub .sv-orb-hub { border-color: transparent; }
+.sv-orbit.has-hub .sv-orb-hub span { opacity: 0; }
+/* 키워드 — 크기 0 자리의 한가운데에 점, 낱말·비율은 가운데 바깥쪽(--ax·--ay = 제 방향)으로 비켜 단다.
+   자리 옮김은 살짝 튕기며 앉는다 */
+.sv-orb-node {
+  position: absolute; width: 0; height: 0;
+  transition: left .75s cubic-bezier(.22, 1.25, .36, 1), top .75s cubic-bezier(.22, 1.25, .36, 1), opacity .4s;
+  z-index: 1;
+}
+.sv-orb-node.drag { transition: opacity .4s; z-index: 3; }
+.sv-orbit.live .sv-orb-node { touch-action: none; cursor: grab; }
+.sv-orbit.live .sv-orb-node.drag { cursor: grabbing; }
+.sv-orb-node i {
+  position: absolute; display: block;
+  width: calc(var(--s) * .9em); height: calc(var(--s) * .9em);
+  left: calc(var(--s) * -.45em); top: calc(var(--s) * -.45em);
+  border-radius: 50%; background: var(--t2); box-shadow: 0 0 0 2px var(--sv-ring);
+  transition: transform .25s var(--ease-out), background .3s;
+}
+.sv-orb-lab {
+  --off: calc(var(--s) * .45em + 1.15em);
+  position: absolute; left: calc(var(--ax) * (var(--off) + .25em)); top: calc(var(--ay) * var(--off));
+  transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; line-height: 1.1;
+  text-shadow: 0 0 .25em rgba(8, 11, 16, .95), 0 0 .5em rgba(8, 11, 16, .8);   /* 선 위에 얹혀도 읽히게 */
+}
+.sv-orb-node b { white-space: nowrap; font-weight: 600; font-size: 1.05em; color: var(--t2); font-family: var(--serif); }
+.sv-orb-node em { font-style: normal; font-size: .82em; font-weight: 600; color: var(--t3); white-space: nowrap; }
+.sv-orb-node em:empty { display: none; }
+/* 가운데 키워드는 낱말을 점 아래에 */
+.sv-orb-node.hub .sv-orb-lab { --ax: 0; --ay: 1; --off: calc(var(--s) * .7em + .75em); }
+/* 손이 닿은 동안 점이 살짝 커지고, 풀려나 끌려올 때 더 커진다 */
+.sv-orb-node.drag i { transform: scale(1.15); }
+.sv-orb-node.free i { transform: scale(1.35); background: var(--t1); }
+.sv-orb-node.hub { z-index: 2; }
+.sv-orb-node.hub i { background: var(--sv-lead); transform: scale(1.5); }
+.sv-orb-node.hub b { color: var(--t1); font-weight: 700; }
+.sv-orb-node.dim { opacity: .5; }
+.sv-orb-cap { margin-top: .4em; font-size: .78em; line-height: 1.4; color: var(--t3); text-align: center; min-height: 1.2em; }
+.report.in .sv-orb-node { animation: sv-orb-in .6s var(--ease-out) both; animation-delay: calc(var(--sv-d0) + var(--i) * .05s); }
+@keyframes sv-orb-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .sv-orb-node { transition: none; }
+  .sv-orb-lines line { animation: none; stroke-dashoffset: 0; }
+}
+
 /* ── network — 함께 고른 이유들 (아크 다이어그램) ──────────────────────────── */
 .sv-network { position: relative; display: block; height: 100%; }
 /* 호는 늘어나는 SVG — 바닥선이 낱말 점의 높이와 맞아야 한다 (아래 .sv-net-nodes 의 점) */
