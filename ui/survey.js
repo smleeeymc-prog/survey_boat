@@ -51,6 +51,7 @@ const app = document.getElementById("app");
 let resumeDraft = Draft.read();
 
 function render(){
+  ViewportGuard.release();   // 입력칸이 포커스를 쥔 채 지워지지 않게 — 키보드를 먼저 닫는다 (ui/viewport-guard.js)
   app.innerHTML = "";
   const el = document.createElement("div");
   el.className = "screen";
@@ -74,6 +75,8 @@ function render(){
   const lock = QUESTION_ORDER.includes(state.step);
   document.documentElement.classList.toggle("lock", lock);
   if(lock && (window.scrollY || document.documentElement.scrollTop)) window.scrollTo(0, 0);
+  // 키보드가 닫히며 밀린 화면이 남으면 고정된 판의 그림과 터치 자리가 어긋난다 — 닫히는 동안·뒤에도 되돌린다
+  if(lock) ViewportGuard.settleSoon();
 
   // 3D 병 속 풍경 씬 동기화 (onboard ~ result 단계까지 배경으로 노출)
   if(window.BottleScene) window.BottleScene.show(state.step, state);
@@ -886,4 +889,6 @@ if (window.RecordSync) RecordSync.ready().then((mode) => {
   if (badge) badge.hidden = mode !== "mock";
 });
 
+// 키보드가 닫힌 뒤 밀린 화면 되돌리기 — 질문 단계에서만 (ui/viewport-guard.js)
+ViewportGuard.install(() => QUESTION_ORDER.includes(state.step));
 render();
