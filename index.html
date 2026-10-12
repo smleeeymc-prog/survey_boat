@@ -119,6 +119,7 @@
 <!-- 작성 중 저장·이어 쓰기. survey.js 가 시작할 때 읽으므로 그보다 먼저 -->
 <script src="./ui/draft.js"></script>
 <script src="./ui/viewport-guard.js"></script>
+<script src="./ui/region-map.js"></script>
 <script src="./ui/survey.js"></script>
 
 <!-- ===========================================================
@@ -607,6 +608,8 @@ const FRAMING = {
   intro:    { shift: 0,    zoom: 1 },     // 첫 화면(하늘)
   question: { shift: 0.13, zoom: 1.1 },   // 지역 ~ 동의
   result:   { shift: 0.10, zoom: 1 },     // 병이 글자 위에 오게
+  // 세부 지역(10-12) — 충남 지도가 질문 판을 위로 키워서 배를 더 올리고 조금 더 물러난다(ui/region-map.js)
+  tallQuestion: { shift: 0.24, zoom: 1.32 },
 };
 const QUESTION_STEPS = ["region", "state", "sentence", "share", "keywords", "color", "consent"];
 // 키워드 단계: 고른 키워드의 물건이 잘 보이게, 기본 구도에서 선체 양 끝이 화면 양 끝보다
@@ -3984,7 +3987,9 @@ ${CAT_COAT_GLSL}
     const wasVisible = this.visible;
     // 단계가 바뀌면 줌은 기본 거리로 돌아온다(부드럽게) — 당겨 둔 채로 다음 구도가 잘리지 않게
     if (step !== this._zoomStep) { this._zoomStep = step; this._zoomTarget = 1; }
-    this._frameTarget = step === "result" ? FRAMING.result : QUESTION_STEPS.includes(step) ? FRAMING.question : FRAMING.intro;
+    this._frameTarget = step === "result" ? FRAMING.result
+      : appState && appState.step === "regionDetail" ? FRAMING.tallQuestion   // 설문은 세부 지역을 'region' 구도로 부르되 판이 높다
+      : QUESTION_STEPS.includes(step) ? FRAMING.question : FRAMING.intro;
     this.visible = ACTIVE_STEPS.includes(step);
     this.stage.classList.toggle("visible", this.visible);
     if (!this.visible) return;

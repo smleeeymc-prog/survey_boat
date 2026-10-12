@@ -48,7 +48,8 @@ html.lock #app{ min-height:100%; }
 
 /* 조작하는 요소만 포인터를 되살린다 (빈 곳을 끌면 캔버스가 받아 배를 둘러본다) */
 #app button, #app input, #app textarea, #app select, #app label,
-#app .picker-track, #app .dial, #app .archive-screen, #app .paint-sv, #app .paint-hue{ pointer-events:auto; }
+#app .picker-track, #app .dial, #app .archive-screen, #app .paint-sv, #app .paint-hue,
+#app .rmap-area, #app .rmap-hit, #app .rmap-lift.on{ pointer-events:auto; }
 #app textarea, #app input{ user-select:text; -webkit-user-select:text; }
 #app button{ font-family:var(--ui); cursor:pointer; }
 
@@ -142,6 +143,35 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 .kw-word.selected{ font-weight:700; color:var(--b-gold); }
 .kw-word.selected span{ border-bottom:1.5px solid var(--b-gold); padding-bottom:2px; }
 .kw-word:disabled{ opacity:.45; cursor:default; }
+
+/* ── 세부 지역 지도 (ui/region-map.js, 10-12 시안 C) — 같은 색 + 어두운 띠로만 나뉜다. 고른 곳만 금색으로 떠오르고 이름표 ──
+   두께는 그림자 겹치기(2px × n)로 낸다. 떠오른 덮개는 옆면도 같이 자라서 바닥에 닿는다. 움직임은 짧고 가볍게(살짝 튀었다 앉는다). */
+.rmap{ position:relative; width:100%; max-width:338px; align-self:center; }
+.rmap-svg{ display:block; width:100%; height:auto; overflow:visible; }
+.rmap-base{ stroke:#0c1319; stroke-width:1.6; stroke-linejoin:round;
+  filter:drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560); }
+.rmap-ctx{ fill:#56676d; }
+.rmap-area{ fill:#a9bcc2; cursor:pointer; outline:none; transition:fill .2s ease; }
+.rmap-area:focus-visible{ fill:#c6d6db; }
+@media (hover:hover){ .rmap-area:hover{ fill:#bccdd2; } }
+.rmap-hit{ fill:transparent; cursor:pointer; }
+.rmap-lift{ fill:#E6C79A; stroke:#0c1319; stroke-width:1.4; stroke-linejoin:round; pointer-events:none; cursor:pointer;
+  opacity:0; transform:translateY(0);
+  filter:drop-shadow(0 0 0 #8e7148) drop-shadow(0 0 0 #8e7148) drop-shadow(0 0 0 #8e7148);
+  transition:transform .38s cubic-bezier(.25,1.25,.5,1), filter .38s cubic-bezier(.25,1.25,.5,1), opacity .24s ease; }
+.rmap-lift.on{ opacity:1; transform:translateY(-6px);
+  filter:drop-shadow(0 2px 0 #8e7148) drop-shadow(0 2px 0 #8e7148) drop-shadow(0 2px 0 #8e7148); }
+.rmap-tag{ position:absolute; left:50%; top:0; display:flex; flex-direction:column; align-items:center; pointer-events:none;
+  opacity:0; transform:translate(-50%, calc(-100% + 6px));
+  transition:transform .32s cubic-bezier(.25,1.25,.5,1), opacity .2s ease; }
+.rmap-tag.move{ transition:left .3s cubic-bezier(.25,1,.5,1), top .3s cubic-bezier(.25,1,.5,1), transform .32s cubic-bezier(.25,1.25,.5,1), opacity .2s ease; }
+.rmap-tag.on{ opacity:1; transform:translate(-50%, -100%); }
+.rmap-tag span{ display:block; padding:4px 14px 5px; border-radius:14px; background:var(--b-text); color:var(--b-ink);
+  font-family:var(--serif); font-size:15px; font-weight:700; white-space:nowrap; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+.rmap-tag i{ display:block; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid var(--b-text); }
+@media (prefers-reduced-motion: reduce){ .rmap-lift, .rmap-tag, .rmap-tag.move{ transition:none; } }
+/* 지도가 질문 판을 위로 키운다 — 어둠도 그만큼 높게 깐다 */
+body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230px + var(--safe-b)); }
 
 /* ── Ⅵ 색 — 위: 왼쪽(원톤·투톤 / 칠할 곳 칩) + 오른쪽(명암 판 + 색조 막대), 아래: 동그라미 팔레트 한 줄(고양이는 털 무늬) ── */
 .paint{ display:flex; flex-direction:column; }

@@ -338,17 +338,31 @@ function renderRegion(){
 /* ── Ⅰ 지역 — 세부 지역 (10-12 사용자) ─────────────────────────────────────
    '기타 충남'을 고른 사람만. DB 에는 region 그대로 + region_detail(통계는 '기타 충남'으로 묶어 센다),
    결과 화면·아카이브·지도처럼 사람 한 명을 보여주는 자리에는 이 이름이 적힌다(placeOf).
-   [임시] 고르는 모양은 지역과 같은 세로 선택지 — 시안 셋 중 사용자가 고르면 바꾼다(HANDOFF 6.29). */
+   고르는 모양은 충남 시·군 지도(사용자가 고른 시안 C — ui/region-map.js). 고를 때 render()를 부르지 않는다 —
+   떠오르고 가라앉는 움직임이 끊기지 않게. 고르기 전엔 "다음"이 잠긴다. 지형이 없는 이름이 생기면 세로 선택지로 돌아간다. */
 function renderRegionDetail(){
   const list = REGION_DETAILS[state.region] || [];
-  if(!list.includes(state.regionDetail)) state.regionDetail = list[0];
-  const picker = snapPicker(list.map(r => ({ id: r, label: r })), state.regionDetail, (v) => { state.regionDetail = v; });
-  return questionStep({
+  if(state.regionDetail && !list.includes(state.regionDetail)) state.regionDetail = null;
+  let step = null;
+  const map = RegionMap.create(list, state.regionDetail, (v) => {
+    state.regionDetail = v;
+    if(step) step.next.disabled = !v;
+    Draft.save(state);   // render()를 안 부르므로 이어 쓰기 저장은 여기서
+  });
+  let content;
+  if(map) content = map.el;
+  else {
+    if(!list.includes(state.regionDetail)) state.regionDetail = list[0];
+    content = snapPicker(list.map(r => ({ id: r, label: r })), state.regionDetail, (v) => { state.regionDetail = v; });
+  }
+  step = questionStep({
     title: `${state.region} 중 어디인가요?`,
-    sub: "시·군까지만 남습니다. 통계에는 '기타 충남'으로 함께 묶여요.",
-    content: picker, prev: "region",
-    onNext: () => { state.step = "state"; render(); },
-  }).el;
+    sub: map ? "지도에서 눌러주세요. 흐린 곳은 천안·아산이에요." : "시·군까지만 남습니다. 통계에는 '기타 충남'으로 함께 묶여요.",
+    content, prev: "region",
+    onNext: () => { if(!state.regionDetail) return; state.step = "state"; render(); },
+  });
+  step.next.disabled = !state.regionDetail;
+  return step.el;
 }
 
 function renderState(){

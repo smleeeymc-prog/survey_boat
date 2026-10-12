@@ -143,7 +143,7 @@ const errorsIn = (logs, allow = []) => logs.filter((l) =>
   ["error", "assert", "pageerror"].includes(l.type) && !allow.some((re) => re.test(l.text)));
 
 /** 설문을 실제로 눌러서 끝까지 — 결과 화면이 뜨면 돌아온다 */
-async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null, region = null, detail = null }) {
+async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null, region = null, detail = null, detailByKey = false }) {
   if (goto) await page.goto(url);
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
@@ -155,7 +155,12 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   };
   if (region) await pickItem(region, "region");
   await page.locator(".qnext").click();                        // Ⅰ 지역 (기본은 첫 항목)
-  if (detail) { await pickItem(detail, "regionDetail"); await page.locator(".qnext").click(); }   // Ⅰ 세부 지역('기타 충남'일 때)
+  if (detail) {   // Ⅰ 세부 지역('기타 충남'일 때) — 충남 지도에서 그 시·군을 누른다(키보드로도: 초점 + Enter)
+    const area = page.locator(`.rmap-area[data-area="${detail}"]`);
+    if (detailByKey) { await area.focus(); await page.keyboard.press("Enter"); } else await area.click();
+    await page.waitForFunction((v) => state.regionDetail === v, detail, { timeout: 10000 });
+    await page.locator(".qnext").click();
+  }
   await page.locator(".qnext").click();                        // Ⅱ 상태
   await page.locator("textarea.sentence").fill(text);          // Ⅲ 문장
   await page.locator(".qnext").click();
@@ -416,7 +421,7 @@ try {
     watch(rp);
     const oldText = `옛 규칙(${tag})에서도 문장은 들어가야 한다`;
     await runSurvey(rp, { text: oldText, keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 },   // 투톤 빨강·노랑 · 주거 고양이 턱시도
-      region: "기타 충남", detail: "태안" });
+      region: "기타 충남", detail: "태안", detailByKey: true });   // 태안은 두 조각(안면도)이라 상자 가운데가 바다 — 키보드로
     const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: `옛 규칙(${tag}) records 문서`, timeout: 40000 });
     const keys = oldDoc ? Object.keys(oldDoc).join(",") : "";
     check(keepPaint ? "옛 규칙 8a: 세부 지역만 빼고 들어간다 (배 색·고양이 무늬는 남는다)" : "옛 규칙 8b: 색·세부 지역을 뺀 기록으로 들어간다",
