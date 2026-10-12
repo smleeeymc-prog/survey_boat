@@ -547,7 +547,8 @@ function cubicBezier(x1, y1, x2, y2) {
 // 출발의 ease-in은 없애 뜸들이지 않고 바로 들어오되, 감속을 훨씬 일찍 시작한다.
 // 두 번째 제어점을 (0.55, 1.0) 근처로 올려 전체의 앞 1/3에서 대부분 거리를 좁히고
 // 나머지 시간을 감속에 쓴다 — 2.2초 기준으로 감속 시작이 약 1초 앞당겨진다.
-const SHORE_EASE = cubicBezier(0.0, 0.55, 0.30, 1.0);
+// [10-12] 첫머리만 살짝 눕힌다(0.0, 0.55 → 0.16, 0.2) — 출발이 툭 튀지 않게(사용자). 감속을 일찍 시작하는 성격은 그대로.
+const SHORE_EASE = cubicBezier(0.16, 0.2, 0.30, 1.0);
 const SHORE_MOVE_SEC = 2.2;
 // '오가는 중'으로 섬을 떠날 때만 쓰는 곡선 — 천천히 떨어지다가 점점 빨리 멀어진다(ease-in).
 // 예전엔 떠날 때도 SHORE_EASE를 써서 첫 0.4초에 섬이 6단위를 달아나 튀어 나가는 것처럼 보였다.
@@ -729,6 +730,15 @@ refreshLookScales();
 const ACTIVE_STEPS = ["onboard","prompt","region","state","sentence","share","keywords","color","consent","result"];
 
 function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
+/**
+ * 임계 감쇠 스프링 한 걸음 — s = { x, v }. 목표가 바뀌면 속도 0에서 부드럽게 출발하고(ease-in) 넘치지 않고 앉는다(ease-out).
+ * [10-12 사용자] "선택지 변경·다음 단계 때 카메라·배 방향 모션의 시작에 살짝 ease in" — 예전엔 `x += (목표 − x)·k·dt`(지수 감쇠)라
+ * 바뀌는 순간 속도가 가장 빨라 툭 튀어 나갔다. w = 1.8·k 로 잡으면 전체 길이는 예전과 거의 같고(1.2초에 97%) 처음 0.1초만 완만하다.
+ */
+function springStep(s, target, dt, w) {
+  s.v += (w * w * (target - s.x) - 2 * w * s.v) * dt;
+  s.x += s.v * dt;
+}
 function easeOutBounce(x){
   const n1 = 7.5625, d1 = 2.75;
   if (x < 1/d1) return n1*x*x;
@@ -4623,8 +4633,11 @@ ${CAT_COAT_GLSL}
         this._spawnSmoke(dt);
       }
 
-      if (this._boatEaseX === undefined) this._boatEaseX = targetX;
-      this._boatEaseX += (targetX - this._boatEaseX) * Math.min(1, dt * 3.0);
+      if (this._boatEaseX === undefined) { this._boatEaseX = targetX; this._boatEaseV = 0; }
+      // 배 위치 — 스프링(springStep: 출발에 살짝 ease-in). 예전 지수 감쇠 k=3 과 같은 빠르기
+      const bs = { x: this._boatEaseX, v: this._boatEaseV || 0 };
+      springStep(bs, targetX, dt, 5.4);
+      this._boatEaseX = bs.x; this._boatEaseV = bs.v;
       const boatX = this._wrapWave(this._boatEaseX);
 
       const waveY = this._waveHeightAt(boatX, 0, t, this._flowPhase);
@@ -4633,10 +4646,13 @@ ${CAT_COAT_GLSL}
       // '아직 모르겠음'은 '돌아온 사람'과 같은 방향을 본다.
       // 땅과 바위(islandGroup)는 shoreTarget이 0이라 미끄러져 나가므로 화면에 남지 않는다.
       const headingTarget = (this.mode === "returned" || this.mode === "unsure") ? 0 : Math.PI;
-      if (this.headingY === undefined) this.headingY = headingTarget;
+      if (this.headingY === undefined) { this.headingY = headingTarget; this._headingV = 0; }
       let headingDiff = headingTarget - this.headingY;
       headingDiff = ((headingDiff + Math.PI) % (2 * Math.PI)) - Math.PI;
-      this.headingY += headingDiff * Math.min(1, dt * 1.5);
+      // 배 방향 — 스프링(남은 각도를 목표로). 예전 k=1.5 와 같은 빠르기, 출발만 완만하게
+      const hs = { x: 0, v: this._headingV || 0 };
+      springStep(hs, headingDiff, dt, 2.7);
+      this.headingY += hs.x; this._headingV = hs.v;
 
       // '오가는 중'은 파도를 잔잔하게 두면서도(windTarget 0.1) 배는 더 흔들려야
       // 나아가는 느낌이 산다. 바다가 아니라 배에만 곱한다.
@@ -4698,16 +4714,21 @@ ${CAT_COAT_GLSL}
     if (this._zoom === undefined) this._zoom = 1;
     this._zoom += (this._zoomTarget - this._zoom) * Math.min(1, dt * 8);
     // 화면 구도(FRAMING) — 단계가 바뀌면 카메라 전환(CAM_MOVE_SEC)과 비슷한 속도로 옮겨 간다
+    // 구도·키워드 맞춤 거리도 스프링(출발에 살짝 ease-in) — 예전 지수 감쇠 k=3 과 같은 빠르기
     const ft = this._frameTarget || FRAMING.intro;
-    if (!this._frame) this._frame = { ...ft };
-    const fk = Math.min(1, dt * 3);
-    this._frame.shift += (ft.shift - this._frame.shift) * fk;
-    this._frame.zoom += (ft.zoom - this._frame.zoom) * fk;
+    if (!this._frame) { this._frame = { ...ft }; this._frameV = { shift: 0, zoom: 0 }; }
+    for (const key of ["shift", "zoom"]) {
+      const fs = { x: this._frame[key], v: this._frameV[key] };
+      springStep(fs, ft[key], dt, 5.4);
+      this._frame[key] = fs.x; this._frameV[key] = fs.v;
+    }
     // 키워드 단계 맞춤 거리 (KEYWORD_FIT). 다른 단계에서는 1로 돌아간다.
     if (this._fit === undefined) this._fit = 1;
     if (this._zoomStep !== "keywords" && this._zoomStep !== "color") this._fitTarget = 1;
     else if (!this._userDragging) this._fitTarget = this._measureKeywordFit() ?? this._fitTarget ?? 1;
-    this._fit += ((this._fitTarget ?? 1) - this._fit) * fk;
+    const fitS = { x: this._fit, v: this._fitVel || 0 };
+    springStep(fitS, this._fitTarget ?? 1, dt, 5.4);
+    this._fit = fitS.x; this._fitVel = fitS.v;
 
     // 시간대 전환
     if (this._timeT < 1) {

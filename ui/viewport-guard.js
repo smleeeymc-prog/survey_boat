@@ -21,16 +21,31 @@ const ViewportGuard = (() => {
     return !!a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !/^(button|checkbox|radio|range|submit)$/i.test(a.type)));
   };
 
-  /** 밀린 화면을 맨 위로. 입력 중(키보드가 떠 있음)이면 건드리지 않는다 — 브라우저가 입력칸을 보여주려고 민 것이다 */
+  // 이 페이지에서 키보드가 한 번이라도 떴나 — 그 뒤로는 재 보지 않고 늘 되돌린다.
+  // [10-12 2차] iOS 는 밀린 창을 되돌려 놓지 않은 채 스크롤 값은 0으로 알려 주는 일이 있어(재는 값이 거짓말) 재서 건너뛰면 못 고친다.
+  let keyboardUsed = false;
+
+  /**
+   * 밀린 화면을 맨 위로. 입력 중(키보드가 떠 있음)이면 건드리지 않는다 — 브라우저가 입력칸을 보여주려고 민 것이다.
+   * [10-12 2차] 질문 단계는 html.lock(높이 100% · overflow hidden — 10-07 색 패널 버그 때 넣었다)이라 scrollTo 가 먹지 않았다.
+   * 사용자: "배 투톤·고양이 할 때쯤부터 살짝 위쪽을 눌러야 선택된다" — 그 잠금이 들어온 때다. 되돌리는 순간만 잠금을 풀고
+   * 스크롤을 0으로 맞춘 뒤 다시 묶는다(한 작업 안이라 화면이 움직이는 틈은 없다). 고정된 판의 그림과 터치 자리가 다시 맞는다.
+   */
   function settle(){
     if(!isLocked() || typing()) return;
     const vv = window.visualViewport;
     if(vv && vv.scale > 1.01) return;   // 확대해서 보는 중(접근성 확대)이면 그쪽이 맞다
-    const off = (window.scrollY || 0) + (document.documentElement.scrollTop || 0) + (document.body.scrollTop || 0) + (vv ? vv.offsetTop : 0);
-    if(off < 0.5) return;
+    const html = document.documentElement, body = document.body;
+    const off = (window.scrollY || 0) + (html.scrollTop || 0) + (body.scrollTop || 0) + (vv ? vv.offsetTop : 0);
+    if(!keyboardUsed && off < 0.5) return;
+    const locked = html.classList.contains("lock");
+    if(locked) html.classList.remove("lock");
     window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
+    html.scrollTop = 0;
+    body.scrollTop = 0;
+    void html.offsetHeight;             // 잠금 없이 한 번 배치를 다시 잡게
+    if(locked) html.classList.add("lock");
+    window.scrollTo(0, 0);
   }
 
   /** 키보드가 닫히는 애니메이션(약 0.3초) 동안과 끝난 뒤까지 몇 번 */
@@ -48,6 +63,7 @@ const ViewportGuard = (() => {
   /** @param {() => boolean} locked 지금이 질문 단계(화면에 묶인 페이지)인가 */
   function install(locked){
     isLocked = locked;
+    document.addEventListener("focusin", () => { if(typing()) keyboardUsed = true; });
     document.addEventListener("focusout", settleSoon);
     if(window.visualViewport){
       window.visualViewport.addEventListener("resize", settleSoon);
