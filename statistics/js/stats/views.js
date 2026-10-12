@@ -416,9 +416,10 @@ export const VIEWS = {
       // 개수에 비례해 시간을 준다 — 문장이 많아져도 읽는 속도는 같다.
       const sec = Math.max(16, items.length * 3.4);
       return `<span class="sv-textwall">
-        <span class="sv-tw-belt" style="--tw-sec:${sec}s">${one}${one}</span>
+        <span class="sv-tw-belt" style="--tw-sec:${sec}s" data-sec="${sec}">${one}${one}</span>
       </span>`;
     },
+    mount(root, data, ctx = {}) { if (ctx.interactive) mountTextwall(root); },
   },
 };
 
@@ -645,3 +646,76 @@ function mountOrbit(root, { freq = {}, links = [], order, nodes = [] }, ctx) {
   }
 }
 
+/* ── 문장 띠 — 손으로 넘겨 보기 (인터랙티브, 10-12 사용자) ──────────────────────
+   전시는 CSS 애니메이션 그대로(손이 없다). 인터랙티브는 띠를 js 가 굴린다(.js — CSS 애니메이션을 끈다):
+   손가락으로 위아래로 끌면 그만큼 따라오고, 손을 떼면 밀던 빠르기에서 원래 속도로 부드럽게 돌아가 다시 흐른다.
+   원래 속도 = 목록 한 바퀴(띠 높이의 절반 — 목록을 두 번 이어 붙였다)를 data-sec 초에. 이음매 없이 감긴다.
+   새 기록이 와서 다시 그려져도(still) 보던 자리에서 잇는다(twMemo). 끄는 동안은 다시 그리기를 미룬다(data-dragging — report.js). */
+const TW = { settle: 2.2, flingMax: 2400 };   // 손 뗀 뒤 원래 속도로 돌아가는 빠르기(1/초) · 튕기는 빠르기 상한(px/초)
+const twMemo = { frac: 0 };
+const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function mountTextwall(root) {
+  const wall = root.querySelector(".sv-textwall"), belt = wall && wall.querySelector(".sv-tw-belt");
+  if (!belt) return;
+  belt.classList.add("js");
+  wall.classList.add("live");
+  const sec = Number(belt.dataset.sec) || 24;
+  const loop = () => belt.offsetHeight / 2;           // 한 바퀴 거리(px)
+  const base = () => (reducedMotion() ? 0 : loop() / sec);
+  let y = twMemo.frac * loop();                        // 올라간 거리(px) — 0 ≤ y < loop
+  let speed = base();
+  let drag = null;                                     // { id, lastY, lastT, v }
+  const wrapY = () => { const L = loop(); if (L > 0) y = ((y % L) + L) % L; };
+  const draw = () => { wrapY(); belt.style.transform = `translateY(${-y}px)`; const L = loop(); if (L > 0) twMemo.frac = y / L; };
+  draw();
+
+  let last = performance.now();
+  const tick = (now) => {
+    if (!belt.isConnected) return;                     // 장이 바뀌어 카드에서 빠졌다
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (!drag) {
+      const b = base();
+      speed += (b - speed) * Math.min(1, dt * TW.settle);
+      y += speed * dt;
+      draw();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  wall.addEventListener("pointerdown", (e) => {
+    if (drag || (e.pointerType === "mouse" && e.button !== 0)) return;
+    drag = { id: e.pointerId, lastY: e.clientY, lastT: e.timeStamp, v: 0, moved: 0 };
+    wall.dataset.dragging = "1";
+    try { wall.setPointerCapture(e.pointerId); } catch (_e) {}
+  });
+  wall.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    // 카드가 확대돼 있으면(scale) 화면 px 를 카드 px 로 — 손가락 아래 글자가 손가락을 따라오게
+    const k = belt.offsetHeight ? belt.getBoundingClientRect().height / belt.offsetHeight : 1;
+    const d = (e.clientY - drag.lastY) / (k || 1);
+    const dt = Math.max(1, e.timeStamp - drag.lastT) / 1000;
+    y -= d;                                            // 손가락을 내리면 문장도 내려온다
+    drag.v = drag.v * 0.6 + (-d / dt) * 0.4;           // 최근 빠르기(부드럽게)
+    drag.moved += Math.abs(d);
+    drag.lastY = e.clientY; drag.lastT = e.timeStamp;
+    draw();
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    // 잠깐 멈췄다 떼면 튕기지 않는다
+    const idle = e.timeStamp - drag.lastT > 120;
+    speed = idle ? 0 : Math.max(-TW.flingMax, Math.min(TW.flingMax, drag.v));
+    wall._moved = drag.moved;
+    drag = null;
+    delete wall.dataset.dragging;
+    wall.dispatchEvent(new CustomEvent("sv-drag-end", { bubbles: true }));
+  };
+  wall.addEventListener("pointerup", end);
+  wall.addEventListener("pointercancel", end);
+  wall.addEventListener("lostpointercapture", end);
+  // 끈 뒤 떨어지는 click 이 틀의 "두 번 톡 확대"로 읽히지 않게
+  wall.addEventListener("click", (e) => { if ((wall._moved || 0) > 4) e.stopPropagation(); wall._moved = 0; });
+}

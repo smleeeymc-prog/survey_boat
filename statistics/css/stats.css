@@ -586,6 +586,10 @@
   animation: sv-tw-scroll var(--tw-sec, 24s) linear infinite;
 }
 @keyframes sv-tw-scroll { to { transform: translateY(-50%); } }
+/* 인터랙티브 — js 가 굴린다(views.js mountTextwall). 손으로 위아래로 끈다 */
+.sv-tw-belt.js { animation: none !important; will-change: transform; }
+.sv-textwall.live { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.sv-textwall.live[data-dragging] { cursor: grabbing; }
 .sv-tw-item { display: block; }
 .sv-tw-text { display: block; color: var(--t1); font-weight: 600; line-height: 1.45; word-break: keep-all; }
 .sv-tw-meta { display: block; margin-top: .15em; font-size: .78em; color: var(--t3); font-weight: 600; }
