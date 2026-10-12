@@ -13,7 +13,7 @@
 const Draft = (() => {
   const KEY = "ibda-survey-draft-v1";
   const TTL_MS = 6 * 60 * 60 * 1000;
-  const STEPS = ["region", "state", "sentence", "share", "keywords", "color", "consent"];
+  const STEPS = ["region", "regionDetail", "state", "sentence", "share", "keywords", "color", "consent"];
   const DISCLOSE = ["익명", "별칭", "실명"];
   // 입력칸 제한과 같은 값 — 보안 규칙과 묶여 있다(문장 80 · 키워드 2 · 이름 12)
   const MAX_TEXT = 80, MAX_KW = 2, MAX_NAME = 12;
@@ -32,7 +32,7 @@ const Draft = (() => {
   function pick(s){
     if(!STEPS.includes(s.step)) return null;
     return {
-      step: s.step, region: s.region, stateId: s.stateId, text: s.text, share: s.share,
+      step: s.step, region: s.region, regionDetail: s.regionDetail, stateId: s.stateId, text: s.text, share: s.share,
       keywords: [...s.keywords], disclose: s.disclose, name: s.name,
       tone: s.tone, hullColor: s.hullColor, deckColor: s.deckColor,
       props: { ...s.props }, catCoat: s.catCoat, at: Date.now(),
@@ -48,6 +48,7 @@ const Draft = (() => {
     const out = {
       step: d.step,
       region: oneOf(d.region, T.REGIONS),
+      regionDetail: null,
       stateId: oneOf(d.stateId, T.STATES.map(x => x.id)),
       text,
       share: oneOf(d.share, T.SHARES.map(x => x.id)),
@@ -62,15 +63,20 @@ const Draft = (() => {
       catCoat: oneOf(d.catCoat, COAT_IDS) || "calico",
       at: d.at,
     };
+    // 세부 지역 — 고른 지역에 딸린 목록 안의 이름만(지역을 바꿨으면 버린다)
+    const details = (T.REGION_DETAILS || {})[out.region] || [];
+    out.regionDetail = details.includes(d.regionDetail) ? d.regionDetail : null;
     // 앞 단계 값이 빠졌으면(분류가 바뀌어 걸러진 경우) 그 단계부터 다시 묻는다.
     // 비어 있는 채로 뒤 단계에 들어가면 피커가 첫 항목을 몰래 골라 버린다.
-    const need = [["region", out.region], ["state", out.stateId], ["sentence", out.text.trim()], ["share", out.share]];
+    const need = [["region", out.region], ["regionDetail", !details.length || out.regionDetail], ["state", out.stateId], ["sentence", out.text.trim()], ["share", out.share]];
     const at = STEPS.indexOf(out.step);
     for(const [step, v] of need){
       if(STEPS.indexOf(step) < at && !v){ out.step = step; break; }
     }
+    // 세부 목록이 없는 지역인데 세부 지역 단계에 멈춰 있었으면(분류가 바뀐 경우) 다음 단계부터
+    if(out.step === "regionDetail" && !details.length) out.step = "state";
     // 이어 쓸 만한 게 하나도 없으면(지역 화면만 열어 봤던 경우) 묻지 않는다
-    if(out.step === "region" && !out.text) return null;
+    if((out.step === "region" || out.step === "regionDetail") && !out.text) return null;
     return out;
   }
 

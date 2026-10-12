@@ -44,7 +44,7 @@
 
 import {
   STAT_ROTATE_SEC, STATE_LABEL, ARRIVAL_HOLD_SEC,
-  LANDSCAPE_SEC, LANDSCAPE_FIRST_SEC, SESSION_CHAPTERS,
+  LANDSCAPE_SEC, LANDSCAPE_FIRST_SEC, SESSION_CHAPTERS, placeOf,
 } from "./config.js";
 import { StatDeck } from "./stats/index.js";
 import { fmtStamp } from "./stats/text.js";
@@ -329,7 +329,7 @@ export class Panel {
     e.text.classList.toggle("long", text.length > 44);
     const who = record.display_name && record.display_name !== "익명" ? record.display_name : "익명";
     e.sign.textContent = `— ${who}`;
-    e.from.textContent = record.region || "—";
+    e.from.textContent = placeOf(record) || "—";   // '기타 충남'이면 고른 세부 지역(공주 …)
     e.status.textContent = STATE_LABEL[record.state] || record.state || "—";
     e.cargo.textContent = (record.keywords || []).length ? record.keywords.join(" · ") : "—";
     const t = Date.parse(record.created_at);

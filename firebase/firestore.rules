@@ -42,7 +42,7 @@ service cloud.firestore {
     }
 
     function validRecord(id, d) {
-      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version", "hull_color", "deck_color", "tube_color", "board_color", "clover_color", "cat_coat"])
+      return d.keys().hasOnly(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version", "hull_color", "deck_color", "tube_color", "board_color", "clover_color", "cat_coat", "region_detail"])
         && d.keys().hasAll(["record_id", "created_at", "region", "state", "share", "text", "keywords", "display_name", "consent_public", "consent_archive", "moderation_status", "schema_version"])
         && d.record_id == id
         && id.matches('^[A-Za-z0-9]{20}$')
@@ -67,7 +67,9 @@ service cloud.firestore {
         && (!('tube_color' in d) || d.tube_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.tube_color))
         && (!('board_color' in d) || d.board_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.board_color))
         && (!('clover_color' in d) || d.clover_color in ["base", "red", "orange", "yellow", "green", "blue", "navy", "purple", "black"] || paintHex(d.clover_color))
-        && (!('cat_coat' in d) || d.cat_coat in ["calico", "white", "cheese", "tuxedo", "black"]);
+        && (!('cat_coat' in d) || d.cat_coat in ["calico", "white", "cheese", "tuxedo", "black"])
+        // 세부 지역 — 있어도 되고 없어도 된다. 있으면 그 지역에 딸린 목록 안의 이름(지금은 '기타 충남'만 세부 목록이 있다)
+        && (!('region_detail' in d) || (d.region == "기타 충남" && d.region_detail in ["계룡", "공주", "금산", "논산", "당진", "보령", "부여", "서산", "서천", "예산", "청양", "태안", "홍성"]));
     }
 
     match /records/{id} {

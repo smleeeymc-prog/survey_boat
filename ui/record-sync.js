@@ -74,13 +74,13 @@ var RecordSync = (function () {
 
   /* ── 어댑터: 설문 기록 ↔ DB 기록 ───────────────────────── */
   function toRecord(e) {
-    return S.makeRecord({ id: e.id, region: e.region, state: e.state, share: e.share,
+    return S.makeRecord({ id: e.id, region: e.region, regionDetail: e.regionDetail, state: e.state, share: e.share,
       text: e.text, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor,
       props: e.props, catCoat: e.catCoat });
   }
   function toEntry(r, extra) {
     return Object.assign({
-      id: r.record_id, region: r.region, state: r.state, share: r.share, text: r.text,
+      id: r.record_id, region: r.region, regionDetail: r.region_detail, state: r.state, share: r.share, text: r.text,
       keywords: Array.isArray(r.keywords) ? r.keywords.slice() : [], name: r.display_name,
       hullColor: r.hull_color, deckColor: r.deck_color,
       props: { tube: r.tube_color, board: r.board_color, clover: r.clover_color }, catCoat: r.cat_coat,
@@ -168,12 +168,15 @@ var RecordSync = (function () {
       if (!item) continue;
       if (item.record) {
         let res = await sendRecord(m, id, item.record);
-        if (res === "rejected" && S.hasPaint(item.record)) {
-          // 배 색(10-06)을 모르는 옛 규칙 — 규칙을 다시 배포하기 전이다. 문장이 먼저라 색만 빼고 한 번 더 보낸다.
-          console.warn(`[record-sync] 기록 ${id} 이 배 색과 함께 거절됐다 — 색을 빼고 다시 보낸다(규칙 재배포 전, HANDOFF.md 13.3)`);
-          const bare = S.withoutPaint(item.record);
+        // 세부 지역(10-12)·배 색(10-06)을 모르는 옛 규칙 — 규칙을 다시 배포하기 전이다. 문장이 먼저라 선택 필드를
+        // 새로 생긴 것부터 하나씩 빼고 다시 보낸다(세부 지역만 모르는 규칙이면 배 색은 살린다 — record-schema.js EXTRA_GROUPS)
+        for (let n = 1; res === "rejected" && n <= S.EXTRA_GROUPS.length && S.hasExtras(item.record); n++) {
+          const bare = S.withoutExtras(item.record, n);
+          if (Object.keys(bare).length === Object.keys(item.record).length) continue;   // 그 묶음이 원래 없었다
+          console.warn(`[record-sync] 기록 ${id} 이 거절됐다 — 선택 필드(${S.EXTRA_GROUPS.slice(0, n).flat().filter((k) => k in item.record).join("·")})를 빼고 다시 보낸다(규칙 재배포 전, HANDOFF.md 13.3)`);
           editQueue(id, (x) => { x.record = bare; });
           res = await sendRecord(m, id, bare);
+          if (res === "rejected") item.record = bare;
         }
         if (res === "rejected") {
           console.error(`[record-sync] 기록 ${id} 이 거절됐다 — 대기열에 남겨 둔다. ` +

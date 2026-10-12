@@ -28,7 +28,7 @@
  * 머무는 이유로 둔갑한다(예전 화면이 그랬다).
  * ========================================================================== */
 
-import { STATE_LABEL, STATES, REGIONS, SENTENCE_Q, KEYWORDS } from "../config.js";
+import { STATE_LABEL, STATES, REGIONS, SENTENCE_Q, KEYWORDS, placeOf } from "../config.js";
 import { tally } from "../store.js";
 
 /**
@@ -259,6 +259,7 @@ function streamOf(records, limit = 12) {
   const items = records
     .filter((r) => r.text && r.moderation_status !== "hidden")
     .slice(-limit).reverse()
-    .map((r) => ({ text: r.text, meta: `${r.region} · ${STATE_LABEL[r.state] || r.state}` }));
+    // 문장 한 줄은 사람 한 명이라 세부 지역으로 적는다(통계 집계는 region 으로 묶는다)
+    .map((r) => ({ text: r.text, meta: `${placeOf(r)} · ${STATE_LABEL[r.state] || r.state}` }));
   return { items };
 }

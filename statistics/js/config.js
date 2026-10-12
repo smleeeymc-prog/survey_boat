@@ -100,6 +100,10 @@ if (!TAXONOMY) {
   );
 }
 export const REGIONS = TAXONOMY.REGIONS;
+// 세부 지역(10-12) — '기타 충남' 안의 시·군. 통계·필터는 REGIONS 로 묶고, 사람 한 명을 보여주는 자리(배 카드의 "출발한 곳"·문장 띠)는
+// placeOf(기록)으로 세부 이름을 적는다. 판정은 record-schema.js placeOf 하나(설문과 같은 함수).
+export const REGION_DETAILS = TAXONOMY.REGION_DETAILS || {};
+export const placeOf = (r) => (globalThis.RECORD_SCHEMA ? globalThis.RECORD_SCHEMA.placeOf(r) : (r && r.region) || "");
 export const STATES = TAXONOMY.STATES;
 export const STATE_LABEL = Object.fromEntries(STATES.map((x) => [x.id, x.label]));
 export const KEYWORDS = TAXONOMY.KEYWORDS;

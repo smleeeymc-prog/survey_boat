@@ -26,7 +26,7 @@
  * 두 구현 모두 화면에 넘기기 전에 RECORD_SCHEMA.checkRecord 를 통과한 것만 넘긴다.
  * ========================================================================== */
 
-import { REGIONS, STATES, KEYWORDS } from "./config.js";
+import { REGIONS, REGION_DETAILS, STATES, KEYWORDS } from "./config.js";
 import { makeRng, hashSeed } from "./motion.js";
 import { dbMode } from "../shared/db-config.js";
 import { dbListenPublic, dbSdkReachable } from "../shared/record-store.js";
@@ -60,6 +60,12 @@ const MOCK_TEXTS = [
 ];
 
 /** 목업 저장소 — 백엔드 없이 화면을 통째로 굴려보기 위한 것. */
+/** 목업 세부 지역(10-12) — '기타 충남' 기록에 시·군 하나. 순번으로 고른다(rng 를 더 부르지 않게 — mockPaint 와 같은 이유) */
+function mockDetail(n, region) {
+  const list = REGION_DETAILS[region] || [];
+  return list.length ? { region_detail: list[(n * 7) % list.length] } : {};
+}
+
 /**
  * 목업 배 색·소품 칠·고양이 무늬(10-07) — 지도에서 배마다 다른 칠이 보이게. 실제처럼 기본 배도 꽤 남긴다.
  * 순번에서 시드를 따로 뽑는다 — MockStore 의 rng 를 더 부르면 뒤따르는 목업 기록(문장·지역·키워드)이 전부 달라진다.
@@ -121,6 +127,7 @@ export class MockStore {
       moderation_status: "public",
       schema_version: globalThis.RECORD_SCHEMA.SCHEMA_VERSION,
       ...mockPaint(this.n, kws),
+      ...mockDetail(this.n, region),
     };
   }
 

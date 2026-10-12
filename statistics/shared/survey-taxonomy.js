@@ -27,6 +27,13 @@
 
 var SURVEY_TAXONOMY = (function () {
   const REGIONS = ["아산","천안","기타 충남","충남 밖","비공개"];
+  // 세부 지역(10-12 사용자) — '기타 충남'을 고르면 한 번 더 고른다. DB 에는 region = "기타 충남" 그대로 두고 region_detail 에
+  // 이 이름을 따로 싣는다: 통계는 지금처럼 '기타 충남'으로 묶어 세고, 사람 한 명을 보여주는 자리(결과 화면·공유 카드·아카이브·
+  // 지도의 "출발한 곳"·문장 띠)는 이 이름으로 적는다(record-schema.js placeOf). 충남 15개 시·군에서 앞 단계 선택지(천안·아산)를 뺀
+  // 13개, 아산·천안처럼 시·군 없이, 가나다순. 이름은 보안 규칙에 들어간다 — 바꾸면 규칙 재생성·배포.
+  const REGION_DETAILS = {
+    "기타 충남": ["계룡","공주","금산","논산","당진","보령","부여","서산","서천","예산","청양","태안","홍성"],
+  };
   // Q3은 앞 단계에서 고른 상태에 따라 묻는 말이 달라진다.
   // '머무르는 중'과 '돌아온 사람'은 결국 여기 남아 있는 이유를 묻는 것이라 같은 문장을 쓴다.
   const SENTENCE_Q = {
@@ -92,5 +99,5 @@ var SURVEY_TAXONOMY = (function () {
     {id:"tuxedo", label:"턱시도",   swatch:"linear-gradient(to top, #f4f1ea 0 35%, #23201f 35% 100%)"},
     {id:"black",  label:"올블랙",   swatch:"#23201f"},
   ];
-  return { REGIONS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS, PROP_PAINTS, CAT_COATS };
+  return { REGIONS, REGION_DETAILS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS, PROP_PAINTS, CAT_COATS };
 })();

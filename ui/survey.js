@@ -12,6 +12,9 @@
 // 지역·상태·키워드는 statistics/shared/survey-taxonomy.js 하나에서 온다.
 // 머무름의 지도의 통계 집계가 같은 값을 읽는다 — 여기에 다시 적어 두면 갈라진다.
 const REGIONS = SURVEY_TAXONOMY.REGIONS;
+const REGION_DETAILS = SURVEY_TAXONOMY.REGION_DETAILS || {};
+// 사람 한 명을 보여주는 자리의 지역 — '기타 충남'이면 고른 세부 지역("공주"), 아니면 지역 그대로(record-schema.js placeOf)
+const placeOf = (r) => RECORD_SCHEMA.placeOf(r);
 const STATES = SURVEY_TAXONOMY.STATES;
 const SHARES = SURVEY_TAXONOMY.SHARES;
 const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
@@ -24,18 +27,18 @@ const CAT_COATS = SURVEY_TAXONOMY.CAT_COATS;
 let entries = [
   {region:"아산", state:"stay", text:"여기서 나고 자란 친구들이 아직 다 있어서, 떠날 이유를 못 찾겠어요.", keywords:["관계","익숙함"], name:"익명"},
   {region:"천안", state:"leaving", text:"괜찮은 일자리가 여기엔 없어서, 결국 서울로 가게 될 것 같아요.", keywords:["일","불안"], name:"익명"},
-  {region:"기타 충남", state:"returned", text:"서울 살아보니 알겠더라고요, 제가 있을 곳은 여기였다는 걸.", keywords:["소속감","익숙함"], name:"바다"},
+  {region:"기타 충남", regionDetail:"공주", state:"returned", text:"서울 살아보니 알겠더라고요, 제가 있을 곳은 여기였다는 걸.", keywords:["소속감","익숙함"], name:"바다"},
   {region:"아산", state:"between", text:"평일엔 일 때문에 나가지만 주말엔 항상 이곳으로 돌아와요.", keywords:["일","가족"], name:"익명"},
   {region:"충남 밖", state:"unsure", text:"고향이 그립긴 한데, 지금 자리 잡은 곳을 버리기도 애매해요.", keywords:["불안","우연"], name:"익명"},
   {region:"천안", state:"stay", text:"작업실 월세가 여기서만 가능해서 계속 남아있어요.", keywords:["창작","주거"], name:"단단"},
   {region:"아산", state:"leaving", text:"부모님이 여기 계시지만, 제 커리어는 다른 도시에 있는 것 같아요.", keywords:["가족","일"], name:"익명"},
-  {region:"기타 충남", state:"stay", text:"딱히 이유는 없지만 여길 떠난다는 상상이 잘 안 돼요.", keywords:["익숙함"], name:"익명"},
+  {region:"기타 충남", regionDetail:"홍성", state:"stay", text:"딱히 이유는 없지만 여길 떠난다는 상상이 잘 안 돼요.", keywords:["익숙함"], name:"익명"},
   {region:"천안", state:"unsure", text:"매년 떠난다고 말만 하고 벌써 5년째 여기 살고 있네요.", keywords:["우연","익숙함"], name:"익명"},
   {region:"충남 밖", state:"returned", text:"타지에서 지치고 나서야 이 동네의 조용함이 그리웠다는 걸 알았어요.", keywords:["소속감","불안"], name:"강"},
 ];
 
 const FRESH_STATE = () => ({
-  step: "onboard", region: null, stateId: null, text: "", share: null, keywords: [],
+  step: "onboard", region: null, regionDetail: null, stateId: null, text: "", share: null, keywords: [],
   // 배 색 — tone "one"(원톤: 갑판이 선체를 따라 물든다) | "two"(투톤). paintPart 는 지금 칠하는 곳(화면용 — 선체·갑판·소품 id)
   tone: "one", hullColor: "base", deckColor: "base", paintPart: "hull",
   // 키워드 소품 칠(10-07) — 튜브·서핑보드·클로버 색(배 색과 같은 모양), 고양이 털 무늬. 그 키워드를 고른 기록에만 실린다
@@ -59,6 +62,7 @@ function render(){
   if(state.step==="onboard") el.appendChild(renderOnboard());
   else if(state.step==="prompt") el.appendChild(renderPrompt());
   else if(state.step==="region") el.appendChild(renderRegion());
+  else if(state.step==="regionDetail") el.appendChild(renderRegionDetail());
   else if(state.step==="state") el.appendChild(renderState());
   else if(state.step==="sentence") el.appendChild(renderSentence());
   else if(state.step==="share") el.appendChild(renderShare());
@@ -72,14 +76,14 @@ function render(){
   // 단계에 따라 바뀌는 무대 요소(결과 화면의 비네트 등)는 CSS가 이 값을 본다
   document.body.dataset.step = state.step;
   // 질문 단계는 페이지를 화면에 묶는다(survey.css html.lock). 이미 밀려 있었으면 제자리로
-  const lock = QUESTION_ORDER.includes(state.step);
+  const lock = isQuestion(state.step);
   document.documentElement.classList.toggle("lock", lock);
   if(lock && (window.scrollY || document.documentElement.scrollTop)) window.scrollTo(0, 0);
   // 키보드가 닫히며 밀린 화면이 남으면 고정된 판의 그림과 터치 자리가 어긋난다 — 닫히는 동안·뒤에도 되돌린다
   if(lock) ViewportGuard.settleSoon();
 
   // 3D 병 속 풍경 씬 동기화 (onboard ~ result 단계까지 배경으로 노출)
-  if(window.BottleScene) window.BottleScene.show(state.step, state);
+  if(window.BottleScene) window.BottleScene.show(chapterOf(state.step), state);   // 세부 지역은 지역과 같은 구도
   // 작성 중이면 이 기기에 맡겨 둔다 — 새로고침·브라우저 종료 뒤 이어 쓰기 (ui/draft.js)
   Draft.save(state);
 }
@@ -99,6 +103,11 @@ const CHAPTERS = {
   consent:  ["Ⅶ", "공개"],
 };
 const QUESTION_ORDER = Object.keys(CHAPTERS);
+// 장 안의 덧붙은 단계 — 장 번호·진행 막대는 그 장 것을 쓴다. 세부 지역(10-12)은 '기타 충남'을 고른 사람만 거친다
+const SUB_STEPS = { regionDetail: "region" };
+const chapterOf = (step) => SUB_STEPS[step] || step;
+const isQuestion = (step) => QUESTION_ORDER.includes(chapterOf(step));
+const hasDetail = (region) => (REGION_DETAILS[region] || []).length > 0;
 
 function h(tag, cls, text){
   const el = document.createElement(tag);
@@ -113,8 +122,8 @@ function h(tag, cls, text){
  * 반환값의 next로 disabled를 조작한다.
  */
 function questionStep({ title, sub, content, prev, nextLabel = "다음", onNext }){
-  const idx = QUESTION_ORDER.indexOf(state.step);
-  const [num, name] = CHAPTERS[state.step];
+  const idx = QUESTION_ORDER.indexOf(chapterOf(state.step));
+  const [num, name] = CHAPTERS[chapterOf(state.step)];
   const d = h("div", "step");
   d.appendChild(h("div", "scrim-top"));
   d.appendChild(h("div", "scrim-bottom"));
@@ -264,10 +273,10 @@ function renderResumeAsk(bottom, leave){
   const dr = resumeDraft;
   const at = Draft.STEPS.indexOf(dr.step);
   const past = (step) => Draft.STEPS.indexOf(step) < at;
-  const [num, name] = CHAPTERS[dr.step];
+  const [num, name] = CHAPTERS[chapterOf(dr.step)];
   bottom.appendChild(h("p", "ob-resume-q", "이전 작성부분에서 이어가시겠어요?"));
   const meta = [`${num} ${name}부터`];
-  if(past("region") && dr.region) meta.push(dr.region);
+  if(past("region") && dr.region) meta.push(placeOf(dr));
   if(past("state") && dr.stateId) meta.push(stateLabel(dr.stateId));
   bottom.appendChild(h("p", "ob-resume-meta", meta.join(" · ")));
   // 자기가 쓴 문장이지만 저장소에서 온 값이라 textContent 로만 넣는다
@@ -321,6 +330,23 @@ function renderRegion(){
     title: "지금 활동하는 지역은 어디인가요?",
     sub: "넓은 범주로만 남습니다. 상세 주소는 수집하지 않아요.",
     content: picker, prev: "prompt",
+    // '기타 충남'이면 그 안의 시·군을 한 번 더 묻는다
+    onNext: () => { state.step = hasDetail(state.region) ? "regionDetail" : "state"; render(); },
+  }).el;
+}
+
+/* ── Ⅰ 지역 — 세부 지역 (10-12 사용자) ─────────────────────────────────────
+   '기타 충남'을 고른 사람만. DB 에는 region 그대로 + region_detail(통계는 '기타 충남'으로 묶어 센다),
+   결과 화면·아카이브·지도처럼 사람 한 명을 보여주는 자리에는 이 이름이 적힌다(placeOf).
+   [임시] 고르는 모양은 지역과 같은 세로 선택지 — 시안 셋 중 사용자가 고르면 바꾼다(HANDOFF 6.29). */
+function renderRegionDetail(){
+  const list = REGION_DETAILS[state.region] || [];
+  if(!list.includes(state.regionDetail)) state.regionDetail = list[0];
+  const picker = snapPicker(list.map(r => ({ id: r, label: r })), state.regionDetail, (v) => { state.regionDetail = v; });
+  return questionStep({
+    title: `${state.region} 중 어디인가요?`,
+    sub: "시·군까지만 남습니다. 통계에는 '기타 충남'으로 함께 묶여요.",
+    content: picker, prev: "region",
     onNext: () => { state.step = "state"; render(); },
   }).el;
 }
@@ -335,7 +361,7 @@ function renderState(){
   return questionStep({
     title: "지금 당신의 상태에 가장 가까운 것은?",
     sub: "정답은 없어요. 지금 느끼는 대로.",
-    content: picker, prev: "region",
+    content: picker, prev: hasDetail(state.region) ? "regionDetail" : "region",
     onNext: () => { state.step = "sentence"; render(); },
   }).el;
 }
@@ -659,7 +685,8 @@ function renderConsent(){
     onNext: () => {
       entries.forEach(e => { e._new = false; });   // "나의 기록" 표시는 방금 남긴 것 하나만
       const entry = {
-        region: state.region, state: state.stateId, share: state.share, text: state.text,
+        region: state.region, regionDetail: hasDetail(state.region) ? state.regionDetail : undefined,
+        state: state.stateId, share: state.share, text: state.text,
         keywords: [...state.keywords],
         name: state.disclose === "익명" ? "익명" : state.name.trim(),
         // 배 색 — 원톤이면 갑판은 "auto"(선체를 따라 물든다). 지도도 같은 식으로 그린다(boat-look.js paintMaterials)
@@ -712,7 +739,7 @@ function cardInfo(){
     key: e.id || 0,
     snapshot: mySnapshot(),
     sentence: state.text,
-    meta: [state.region, stateLabel(state.stateId), ...state.keywords].join(" · "),
+    meta: [placeOf(state), stateLabel(state.stateId), ...state.keywords].join(" · "),
   };
 }
 
@@ -725,7 +752,7 @@ function renderResult(){
   const bottom = h("div", "res-bottom fade-stage");
   bottom.appendChild(h("p", "res-label", "MY SENTENCE · 지금 이곳"));
   bottom.appendChild(h("p", "res-sentence", `“${state.text}”`));
-  bottom.appendChild(h("p", "res-meta", [state.region, stateLabel(state.stateId), ...state.keywords].join(" · ")));
+  bottom.appendChild(h("p", "res-meta", [placeOf(state), stateLabel(state.stateId), ...state.keywords].join(" · ")));
   bottom.appendChild(h("p", "res-note", "당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다."));
   const btn = h("button", "cta");
   btn.type = "button";
@@ -838,7 +865,7 @@ function renderArchive(){
       const named = e.name && e.name !== "익명";
       const meta = h("span", "ar-meta");
       if(e._new){ meta.appendChild(h("b", null, "나의 기록")); meta.append(" · "); }
-      meta.append(`${e.region} · ${stateLabel(e.state)}`);
+      meta.append(`${placeOf(e)} · ${stateLabel(e.state)}`);
       c.appendChild(meta);
       if(snap){ const img = h("img", "ar-snap"); img.src = snap; img.alt = ""; c.appendChild(img); }
       c.appendChild(h("span", "ar-text", `“${e.text}”`));
@@ -890,5 +917,5 @@ if (window.RecordSync) RecordSync.ready().then((mode) => {
 });
 
 // 키보드가 닫힌 뒤 밀린 화면 되돌리기 — 질문 단계에서만 (ui/viewport-guard.js)
-ViewportGuard.install(() => QUESTION_ORDER.includes(state.step));
+ViewportGuard.install(() => isQuestion(state.step));
 render();

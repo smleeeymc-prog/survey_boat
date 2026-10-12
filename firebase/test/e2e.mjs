@@ -16,7 +16,7 @@
  *   2 지도를 열어 둔 채 제출 → onInsert         6 지도 콜드부팅 실패 → 캐시로 onReady → 붙으면 차이만
  *   3 운영자 숨김 → onRemove                    7 목업(?mock=1) — 두 화면·세 화면 크기, 배지, 콘솔 에러 0
  *   4 아카이브: 새 기록·썸네일, <img onerror>·<script> 문장은 글자 그대로
- *   8 배 색 규칙 배포 전(옛 규칙) — 색을 뺀 기록으로 다시 보내 문장은 들어간다 (10-06)
+ *   8 규칙 배포 전(옛 규칙) — 새 선택 필드부터 빼고 다시 보내 문장은 들어간다 (배 색 10-06 · 세부 지역 10-12)
  * ========================================================================== */
 
 import fs from "node:fs";
@@ -143,12 +143,19 @@ const errorsIn = (logs, allow = []) => logs.filter((l) =>
   ["error", "assert", "pageerror"].includes(l.type) && !allow.some((re) => re.test(l.text)));
 
 /** 설문을 실제로 눌러서 끝까지 — 결과 화면이 뜨면 돌아온다 */
-async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null }) {
+async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null, region = null, detail = null }) {
   if (goto) await page.goto(url);
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
   await page.locator(".qnext").waitFor({ timeout: 30000 });   // 바다로 내려앉은 뒤 첫 질문
-  await page.locator(".qnext").click();                        // Ⅰ 지역 (첫 항목)
+  // 세로 선택지에서 그 항목을 눌러 가운데로 — 스크롤이 멈추면 고른 값이 된다
+  const pickItem = async (label, key) => {
+    await page.locator(".picker-item", { hasText: label }).first().click();
+    await page.waitForFunction(([k, v]) => state[k] === v, [key, label], { timeout: 10000 });
+  };
+  if (region) await pickItem(region, "region");
+  await page.locator(".qnext").click();                        // Ⅰ 지역 (기본은 첫 항목)
+  if (detail) { await pickItem(detail, "regionDetail"); await page.locator(".qnext").click(); }   // Ⅰ 세부 지역('기타 충남'일 때)
   await page.locator(".qnext").click();                        // Ⅱ 상태
   await page.locator("textarea.sentence").fill(text);          // Ⅲ 문장
   await page.locator(".qnext").click();
@@ -211,14 +218,19 @@ try {
   const survey = await ctxB.newPage();
   const surveyLogs = watch(survey);
   const myText = "지도가 이 문장을 받아야 한다 — 😀 이모지도";
-  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 }, props: { "튜브": 7 } });   // 원톤 남색 · 튜브 자두
+  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 }, props: { "튜브": 7 },   // 원톤 남색 · 튜브 자두
+    region: "기타 충남", detail: "부여" });
   check("설문: 결과 화면이 뜬다", await survey.locator(".res-sentence").isVisible());
   check("설문: DB로 돌 땐 목업 배지가 없다", await survey.evaluate(() => document.getElementById("proto-badge").hidden));
+  const resMeta = await survey.locator(".res-meta").textContent();
+  check("설문: 결과 화면에 세부 지역 이름이 적힌다 (기타 충남 → 부여)", resMeta.startsWith("부여 ·"), resMeta);
 
   const mine = await waitFor(async () => (await adminDocs("records", where("text", "==", myText)))[0], { label: "records 문서" });
   check("records 문서가 생긴다 (스키마 필드 전부·서버 시각)",
     mine && S.FIELDS.every((k) => k in mine) && mine.created_at instanceof Timestamp && mine.display_name === "바다" &&
     mine.share === "many" && mine.keywords.join() === "일,가족", JSON.stringify({ ...mine, created_at: String(mine.created_at) }));
+  check("세부 지역이 기록에 실린다 (region 기타 충남 · region_detail 부여 — 통계는 region 으로 묶는다)",
+    mine.region === "기타 충남" && mine.region_detail === "부여", `${mine.region} / ${mine.region_detail}`);
   check("배 색이 기록에 실린다 (원톤 남색 → hull_color navy · deck_color auto)", mine.hull_color === "navy" && mine.deck_color === "auto",
     `${mine.hull_color} / ${mine.deck_color}`);
   check("소품 칠이 기록에 실린다 (가족 → tube_color purple · 고르지 않은 소품은 없음)",
@@ -246,6 +258,8 @@ try {
   const arrivalText = await waitFor(() => map.evaluate(() => document.getElementById("arrivalText").textContent), { label: "방금 도착한 문장", timeout: 60000 })
     .catch(() => "");
   check("지도: '방금 도착한 문장'에 그 문장이 뜬다", arrivalText.includes("지도가 이 문장을 받아야 한다"), arrivalText);
+  const fromText = await map.evaluate(() => document.getElementById("logFrom").textContent);
+  check("지도: 배 카드의 '출발한 곳'이 세부 지역 이름 (부여)", fromText === "부여", fromText);
 
   await hide(mine.id);
   await waitFor(async () => (await mapCount()) === 3, { label: "지도 onRemove" });
@@ -261,12 +275,13 @@ try {
     const cards = [...document.querySelectorAll(".ar-card")];
     return {
       sub: document.querySelector(".ar-sub").textContent,
-      first: cards[0] && { mine: cards[0].classList.contains("mine"), text: cards[0].querySelector(".ar-text").textContent, snap: !!cards[0].querySelector("img.ar-snap"), by: cards[0].querySelector(".ar-by").textContent },
+      first: cards[0] && { mine: cards[0].classList.contains("mine"), text: cards[0].querySelector(".ar-text").textContent, snap: !!cards[0].querySelector("img.ar-snap"), by: cards[0].querySelector(".ar-by").textContent, meta: cards[0].querySelector(".ar-meta").textContent },
       texts: cards.map((c) => c.querySelector(".ar-text").textContent),
       html: document.querySelector(".ar-grid").innerHTML,
     };
   });
   check("아카이브: 맨 앞에 '나의 기록'(문장·병 스냅샷·별칭)", arch.first && arch.first.mine && arch.first.text.includes("지도가 이 문장을") && arch.first.snap && arch.first.by === "— 바다", JSON.stringify(arch.first));
+  check("아카이브: 내 카드에 세부 지역 이름 (부여)", arch.first && arch.first.meta.includes("부여 ·"), arch.first && arch.first.meta);
   check("아카이브: 서버의 공개 기록이 이어진다 (개수는 서버 count)", arch.texts.length === 4 && arch.sub.includes("3개"), `${arch.sub} / 카드 ${arch.texts.length}`);
   check("아카이브: <img onerror>·<script> 문장이 글자 그대로 보인다",
     arch.texts.includes("“<img src=x onerror=\"window.__xss=1\">”") && arch.texts.includes("“<script>window.__xss=2</script>”") &&
@@ -376,30 +391,42 @@ try {
   await ctxC.close();
   await ctxB.close();
 
-  // ═══ 8 — 배 색 규칙 배포 전 ═════════════════════════════════════════════════
-  // 새 설문이 먼저 나가고 사용자가 콘솔에서 규칙을 아직 안 바꾼 동안: 옛 규칙은 hull_color·deck_color 를 모르는 키로 거절한다.
-  // 설문(record-sync)은 색만 빼고 한 번 더 보내야 한다 — 문장은 들어가고 대기열은 비어야 한다.
-  console.log("\n[8] 배 색 규칙 배포 전(옛 규칙)");
+  // ═══ 8 — 규칙 배포 전 ═══════════════════════════════════════════════════════
+  // 새 설문이 먼저 나가고 사용자가 콘솔에서 규칙을 아직 안 바꾼 동안: 옛 규칙은 새 필드를 모르는 키로 거절한다.
+  // 설문(record-sync)은 선택 필드를 새로 생긴 것부터 빼고 다시 보내야 한다 — 문장은 들어가고 대기열은 비어야 한다.
+  //   8a 세부 지역(10-12)만 모르는 규칙(10-07 배포본) → 세부 지역만 빼고 배 색은 살린다
+  //   8b 배 색(10-06)도 모르는 규칙 → 선택 필드를 다 뺀다
+  console.log("\n[8] 규칙 배포 전(옛 규칙)");
   const newRules = fs.readFileSync(path.join(HERE, "..", "firestore.rules"), "utf8");
-  const oldRules = newRules
+  const noDetailRules = newRules
+    .replace(/, "region_detail"\]\)/, "])")
+    .replace(/\n\s*\/\/ 세부 지역[^\n]*\n[^\n]*region_detail[^\n]*;/, ";")
+    .replace(/(cat_coat in \[[^\]]*\]\))\s*;/, "$1;");
+  check("옛 규칙 만들기 8a (세부 지역 빠짐, 배 색은 있음)", !/region_detail/.test(noDetailRules) && /cat_coat/.test(noDetailRules) && noDetailRules !== newRules);
+  const oldRules = noDetailRules
     .replace(/d\.keys\(\)\.hasOnly\(\[[^\]]*\]\)/, `d.keys().hasOnly([${S.FIELDS.map((f) => `"${f}"`).join(", ")}])`)
     .replace(/\n\s*\/\/ 배 색[\s\S]*?cat_coat[^\n]*;/, ";")   // 배 색 줄부터 소품 칠(마지막 cat_coat) 줄까지
     .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;")
     .replace(/\n    \/\/ 컬러휠로 고른 배 색[^\n]*\n    function paintHex\(v\) \{\n[^\n]*\n    \}\n/, "");
-  check("옛 규칙 만들기 (색 필드 빠짐)", !/hull_color|tube_color|cat_coat/.test(oldRules) && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
-  await putRules(oldRules);
-  const ctxR = await newContext();
-  const rp = await ctxR.newPage();
-  const rLogs = watch(rp);
-  const oldText = "옛 규칙에서도 문장은 들어가야 한다";
-  await runSurvey(rp, { text: oldText, keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 } });   // 투톤 빨강·노랑 · 주거 고양이 턱시도
-  const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: "옛 규칙 records 문서", timeout: 40000 });
-  check("옛 규칙: 색을 뺀 기록으로 들어간다", oldDoc && !("hull_color" in oldDoc) && !("deck_color" in oldDoc) && !("cat_coat" in oldDoc),
-    oldDoc ? Object.keys(oldDoc).join(",") : "");
-  await waitFor(async () => (await queueOf(rp)).every((x) => !x.record), { label: "옛 규칙: 대기열의 기록이 빈다", timeout: 20000 });
-  check("옛 규칙: 대기열의 기록이 빈다", true);
+  check("옛 규칙 만들기 8b (색 필드도 빠짐)", !/hull_color|tube_color|cat_coat|region_detail/.test(oldRules) && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
+  for (const [tag, rules, keepPaint] of [["8a", noDetailRules, true], ["8b", oldRules, false]]) {
+    await putRules(rules);
+    const ctxR = await newContext();
+    const rp = await ctxR.newPage();
+    watch(rp);
+    const oldText = `옛 규칙(${tag})에서도 문장은 들어가야 한다`;
+    await runSurvey(rp, { text: oldText, keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 },   // 투톤 빨강·노랑 · 주거 고양이 턱시도
+      region: "기타 충남", detail: "태안" });
+    const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: `옛 규칙(${tag}) records 문서`, timeout: 40000 });
+    const keys = oldDoc ? Object.keys(oldDoc).join(",") : "";
+    check(keepPaint ? "옛 규칙 8a: 세부 지역만 빼고 들어간다 (배 색·고양이 무늬는 남는다)" : "옛 규칙 8b: 색·세부 지역을 뺀 기록으로 들어간다",
+      oldDoc && oldDoc.region === "기타 충남" && !("region_detail" in oldDoc) &&
+      (keepPaint ? oldDoc.hull_color === "red" && oldDoc.cat_coat === "tuxedo" : !("hull_color" in oldDoc) && !("deck_color" in oldDoc) && !("cat_coat" in oldDoc)), keys);
+    await waitFor(async () => (await queueOf(rp)).every((x) => !x.record), { label: `옛 규칙(${tag}): 대기열의 기록이 빈다`, timeout: 20000 });
+    check(`옛 규칙 ${tag}: 대기열의 기록이 빈다`, true);
+    await ctxR.close();
+  }
   await putRules(newRules);
-  await ctxR.close();
 
   // ═══ 7 — 목업 ═════════════════════════════════════════════════════════════
   // 원래 "설정이 빈 상태"를 봤는데, 09-30 실제 웹 설정값(ibda-2026-exhibition)이 들어간 뒤로는 주소만 열면 실DB로 간다.

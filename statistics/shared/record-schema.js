@@ -35,6 +35,9 @@
  *   tube_color · board_color · clover_color   (선택) 키워드 소품 색 — 튜브(가족)·서핑보드(소속감)·클로버(우연). 값은 hull_color 와 같은 모양.
  *                      그 키워드를 고른 기록에만 실린다(10-07). survey-taxonomy.js PROP_PAINTS
  *   cat_coat           (선택) 고양이(주거) 털 무늬 — survey-taxonomy.js CAT_COATS 의 id. 주거를 고른 기록에만
+ *   region_detail      (선택) 세부 지역 — region 이 '기타 충남'일 때만, survey-taxonomy.js REGION_DETAILS 의 이름 하나(10-12).
+ *                      통계는 region 으로 묶고, 사람 한 명을 보여주는 자리는 placeOf(기록)으로 이 이름을 적는다.
+ *                      선택 필드인 이유는 배 색과 같다(옛 기록·옛 대기열, 규칙 배포 전엔 빼고 다시 보낸다 — EXTRA_FIELDS).
  * ========================================================================== */
 
 var RECORD_SCHEMA = (function (T) {
@@ -60,6 +63,12 @@ var RECORD_SCHEMA = (function (T) {
   const CAT_COAT_FIELD = "cat_coat";
   const PAINT_FIELDS = ["hull_color", "deck_color"].concat(PROP_COLOR_FIELDS, CAT_COAT_FIELD);
   const DECK_AUTO = "auto";
+  const REGION_DETAIL_FIELD = "region_detail";
+  const REGION_DETAILS = T.REGION_DETAILS || {};
+  // 선택 필드 전부 — 옛 규칙(배포 전)에 거절되면 빼고 다시 보낸다(ui/record-sync.js). 묶음은 새로 생긴 것부터:
+  // 세부 지역(10-12)을 모르는 규칙이면 그것만 빼서 배 색(10-06~07)은 살리고, 그래도 거절되면 배 색까지 뺀다.
+  const EXTRA_GROUPS = [[REGION_DETAIL_FIELD], PAINT_FIELDS];
+  const EXTRA_FIELDS = PAINT_FIELDS.concat(REGION_DETAIL_FIELD);   // 생긴 순서(규칙의 필드 목록도 이 순서)
   // 컬러휠 색 — 소문자 6자리만. 규칙에도 같은 식이 들어간다(build-rules.mjs)
   const COLOR_HEX_RE = /^#[0-9a-f]{6}$/;
   const COLOR_HEX_SRC = "^#[0-9a-f]{6}$";
@@ -131,6 +140,7 @@ var RECORD_SCHEMA = (function (T) {
     if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color) && !isHex(r.deck_color)) problems.push("deck_color");
     for (const f of PROP_COLOR_FIELDS) if (f in r && !COLOR_IDS.includes(r[f]) && !isHex(r[f])) problems.push(f);
     if (CAT_COAT_FIELD in r && !CAT_COAT_IDS.includes(r[CAT_COAT_FIELD])) problems.push(CAT_COAT_FIELD);
+    if (REGION_DETAIL_FIELD in r && !(REGION_DETAILS[r.region] || []).includes(r[REGION_DETAIL_FIELD])) problems.push(REGION_DETAIL_FIELD);
     return problems;
   }
 
@@ -141,7 +151,7 @@ var RECORD_SCHEMA = (function (T) {
   function checkNew(r) {
     const problems = [];
     if (!r || typeof r !== "object") return ["record"];
-    const extra = Object.keys(r).filter((k) => !FIELDS.includes(k) && !PAINT_FIELDS.includes(k) && k !== "created_at");
+    const extra = Object.keys(r).filter((k) => !FIELDS.includes(k) && !EXTRA_FIELDS.includes(k) && k !== "created_at");
     if (extra.length) problems.push("unknown:" + extra.join(","));
     if (!isStr(r.record_id) || !ID_RE.test(r.record_id)) problems.push("record_id");
     if (r.moderation_status !== CREATE_STATUS) problems.push("moderation_status");
@@ -165,7 +175,7 @@ var RECORD_SCHEMA = (function (T) {
    * 설문 답을 새 기록으로. 값 정리(trim·중복 제거·빈 이름 → 익명)는 여기 한 곳에서만 한다.
    * created_at 은 넣지 않는다 — 보내는 쪽(record-store)이 서버 시각을 붙인다.
    */
-  function makeRecord({ id, region, state, share, text, keywords, name, hullColor, deckColor, props, catCoat }) {
+  function makeRecord({ id, region, regionDetail, state, share, text, keywords, name, hullColor, deckColor, props, catCoat }) {
     const kws = [];
     for (const k of Array.isArray(keywords) ? keywords : []) if (!kws.includes(k)) kws.push(k);
     const nm = clean(name);
@@ -180,8 +190,11 @@ var RECORD_SCHEMA = (function (T) {
         else paint[p.field] = (props && props[p.id]) || "base";
       }
     }
+    // 세부 지역 — 그 지역에 세부 목록이 있고 목록 안의 이름일 때만(다른 지역으로 바꿨으면 버린다)
+    const detail = (REGION_DETAILS[region] || []).includes(regionDetail) ? { [REGION_DETAIL_FIELD]: regionDetail } : {};
     return {
       ...paint,
+      ...detail,
       record_id: id,
       region, state, share,
       text: clean(text),
@@ -194,12 +207,25 @@ var RECORD_SCHEMA = (function (T) {
     };
   }
 
-  /** 배 색·소품 칠 필드가 실렸나 / 뺀 사본 — 색을 모르는 옛 규칙(배포 전)에 거절되면 색만 빼고 다시 보낸다(ui/record-sync.js) */
-  const hasPaint = (r) => !!r && PAINT_FIELDS.some((k) => k in r);
-  function withoutPaint(r) {
+  /**
+   * 선택 필드(배 색·소품 칠·세부 지역)가 실렸나 / 뺀 사본 — 그 필드를 모르는 옛 규칙(배포 전)에 거절되면 빼고 다시 보낸다(ui/record-sync.js).
+   * withoutExtras(r, n) 은 새로 생긴 묶음부터 n 개를 뺀다(기본: 전부).
+   */
+  const hasExtras = (r) => !!r && EXTRA_FIELDS.some((k) => k in r);
+  function withoutExtras(r, n = EXTRA_GROUPS.length) {
     const out = Object.assign({}, r);
-    for (const k of PAINT_FIELDS) delete out[k];
+    for (const g of EXTRA_GROUPS.slice(0, n)) for (const k of g) delete out[k];
     return out;
+  }
+
+  /**
+   * 사람 한 명을 보여주는 자리에 적을 지역 — 세부 지역이 있으면 그 이름("공주"), 없으면 region("기타 충남"·"아산" …).
+   * 통계·필터는 이걸 쓰지 않고 region 으로 묶는다. 설문 화면의 답(regionDetail)과 DB 기록(region_detail) 둘 다 받는다.
+   */
+  function placeOf(r) {
+    if (!r) return "";
+    const d = r[REGION_DETAIL_FIELD] !== undefined ? r[REGION_DETAIL_FIELD] : r.regionDetail;
+    return (REGION_DETAILS[r.region] || []).includes(d) ? d : (r.region || "");
   }
 
   /** <img src>에 넣어도 되는 값이면 그대로, 아니면 null. 남이 올린 문자열을 화면에 넣기 전에 반드시 거친다. */
@@ -211,8 +237,8 @@ var RECORD_SCHEMA = (function (T) {
 
   return {
     TEXT_MAX, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
-    FIELDS, PAINT_FIELDS, PROP_COLOR_FIELDS, CAT_COAT_FIELD, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
+    FIELDS, PAINT_FIELDS, EXTRA_FIELDS, EXTRA_GROUPS, REGION_DETAIL_FIELD, REGION_DETAILS, PROP_COLOR_FIELDS, CAT_COAT_FIELD, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
     REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS, CAT_COAT_IDS,
-    newId, checkNew, checkRecord, makeRecord, safeImage, hasPaint, withoutPaint,
+    newId, checkNew, checkRecord, makeRecord, safeImage, hasExtras, withoutExtras, placeOf,
   };
 })(globalThis.SURVEY_TAXONOMY);

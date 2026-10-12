@@ -54,7 +54,7 @@ export async function buildRules() {
   const { COLLECTIONS: COL } = await import(pathToFileURL(path.join(SHARED, "db-config.js")).href);
   const T = S.THUMB;
   const newFields = S.FIELDS;
-  const allowedFields = S.FIELDS.concat(S.PAINT_FIELDS);
+  const allowedFields = S.FIELDS.concat(S.EXTRA_FIELDS);
   const typeAlt = T.TYPES.join("|");
 
   return `rules_version = '2';
@@ -124,7 +124,9 @@ service cloud.firestore {
         && (!('deck_color' in d) || d.deck_color in ${list(S.DECK_COLOR_IDS)} || paintHex(d.deck_color))
         // 키워드 소품 칠 — 튜브·서핑보드·클로버 색은 배 색과 같은 모양, 고양이는 털 무늬 id
 ${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list(S.COLOR_IDS)} || paintHex(d.${f}))`).join("\n")}
-        && (!('${S.CAT_COAT_FIELD}' in d) || d.${S.CAT_COAT_FIELD} in ${list(S.CAT_COAT_IDS)});
+        && (!('${S.CAT_COAT_FIELD}' in d) || d.${S.CAT_COAT_FIELD} in ${list(S.CAT_COAT_IDS)})
+        // 세부 지역 — 있어도 되고 없어도 된다. 있으면 그 지역에 딸린 목록 안의 이름(지금은 '기타 충남'만 세부 목록이 있다)
+        && (!('${S.REGION_DETAIL_FIELD}' in d) || ${Object.entries(S.REGION_DETAILS).map(([r, a]) => `(d.region == ${lit(r)} && d.${S.REGION_DETAIL_FIELD} in ${list(a)})`).join(" || ") || "false"});
     }
 
     match /${COL.records}/{id} {

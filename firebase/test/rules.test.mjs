@@ -143,6 +143,11 @@ test("필드를 하나씩 틀리게 하면 전부 거절된다", async () => {
     "고양이 무늬 목록 밖": good({ cat_coat: "tabby" }),
     "고양이 무늬에 색": good({ cat_coat: "#ffffff" }),
     "모르는 소품 필드": good({ lamp_color: "red" }),
+    "세부 지역인데 지역이 아산": good({ region_detail: "공주" }),
+    "세부 지역 목록 밖(천안)": good({ region: "기타 충남", region_detail: "천안" }),
+    "세부 지역에 시 붙임": good({ region: "기타 충남", region_detail: "공주시" }),
+    "세부 지역 빈칸": good({ region: "기타 충남", region_detail: "" }),
+    "세부 지역이 숫자": good({ region: "기타 충남", region_detail: 3 }),
   };
   for (const [label, rec] of Object.entries(cases)) {
     await assert.doesNotReject(assertFails(put(db, rec)), `통과하면 안 되는데 통과: ${label}`);
@@ -179,6 +184,24 @@ test("소품 칠(10-07): 튜브·서핑보드·클로버 색과 고양이 무늬
   assert.ok(!("board_color" in rec) && !("clover_color" in rec));
   assert.deepEqual(S.checkNew(rec), []);
   await assertSucceeds(put(db, rec));
+});
+
+test("세부 지역(10-12): 기타 충남이면 목록 안의 이름, 없어도(옛 기록) 통과한다", async () => {
+  const db = user();
+  await assertSucceeds(put(db, good({ region: "기타 충남" })));                       // 세부 없음
+  for (const d of T.REGION_DETAILS["기타 충남"]) await assertSucceeds(put(db, good({ region: "기타 충남", region_detail: d })));
+  // makeRecord 는 세부 목록이 있는 지역일 때만 싣는다 — 다른 지역으로 바꿨으면 버린다
+  const mk = (region) => ({ ...S.makeRecord({ id: S.newId(), region, regionDetail: "부여", state: "stay", share: "many",
+    text: "세부 지역", keywords: [], name: "익명" }), created_at: serverTimestamp() });
+  const r1 = mk("기타 충남"), r2 = mk("천안");
+  assert.equal(r1.region_detail, "부여");
+  assert.ok(!("region_detail" in r2));
+  assert.deepEqual(S.checkNew(r1), []);
+  await assertSucceeds(put(db, r1));
+  await assertSucceeds(put(db, r2));
+  assert.equal(S.placeOf(r1), "부여");
+  assert.equal(S.placeOf(r2), "천안");
+  assert.equal(S.placeOf({ region: "기타 충남" }), "기타 충남");
 });
 
 test("record_id ≠ 문서 id, id 모양이 다르면 거절된다", async () => {
