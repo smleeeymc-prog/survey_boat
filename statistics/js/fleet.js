@@ -47,7 +47,7 @@ import {
 import { buildCloverGeometry, makeCloverMaterial } from "./clover.js";
 import { patchMaterial } from "./material-patch.js";
 import { prepareBoatGeometry, applyBoatPaint, applyCloverPaint, BoatPaintTable } from "./boat-paint.js";
-import { applySurfaceFx } from "./surface-fx.js";
+import { applySurfaceFx, applyBoatGrade } from "./surface-fx.js";
 import { TUBE_FX_EDGE } from "../shared/boat-look.js";
 
 // GLB 노드 이름은 shared/glb-nodes.js 한 곳에서 온다 — 설문 화면도 같은 값을 읽는다.
@@ -277,6 +277,7 @@ export class ShipFleet {
       // 광택·테두리 빛·면 색 변주 — AO 값을 같이 쓰므로 AO 패치가 걸린 재질에만, 칠 뒤에(surface-fx.js).
       // 튜브만 광택·테두리 몫을 줄인다(설문과 같다 — 순백·순홍이라 혼자 번쩍였다).
       if (b.geo.attributes._ao) applySurfaceFx(mat, b.node === GLB_NODES.tube ? TUBE_FX_EDGE : 1);
+      applyBoatGrade(mat);   // 배 색을 바다에 앉히기 — 거리 공기층·채도(surface-fx.js, 표면 효과 뒤에)
       const inst = makeInstanced(b.geo, mat, this.capacity, `fleet:${b.kw || b.role}:${b.child.name}`);
 
       if (b.role === "prop") {
@@ -299,6 +300,7 @@ export class ShipFleet {
         const mat = makeCloverMaterial();
         mat.fog = true;
         applyCloverPaint(mat, this.paint);   // 고른 잎 색
+        applyBoatGrade(mat);                 // 선체와 같이 거리에 묻혀야 잎만 또렷하게 뜨지 않는다
         const slot = slotAttribute(cg, this.capacity, false);
         const inst = makeInstanced(cg, mat, this.capacity, `fleet:${CLOVER_KEYWORD}:${CLOVER_NODE}`);
         inst.renderOrder = 1;          // 선체를 먼저 그리고 그 위에 얹는다

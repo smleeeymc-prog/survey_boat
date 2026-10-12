@@ -544,6 +544,8 @@ http://localhost:8000/statistics/?depths=1
 | 광택(하늘 반사) 0.8 · 테두리 빛 0.2 · 면 색 변주 1 | `look-tokens.js` `SURFACE_FX` (튜브만 `boat-look.js` `TUBE_FX_EDGE`) | `surface-fx.js` — 칠 위에 겹쳐 건다 |
 | 틸트시프트 (위아래 34% 띠, 3.5px) | `look-tokens.js` `TILT_SHIFT` | `css/tilt-shift.css` + `js/tilt-shift.js` (띠가 구도를 따라간다). 지도만 위 띠를 12% 더 내리고 위쪽 40%를 흐림 100%로 — 먼 바다 등대 섬이 흐림 안에 들게(`config.js` `TILT_TOP`, 도착 줌 동안엔 0) |
 | 화면 색보정 | `tokens.css` `--scene-grade` | `#scene { filter }` |
+| 배 색을 바다에 앉히기 (지도만, 10-12) | `config.js` `BOAT_GRADE` (공기층 0.35 · 14~70 · 채도 0.85) | `surface-fx.js` `applyBoatGrade` — 배 재질의 마지막 빛에만. 멀수록 그 시간대 안개색으로 묻히고 쨍한 칠은 한 단 눌린다. 칠한 색 값은 그대로 (`../HANDOFF-map.md` 31장) |
+| 배 기울기 상한 (지도만, 10-12) | `config.js` `BOAT_TILT` (6°까지 그대로, 10°에 부드럽게 붙임) | `world.js` `tick` — 파도 기울기 × 1.5 를 앞뒤·좌우 합친 각으로 누른다 |
 | 비네트 | `tokens.css` `--scene-vignette` | `.sceneVignette` 층 (캔버스 위, 카드들 아래) |
 
 **조명은 설문과 숫자까지 같다.** 같은 시간대(`day`)에서 두 화면의 조명을 읽어 대조했다 —

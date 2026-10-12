@@ -21,7 +21,7 @@ import { buildWater, seaHeightAt, RIPPLE_MAX } from "./ocean.js";
 import { ShipFleet } from "./fleet.js";
 import { buildLandmarks } from "./landmarks.js";
 import { makeSkyDome, skyDir } from "./sky.js";
-import { setSurfaceFxSky, setSurfaceFxViewport } from "./surface-fx.js";
+import { setSurfaceFxSky, setSurfaceFxViewport, setBoatGrade } from "./surface-fx.js";
 import { TiltShift } from "./tilt-shift.js";
 import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed } from "./motion.js";
 import { makeStyle } from "./style.js";
@@ -31,6 +31,8 @@ import { TourCamera } from "./camera.js";
 // 여기서는 배마다 상태가 달라서 바다 하나에 하나의 값만 쓸 수 있다.
 // 0.35 = 잔잔하되 죽지는 않은 정도 (ampScale 0.82, chop 0.20).
 const WIND_T = 0.35;
+// 배 기울기 상한(라디안) — config.js BOAT_TILT(도)
+const TILT_KNEE = (C.BOAT_TILT.knee * Math.PI) / 180, TILT_CAP = (C.BOAT_TILT.cap * Math.PI) / 180;
 // 줌이 겨누는 높이 — 흘수선이 아니라 선체·캐빈의 가운데쯤 (배 몸 높이 약 0.9)
 const ARRIVAL_AIM_Y = 0.45;
 
@@ -99,6 +101,8 @@ export class MapWorld {
     this.scene.add(new THREE.HemisphereLight(hemiSky, hemiGround, P.ambI * B * L.hemiScale));
     // 배 광택·테두리 빛이 비칠 하늘색 — 지금 시간대 하늘 띠(surface-fx.js, 설문과 같은 규칙)
     setSurfaceFxSky(P.sky);
+    // 배 색을 바다에 앉히기 — 멀수록 그 시간대 안개색으로(config.js BOAT_GRADE, surface-fx.js 머리말)
+    setBoatGrade({ ...C.BOAT_GRADE, hazeColor: P.fog });
 
     this.water = buildWater();
     this.scene.add(this.water);
@@ -583,8 +587,14 @@ export class MapWorld {
         const gzh = (seaHeightAt(x, z + d, t, 0, this.ampScale) - h0) / d;
         const ch = Math.cos(heading), sh = Math.sin(heading);
         // 뱃머리가 +X라 앞뒤 흔들림(피치)은 Z축 회전, 좌우 흔들림(롤)은 X축 회전이다.
-        const pitch = -(gxh * ch + gzh * sh) * 1.5;
-        const roll = (-gxh * sh + gzh * ch) * 1.5;
+        let pitch = -(gxh * ch + gzh * sh) * 1.5;
+        let roll = (-gxh * sh + gzh * ch) * 1.5;
+        // 기울기 상한 — 앞뒤·좌우를 합친 기울기가 TILT.cap 을 넘지 않게 부드럽게 누른다(방향은 그대로).
+        const tilt = Math.hypot(pitch, roll);
+        if (tilt > TILT_KNEE) {
+          const k = (TILT_KNEE + (TILT_CAP - TILT_KNEE) * Math.tanh((tilt - TILT_KNEE) / (TILT_CAP - TILT_KNEE))) / tilt;
+          pitch *= k; roll *= k;
+        }
         this.fleet.writeMatrix(i, x, h0, z, heading, scale, pitch, roll);
       }
       this.fleet.commit();
