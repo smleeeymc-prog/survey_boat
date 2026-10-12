@@ -41,6 +41,59 @@ const U = {
   uFxViewH: { value: 1080 },   // 그리기 버퍼 높이(px) — main.js 가 창 크기 바뀔 때 넣는다
 };
 
+/* ── 배 색을 바다에 앉히기(지도 전용, 10-12) ─────────────────────────────────────
+ * 사용자: "배 색이 비비드해서인지 배경과 배들이 조화가 안 된다 — 채도인지 광택·라이팅인지 텍스처인지".
+ * 같은 프레임에서 요인을 하나씩 바꿔 배 픽셀과 그 뒤 바다의 색 거리(OKLab ΔE)를 쟀다(HANDOFF-map 31장):
+ *   지금 0.197(명도 차 0.156 · 색 차 0.096) · 채도 −30% 0.190 · 광택 끔 0.203 · 해를 설문 쪽 0.218 · 구운 AO 절반 0.196 ·
+ *   채움광 ×1.4 0.197 · **거리 공기층 0.150**(+ 채도 0.85 → 0.147, 쨍한 배 p90 채도 0.122 → 0.096)
+ * 범인은 채도보다 **공기층이 없는 것**이었다. 바다·하늘은 멀수록 하늘빛에 묻혀 밝고 옅어지는데(물 셰이더의 프레넬·안개),
+ * 배는 안개(40~150)가 거의 안 닿는 깊이(12~44)라 먼 배까지 진하고 어두운 채로 또렷해서 바다 위에 오려 붙인 것처럼 떴다.
+ * 그래서 배만 거리에 따라 그 시간대 안개색으로 조금씩 묻히게 하고(haze), 쨍한 칠을 한 단 누른다(sat). 칠한 색 값(참여자가
+ * 고른 색·배 칸 표)은 그대로고 마지막 빛에만 건다 — 셰이더 몇 줄, draw call·텍스처 그대로.
+ */
+const G = {
+  uGradeSat: { value: 1 },
+  uGradeHaze: { value: 0 },
+  uGradeHazeCol: { value: new THREE.Color() },
+  uGradeNear: { value: 14 },
+  uGradeFar: { value: 70 },
+};
+
+/**
+ * @param {{sat?: number, haze?: number, hazeColor?: (string|number), near?: number, far?: number}} g
+ *   sat 채도 배수 · haze 가장 멀 때 안개색으로 묻히는 몫 · near~far 카메라에서의 거리(이 사이에서 0 → haze)
+ */
+export function setBoatGrade(g) {
+  if (g.sat !== undefined) G.uGradeSat.value = g.sat;
+  if (g.haze !== undefined) G.uGradeHaze.value = g.haze;
+  if (g.hazeColor !== undefined) G.uGradeHazeCol.value.set(g.hazeColor);
+  if (g.near !== undefined) G.uGradeNear.value = g.near;
+  if (g.far !== undefined) G.uGradeFar.value = g.far;
+}
+
+/**
+ * 배 재질에 색 맞추기를 건다 — 표면 효과가 없는 재질(클로버 데칼)에도. 표면 효과 뒤에 걸어야 광택까지 같이 묻힌다
+ * (같은 자리 opaque_fragment 앞에 차례로 들어간다).
+ */
+export function applyBoatGrade(mat) {
+  if (!mat.isMeshStandardMaterial) return;
+  patchMaterial(mat, "boat-grade", (shader) => {
+    Object.assign(shader.uniforms, G);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("void main() {", `
+      uniform float uGradeSat, uGradeHaze, uGradeNear, uGradeFar;
+      uniform vec3 uGradeHazeCol;
+      void main() {`)
+      .replace("#include <opaque_fragment>", `
+      {
+        float gL = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
+        outgoingLight = mix(vec3(gL), outgoingLight, uGradeSat);
+        outgoingLight = mix(outgoingLight, uGradeHazeCol, uGradeHaze * smoothstep(uGradeNear, uGradeFar, length(vViewPosition)));
+      }
+      #include <opaque_fragment>`);
+  });
+}
+
 /** 그리기 버퍼 높이(px). 배가 화면에서 몇 픽셀인지 재는 데 쓴다. */
 export function setSurfaceFxViewport(heightPx) {
   U.uFxViewH.value = heightPx;
