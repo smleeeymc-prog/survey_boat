@@ -148,9 +148,12 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
   await page.locator(".qnext").waitFor({ timeout: 30000 });   // 바다로 내려앉은 뒤 첫 질문
+  await page.waitForTimeout(1100);                             // 첫 질문은 페이드·살짝 떠오르며 나타난다 — 다 선 뒤에 누른다
   // 세로 선택지에서 그 항목을 눌러 가운데로 — 스크롤이 멈추면 고른 값이 된다
   const pickItem = async (label, key) => {
-    await page.locator(".picker-item", { hasText: label }).first().click();
+    // 좌표로 누르지 않고 항목에 클릭을 직접 보낸다 — 목록 칸 가장자리에 반쯤 가려진 항목을 좌표로 누르면, 테스트 도구가
+    // 끌어올리는 순간 스냅이 한 칸 걸려 이웃 항목이 눌렸다(10-13, 불규칙 실패). 클릭 → 그 항목이 가운데로 굴러오는 길은 그대로 본다.
+    await page.locator(".picker-item", { hasText: label }).first().dispatchEvent("click");
     await page.waitForFunction(([k, v]) => state[k] === v, [key, label], { timeout: 10000 });
   };
   if (region) await pickItem(region, "region");

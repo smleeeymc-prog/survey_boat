@@ -307,6 +307,10 @@ const CAM_STEPS = {
 };
 // 전환에 걸리는 시간(초). ease-in-out이라 시작과 끝이 부드럽다.
 const CAM_MOVE_SEC = 1.1;
+// 하늘에서 내려와 첫 질문이 뜰 때(prompt → 지역, 이어 쓰기도) — 질문 판이 페이드로 올라오는 동안 카메라도 더 길고 완만하게 출발한다(10-13 사용자).
+// 구도(FRAMING) 스프링도 이때만 느리게(w 5.4 → 2.9 — 99% 까지 약 1.2초 → 2.3초). 출발값은 늘 직전 값 그대로라 이어진다.
+const CAM_ENTER_SEC = 2.0;
+const FRAME_SPRING_W = 5.4, FRAME_ENTER_W = 2.9;
 // 카메라가 배를 따라가는 속도 상한(월드 단위/초).
 // 상태를 바꾸면 배가 순간이동한다 — '돌아온 사람'은 -2.4로, '오가는 중'에서 나오면 0으로.
 // 카메라가 그대로 따라붙으면 월드에 고정된 바다 전체가 한 프레임에 그 거리만큼 훑고 지나가
@@ -3981,7 +3985,7 @@ ${CAT_COAT_GLSL}
    * 단계에 맞는 카메라 목적지를 건다. 이미 같은 목적지면 다시 시작하지 않는다
    * (같은 단계에서 render()가 여러 번 불리는데 그때마다 전환이 재시작되면 안 된다).
    */
-  _setCamStep(step) {
+  _setCamStep(step, dur = CAM_MOVE_SEC) {
     const p = CAM_STEPS[step] || CAM_DEFAULT;
     const to = { tx: p.target[0], ty: p.target[1], tz: p.target[2], radius: p.radius, widen: p.widen || CAM_MAX_WIDEN };
     if (!this._camCur) { this._camCur = { ...to }; this._camFrom = { ...to }; this._camTo = to; this._camT = 1; return; }
@@ -3990,7 +3994,7 @@ ${CAT_COAT_GLSL}
     this._camFrom = { ...this._camCur };
     this._camTo = to;
     this._camT = 0;
-    this._camDur = CAM_MOVE_SEC;
+    this._camDur = dur;
   }
 
   show(step, appState) {
@@ -4010,7 +4014,14 @@ ${CAT_COAT_GLSL}
     this.setPaint(appState.hullColor || "base", appState.tone === "two" ? (appState.deckColor || "base") : "auto");
     this.setProps(appState.props || {}, appState.catCoat || "calico");
 
-    this._setCamStep(step);
+    // 첫 화면(하늘)에서 질문으로 처음 들어설 때만 더 길고 완만하게. 같은 단계로 render()가 여러 번 와도 한 번만 정한다
+    if (step !== this._shownStep) {
+      const entering = (this._shownStep === "prompt" || this._shownStep === "onboard") && QUESTION_STEPS.includes(step);
+      this._enterDur = entering ? CAM_ENTER_SEC : CAM_MOVE_SEC;
+      this._frameW = entering ? FRAME_ENTER_W : FRAME_SPRING_W;
+      this._shownStep = step;
+    }
+    this._setCamStep(step, this._enterDur || CAM_MOVE_SEC);
 
     if (step !== "result") {
       this.bottleTarget = 0;
@@ -4719,7 +4730,7 @@ ${CAT_COAT_GLSL}
     if (!this._frame) { this._frame = { ...ft }; this._frameV = { shift: 0, zoom: 0 }; }
     for (const key of ["shift", "zoom"]) {
       const fs = { x: this._frame[key], v: this._frameV[key] };
-      springStep(fs, ft[key], dt, 5.4);
+      springStep(fs, ft[key], dt, this._frameW || FRAME_SPRING_W);
       this._frame[key] = fs.x; this._frameV[key] = fs.v;
     }
     // 키워드 단계 맞춤 거리 (KEYWORD_FIT). 다른 단계에서는 1로 돌아간다.

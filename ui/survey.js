@@ -53,7 +53,12 @@ const app = document.getElementById("app");
 // 새로고침·브라우저 종료 전에 쓰던 기록 — 있으면 첫 화면에서 이어 쓸지 묻는다 (ui/draft.js)
 let resumeDraft = Draft.read();
 
-function render(){
+/**
+ * @param {{fade?: boolean}} [opts] fade — 질문 단계를 페이드로 올린다(하늘에서 내려앉은 뒤 첫 질문 · 이어 쓰기, descendTo).
+ *   페이드 클래스는 화면에 끼우기 **전에** 붙인다 — 끼운 뒤에 붙이면 그 사이 스크롤 값을 읽는 순간 브라우저가 불투명(1)으로
+ *   한 번 확정해 버려 페이드가 1→0→1 로 꺾이며 사실상 안 보였다(10-13 사용자: "UI가 갑자기 나온다").
+ */
+function render(opts){
   ViewportGuard.release();   // 입력칸이 포커스를 쥔 채 지워지지 않게 — 키보드를 먼저 닫는다 (ui/viewport-guard.js)
   app.innerHTML = "";
   const el = document.createElement("div");
@@ -72,7 +77,10 @@ function render(){
   else if(state.step==="result") el.appendChild(renderResult());
   else if(state.step==="archive") el.appendChild(renderArchive());
 
+  const fadeEl = opts && opts.fade ? el.querySelector(".step") : null;
+  if(fadeEl) fadeEl.classList.add("step-fade");
   app.appendChild(el);
+  if(fadeEl) requestAnimationFrame(() => requestAnimationFrame(() => fadeEl.classList.add("show")));
   // 단계에 따라 바뀌는 무대 요소(결과 화면의 비네트 등)는 CSS가 이 값을 본다
   document.body.dataset.step = state.step;
   // 질문 단계는 페이지를 화면에 묶는다(survey.css html.lock). 이미 밀려 있었으면 제자리로
@@ -257,12 +265,7 @@ function renderPrompt(){
 function descendTo(step){
   if(!window.BottleScene){ state.step = step; render(); return; }
   window.BottleScene.introDescend(() => {
-    setTimeout(() => {
-      state.step = step; render();
-      const el = document.querySelector(".step");
-      if(el){ el.classList.add("step-fade");
-        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("show"))); }
-    }, 500);
+    setTimeout(() => { state.step = step; render({ fade: true }); }, 500);
   });
 }
 

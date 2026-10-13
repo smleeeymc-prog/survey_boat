@@ -57,8 +57,13 @@ html.lock #app{ min-height:100%; }
    걸면 누를 때마다 UI 전체가 깜빡인다. 등장은 단계가 바뀔 때만 따로 건다(.step-fade). */
 .screen{ display:flex; flex-direction:column; flex:1; }
 .step{ display:flex; flex-direction:column; flex:1; }
-.step.step-fade{ opacity:0; transition:opacity .7s ease; }
+.step.step-fade{ opacity:0; transition:opacity 1s cubic-bezier(.33,0,.2,1); }
 .step.step-fade.show{ opacity:1; }
+/* 질문 판은 살짝 떠오르며(8px) 나타난다 — 천천히 출발해 부드럽게 멈춘다. 카메라도 이때 같이 완만하게 출발한다(index.html CAM_ENTER_SEC).
+   폭·시간을 작게 둔다 — 떠오르는 중에 누르면 손가락 아래 항목이 옮겨 가 있다(E2E 에서 이웃 항목이 눌렸다) */
+.step.step-fade .qpanel{ transform:translateY(8px); transition:transform .8s cubic-bezier(.3,0,.2,1); }
+.step.step-fade.show .qpanel{ transform:none; }
+@media (prefers-reduced-motion: reduce){ .step.step-fade, .step.step-fade .qpanel{ transition:none; } }
 .fade-stage{ opacity:0; transform:translateY(8px); transition:opacity .8s ease, transform .8s ease; }
 .fade-stage.show{ opacity:1; transform:none; }
 
