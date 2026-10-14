@@ -768,7 +768,7 @@ function renderResult(){
 
   const bottom = h("div", "res-bottom fade-stage");
   bottom.appendChild(h("p", "res-label", "MY SENTENCE · 지금 이곳"));
-  bottom.appendChild(h("p", "res-sentence", `“${state.text}”`));
+  bottom.appendChild(h("p", "res-sentence" + (state.text.length > 40 ? " long" : ""), `“${state.text}”`));
   bottom.appendChild(h("p", "res-meta", [placeOf(state), stateLabel(state.stateId), ...state.keywords].join(" · ")));
   bottom.appendChild(h("p", "res-note", "당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다."));
   const btn = h("button", "cta");

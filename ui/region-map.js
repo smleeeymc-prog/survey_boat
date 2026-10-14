@@ -59,6 +59,10 @@ const RegionMap = (() => {
     const wrap = document.createElement("div");
     wrap.className = "rmap";
     const map = svg("svg", { viewBox: `${VB.x} ${VB.y} ${VB.w} ${VB.h}`, class: "rmap-svg", role: "group", "aria-label": "충청남도 시·군 지도" });
+    // 두께 — 같은 모양을 2px 씩 아래로 겹쳐 그린다. [10-14] 예전엔 CSS filter(drop-shadow)로 냈는데 iOS 사파리가 SVG 안의 CSS filter 를
+    // 제대로 못 그려 고른 곳이 반투명해 보이고 누를 때마다 검은 사각형이 떴다(사용자 사진) — 필터를 쓰지 않는다.
+    const allD = Object.values(CONTEXT).concat(names.map((n) => GEO[n][2])).join("");
+    for (const dy of [8, 6, 4, 2]) map.appendChild(svg("path", { class: "rmap-side", d: allD, transform: `translate(0 ${dy})`, "aria-hidden": "true" }));
     const base = svg("g", { class: "rmap-base" });
     for (const n in CONTEXT) base.appendChild(svg("path", { class: "rmap-ctx", d: CONTEXT[n], "aria-hidden": "true" }));
     const areas = {}, lifts = {}, hits = [];
@@ -74,7 +78,8 @@ const RegionMap = (() => {
     // 지역마다 금색 덮개 — 고르면 떠오르며 나타나고(옆면 두께도 같이), 풀리면 가라앉으며 사라진다
     for (const n of names) {
       const g = svg("g", { class: "rmap-lift", "data-area": n, "aria-hidden": "true" });
-      g.appendChild(svg("path", { d: GEO[n][2] }));
+      for (const dy of [6, 4, 2]) g.appendChild(svg("path", { class: "rmap-lift-side", d: GEO[n][2], transform: `translate(0 ${dy})` }));
+      g.appendChild(svg("path", { class: "rmap-lift-top", d: GEO[n][2] }));
       map.appendChild(g);
       lifts[n] = g;
     }

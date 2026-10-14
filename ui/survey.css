@@ -40,8 +40,11 @@ body{
 /* 질문 단계엔 페이지가 스크롤될 일이 없다(판·표시줄이 다 고정). 그런데 iOS 사파리의 100vh는 주소창이 접힌 높이라
    주소창이 보일 때 문서가 그만큼 길어져, 팔레트를 쓸어 올리면 페이지가 밀렸다(10-07 사용자: 색 단계에서 화면이 하늘만
    보이고 이전·다음이 안 눌림). 질문 단계에선 문서를 화면 높이에 묶고 스크롤·당김을 끈다. 아카이브는 제 스크롤 상자가 있다. */
-html.lock, html.lock body{ height:100%; overflow:hidden; overscroll-behavior:none; }
-html.lock #app{ min-height:100%; }
+/* [10-14] overflow:hidden 은 뺐다 — 잠긴 페이지에선 iOS 가 키보드가 닫힌 뒤 고정된 판의 터치 자리를 되맞추지 못해(스크롤이 한 번 일어나야
+   맞춰지는데 스크롤 자체가 막혀) "문장 쓰기 뒤로 버튼 눌리는 곳이 위로 밀린다"(사용자 사진)가 이어졌다. 대신 문서 높이를 지금 보이는 화면
+   높이(dvh — 주소창을 뺀 높이)에 정확히 맞춰 밀릴 자리가 없게 한다. 되맞추기는 ui/viewport-guard.js(1px 스크롤했다 되돌리기). */
+html.lock, html.lock body{ overscroll-behavior:none; }
+html.lock body, html.lock #app{ min-height:100%; min-height:100dvh; }
 #app{ width:100%; max-width:520px; min-height:100vh; padding:32px 20px 60px;
   display:flex; flex-direction:column; position:relative; z-index:2;
   pointer-events:none; user-select:none; -webkit-user-select:none; }
@@ -153,19 +156,20 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
    두께는 그림자 겹치기(2px × n)로 낸다. 떠오른 덮개는 옆면도 같이 자라서 바닥에 닿는다. 움직임은 짧고 가볍게(살짝 튀었다 앉는다). */
 .rmap{ position:relative; width:100%; max-width:338px; align-self:center; }
 .rmap-svg{ display:block; width:100%; height:auto; overflow:visible; }
-.rmap-base{ stroke:#0c1319; stroke-width:1.6; stroke-linejoin:round;
-  filter:drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560) drop-shadow(0 2px 0 #3e5560); }
+.rmap-base{ stroke:#0c1319; stroke-width:1.6; stroke-linejoin:round; }
+.rmap-side{ fill:#3e5560; stroke:#3e5560; stroke-width:1.6; stroke-linejoin:round; }   /* 두께 — 겹쳐 그린 모양(CSS filter 를 쓰지 않는다: iOS 사파리) */
 .rmap-ctx{ fill:#56676d; }
-.rmap-area{ fill:#a9bcc2; cursor:pointer; outline:none; transition:fill .2s ease; }
+.rmap-area{ fill:#a9bcc2; cursor:pointer; outline:none; transition:fill .2s ease; -webkit-tap-highlight-color:transparent; }
 .rmap-area:focus-visible{ fill:#c6d6db; }
 @media (hover:hover){ .rmap-area:hover{ fill:#bccdd2; } }
-.rmap-hit{ fill:transparent; cursor:pointer; }
-.rmap-lift{ fill:#E6C79A; stroke:#0c1319; stroke-width:1.4; stroke-linejoin:round; pointer-events:none; cursor:pointer;
-  opacity:0; transform:translateY(0);
-  filter:drop-shadow(0 0 0 #8e7148) drop-shadow(0 0 0 #8e7148) drop-shadow(0 0 0 #8e7148);
-  transition:transform .38s cubic-bezier(.25,1.25,.5,1), filter .38s cubic-bezier(.25,1.25,.5,1), opacity .24s ease; }
-.rmap-lift.on{ opacity:1; transform:translateY(-6px);
-  filter:drop-shadow(0 2px 0 #8e7148) drop-shadow(0 2px 0 #8e7148) drop-shadow(0 2px 0 #8e7148); }
+.rmap-hit{ fill:transparent; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+/* 고른 곳 — 금색 덮개(윗면 + 겹친 옆면)가 6px 떠오른다. 옆면은 떠오른 만큼 아래로 닿는다. 불투명 */
+.rmap-lift{ pointer-events:none; cursor:pointer; opacity:0; transform:translateY(0);
+  transition:transform .38s cubic-bezier(.25,1.25,.5,1), opacity .24s ease; -webkit-tap-highlight-color:transparent; }
+.rmap-lift.on{ opacity:1; transform:translateY(-6px); }
+.rmap-lift-top{ fill:#E6C79A; stroke:#0c1319; stroke-width:1.4; stroke-linejoin:round; }
+.rmap-lift-side{ fill:#8e7148; stroke:#8e7148; stroke-width:1.4; stroke-linejoin:round; }
+.rmap-svg{ -webkit-tap-highlight-color:transparent; }
 .rmap-tag{ position:absolute; left:50%; top:0; display:flex; flex-direction:column; align-items:center; pointer-events:none;
   opacity:0; transform:translate(-50%, calc(-100% + 6px));
   transition:transform .32s cubic-bezier(.25,1.25,.5,1), opacity .2s ease; }
@@ -269,7 +273,7 @@ body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230p
 .ob-resume-q{ font-family:var(--serif); font-size:21px; line-height:1.5; font-weight:700; color:var(--b-text); word-break:keep-all; }
 .ob-resume-meta{ font-size:12.5px; letter-spacing:.04em; color:rgba(246,242,234,.7); margin-top:8px; }
 .ob-resume-text{ font-family:var(--serif); font-size:15px; line-height:1.55; color:rgba(246,242,234,.9); margin-top:12px;
-  word-break:keep-all; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+  word-break:keep-all; overflow-wrap:break-word; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .ob-resume-text + .cta, .ob-resume-meta + .cta{ margin-top:22px; }
 .ob-fresh{ height:44px; margin-top:6px; padding:0 10px; border:0; background:transparent;
   font-size:13px; color:rgba(246,242,234,.72); text-decoration:underline; text-underline-offset:3px; }
@@ -290,7 +294,9 @@ body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230p
 .res-bottom{ position:fixed; left:calc(var(--side) + 28px); right:calc(var(--side) + 28px); bottom:calc(28px + var(--safe-b));
   display:flex; flex-direction:column; align-items:center; text-align:center; color:var(--b-paper-ink); }
 .res-label{ font-size:11.5px; font-weight:600; letter-spacing:.22em; color:#7A5B32; margin-bottom:14px; }
-.res-sentence{ font-family:var(--serif); font-size:24px; line-height:1.6; font-weight:700; margin-bottom:14px; word-break:keep-all; }
+.res-sentence{ font-family:var(--serif); font-size:24px; line-height:1.6; font-weight:700; margin-bottom:14px; word-break:keep-all; overflow-wrap:break-word; overflow-wrap:anywhere; max-width:100%; }
+/* 긴 문장(40자 넘게)은 한 단계(약 20%) 줄인다 — 10-14 사용자. 띄어쓰기 없는 문장도 위 overflow-wrap 으로 줄을 넘긴다 */
+.res-sentence.long{ font-size:19px; }
 .res-meta{ font-size:13px; color:#4A4640; margin-bottom:10px; }
 .res-note{ font-size:13px; color:#5E5A53; margin-bottom:26px; }
 .res-bottom .cta{ margin-top:0; background:#16181D; color:var(--b-text); }

@@ -28,8 +28,8 @@ const ViewportGuard = (() => {
   /**
    * 밀린 화면을 맨 위로. 입력 중(키보드가 떠 있음)이면 건드리지 않는다 — 브라우저가 입력칸을 보여주려고 민 것이다.
    * [10-12 2차] 질문 단계는 html.lock(높이 100% · overflow hidden — 10-07 색 패널 버그 때 넣었다)이라 scrollTo 가 먹지 않았다.
-   * 사용자: "배 투톤·고양이 할 때쯤부터 살짝 위쪽을 눌러야 선택된다" — 그 잠금이 들어온 때다. 되돌리는 순간만 잠금을 풀고
-   * 스크롤을 0으로 맞춘 뒤 다시 묶는다(한 작업 안이라 화면이 움직이는 틈은 없다). 고정된 판의 그림과 터치 자리가 다시 맞는다.
+   * [10-14 3차] 사용자가 "텍스트 입력 후부터" 밀린다고 정확히 짚었다 — 잠금을 잠깐 푸는 것으로도 안 됐다(문서가 화면보다 길지 않으면
+   * 스크롤이 아예 일어나지 않는다). 잠금에서 overflow:hidden 을 빼고(survey.css html.lock), 여기서 1px 스크롤했다 되돌린다.
    */
   function settle(){
     if(!isLocked() || typing()) return;
@@ -38,15 +38,24 @@ const ViewportGuard = (() => {
     const html = document.documentElement, body = document.body;
     const off = (window.scrollY || 0) + (html.scrollTop || 0) + (body.scrollTop || 0) + (vv ? vv.offsetTop : 0);
     if(!keyboardUsed && off < 0.5) return;
-    const locked = html.classList.contains("lock");
-    if(locked) html.classList.remove("lock");
-    window.scrollTo(0, 0);
-    html.scrollTop = 0;
-    body.scrollTop = 0;
-    void html.offsetHeight;             // 잠금 없이 한 번 배치를 다시 잡게
-    if(locked) html.classList.add("lock");
-    window.scrollTo(0, 0);
+    // [10-14 3차] iOS 는 키보드가 닫힌 뒤 고정된 판의 터치 자리를 "스크롤이 한 번 일어나야" 되맞춘다. 질문 단계 문서는 화면 높이에 딱 맞아
+    // 스크롤할 거리가 없으니, 잠깐 1px 길게 만들어 1px 내렸다 되돌린다(사용자가 살짝 스크롤한 것과 같은 효과). 한 작업 안이라 화면은 안 움직인다.
+    // 같은 작업 안에서 1 → 0 을 하면 브라우저가 합쳐 버려 스크롤이 안 일어난다 — 되돌리기는 다음 프레임에(고정된 판은 안 움직인다)
+    if(nudging) return;
+    nudging = true;
+    const prev = body.style.minHeight;
+    body.style.minHeight = "calc(100dvh + 2px)";
+    void body.offsetHeight;
+    window.scrollTo(0, 1);
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0);
+      html.scrollTop = 0;
+      body.scrollTop = 0;
+      body.style.minHeight = prev;
+      nudging = false;
+    });
   }
+  let nudging = false;
 
   /** 키보드가 닫히는 애니메이션(약 0.3초) 동안과 끝난 뒤까지 몇 번 */
   function settleSoon(){

@@ -502,6 +502,8 @@ html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filte
   font-weight: 700;
   color: var(--t1);
   word-break: keep-all;               /* 한국어는 어절 단위로 끊어야 읽힌다 */
+  overflow-wrap: break-word;
+  overflow-wrap: anywhere;            /* 띄어쓰기 없이 긴 문장(10-14 사용자 사진)은 어절이 한 줄을 넘으니 글자 단위로라도 넘긴다 */
   text-wrap: pretty;
   text-shadow: 0 2px 14px rgba(0, 0, 0, .4);
 }

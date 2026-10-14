@@ -591,7 +591,7 @@
 .sv-textwall.live { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .sv-textwall.live[data-dragging] { cursor: grabbing; }
 .sv-tw-item { display: block; }
-.sv-tw-text { display: block; color: var(--t1); font-weight: 600; line-height: 1.45; word-break: keep-all; }
+.sv-tw-text { display: block; color: var(--t1); font-weight: 600; line-height: 1.45; word-break: keep-all; overflow-wrap: break-word; overflow-wrap: anywhere; }
 .sv-tw-meta { display: block; margin-top: .15em; font-size: .78em; color: var(--t3); font-weight: 600; }
 .report.in .sv-textwall { animation: sv-in 1s var(--ease-out) var(--sv-d0) both; }
 
