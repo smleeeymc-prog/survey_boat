@@ -103,6 +103,7 @@ export class MapWorld {
     setSurfaceFxSky(P.sky);
     // 배 색을 바다에 앉히기 — 멀수록 그 시간대 안개색으로(config.js BOAT_GRADE, surface-fx.js 머리말)
     setBoatGrade({ ...C.BOAT_GRADE, hazeColor: P.fog });
+    this._hazeNow = undefined;   // 줌 중이면 다음 프레임에 줌 몫을 다시 건다(tick)
 
     this.water = buildWater();
     this.scene.add(this.water);
@@ -504,6 +505,10 @@ export class MapWorld {
     if (this.onFrame) this.onFrame(dt);
     this.cam.update(dt);
     this._updatePresent(dt);
+    // 망원으로 당긴 동안은 배의 거리 안개(BOAT_GRADE.haze)를 대부분 걷는다. [10-14] 새 배가 깊이 50까지 뜨게 되자
+    // 그 거리의 안개(22%)에 주인공 배가 허옇게 바래 보였다. 줌 진행에 따라 서서히 — 다른 배는 그동안 화면 밖이다.
+    const haze = C.BOAT_GRADE.haze * (1 - 0.75 * this.cam.zoomT);
+    if (haze !== this._hazeNow) { this._hazeNow = haze; setBoatGrade({ haze }); }
 
     // 바다는 월드에 고정이다 — 카메라를 따라 옮기지 않는다(ocean.js buildWater 머리말).
     this.water.material.uniforms.uTime.value = t;

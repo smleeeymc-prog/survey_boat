@@ -170,6 +170,9 @@ export class TourCamera {
     }
   }
 
+  /** 줌 진행(0 = 평소, 1 = 완전히 당김) — 장면이 줌에 맞춰 바꿀 것(배의 거리 안개)이 읽는다 */
+  get zoomT() { return this._zoomT; }
+
   setAspect(aspect) {
     this.aspect = aspect;
     this.camera.aspect = aspect;

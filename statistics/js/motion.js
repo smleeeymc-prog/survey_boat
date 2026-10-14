@@ -140,7 +140,7 @@ export function poissonRect(w, h, minGap, rng, tries = 24) {
 /**
  * 새 기록의 자리(띠 좌표 x0 · 깊이). 그 기록이 쓰인 순간(phase — 그때 흐름이 민 거리, clockFlow) 화면 왼쪽
  * 등장 구역(깊이 ARRIVAL_DEPTH_MIN~MAX · 그 깊이 9:16 화면 반폭의 ARRIVAL_X_MIN~MAX)에서 이웃과 먼 곳을 고른다.
- *   1. 최소 간격 FLEET_MIN_GAP 을 먼저 지키고  2. 그다음 줌 화면에 이웃이 덜 잡히게(ARRIVAL_CLEAR 타원)
+ *   1. 최소 간격 FLEET_MIN_GAP 을 먼저 지키고  2. 그다음 줌 화면에 이웃이 덜 잡히게(ARRIVAL_CLEAR 타원 — 멀수록 앞뒤로 길다)
  * 구역 안에서 ARRIVAL_TRIES 번 뽑아 보고 둘 다 만족하는 첫 자리, 없으면 가장 나은 자리.
  * 배는 전부 같이 흐르니(토러스) 한 번 벌어진 간격은 영원히 그대로다 — 언제 재도 같다.
  * 난수는 record_id 에서, 이웃은 그때 떠 있던 배 — 같은 기록·같은 차례면 어느 화면에서든 같은 자리가 나온다.
@@ -153,16 +153,26 @@ export function poissonRect(w, h, minGap, rng, tries = 24) {
  * @param {() => number} rng
  */
 export function arrivalSlot(boats, phase, rng) {
+  // 점수는 간격·타원 모두 1에서 잘리므로, 구역 가로 범위에서 옆으로 ARRIVAL_CLEAR.x(> FLEET_MIN_GAP) 넘게 떨어진 배는 볼 필요가 없다.
+  // 미리 걸러 두면 전체 기록을 다시 놓는(새로고침) 시간이 1/3 남짓으로 준다.
+  const xLo = stageHalfWidthAt(ARRIVAL_DEPTH_MIN) * ARRIVAL_X_MIN - ARRIVAL_CLEAR.x;
+  const xHi = stageHalfWidthAt(ARRIVAL_DEPTH_MAX) * ARRIVAL_X_MAX + ARRIVAL_CLEAR.x;
+  const nx = [], nz = [];
+  for (const b of boats) {
+    const px = wrapCorridor(b.slot.x0 + phase);
+    if (px > xLo && px < xHi) { nx.push(px); nz.push(b.slot.depth); }
+  }
   let best = null, bestScore = -Infinity;
   for (let n = 0; n < ARRIVAL_TRIES; n++) {
     const depth = ARRIVAL_DEPTH_MIN + rng() * (ARRIVAL_DEPTH_MAX - ARRIVAL_DEPTH_MIN);
     const x = stageHalfWidthAt(depth) * (ARRIVAL_X_MIN + rng() * (ARRIVAL_X_MAX - ARRIVAL_X_MIN));
+    const clearZ = ARRIVAL_CLEAR.z * Math.max(1, depth / ARRIVAL_CLEAR.ref);   // 멀수록 줌 화면에 앞뒤가 더 들어온다
     let gap = Infinity, ell = Infinity;
-    for (const b of boats) {
-      const dx = wrapCorridor(x - b.slot.x0 - phase), dz = depth - b.slot.depth;
+    for (let k = 0; k < nx.length; k++) {
+      const dx = x - nx[k], dz = depth - nz[k];
       const g = Math.hypot(dx, dz);
       if (g < gap) gap = g;
-      const e = Math.hypot(dx / ARRIVAL_CLEAR.x, dz / ARRIVAL_CLEAR.z);
+      const e = Math.hypot(dx / ARRIVAL_CLEAR.x, dz / clearZ);
       if (e < ell) ell = e;
     }
     const score = Math.min(1, gap / FLEET_MIN_GAP) * 2 + Math.min(1, ell);
