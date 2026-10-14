@@ -12,23 +12,50 @@
  * 대신 가까운 배는 화면을 빨리, 먼 배는 천천히 지나간다 — 그게 깊이감이다.
  *
  * ── 겹침 방지 ──────────────────────────────────────────────────────────────
- * 푸아송 디스크 샘플링(Bridson)을 원반이 아니라 직사각형 띠에 돌린다. 난수는 고정
- * 시드라 같은 데이터면 새로고침해도 바다 모양이 같다(전시 중 재시작에 중요하다).
+ * 새 배는 놓일 때 이웃과의 간격을 직접 재서 자리를 고른다(arrivalSlot). 모두 같이 흐르니 그 간격이 영원히 간다.
+ * 난수는 record_id 에서 — 같은 데이터면 새로고침해도 바다 모양이 같다(전시 중 재시작에 중요하다).
+ * poissonRect 는 "띠가 정원만큼의 배를 최소 간격으로 품을 수 있나"를 재는 데만 쓴다(selfcheck 6).
  *
  * ── 상태별 움직임은? ───────────────────────────────────────────────────────
  * 지금은 흐름 하나뿐이다. 상태에 따라 자리를 나누던 띠 배치는 시안 단계에 뺐다
  * (배의 모습 채널은 style.js — 키워드 요소·배 색·소품 칠·고양이 무늬). 상태별 움직임을 넣으려면
- * 여기 stepBoat에 분기를 넣거나, 깊이·속도 배수를 style.js가 정하게 하면 된다.
+ * world.js tick 의 배 좌표(latticeX)에 분기를 넣거나, 깊이·속도 배수를 style.js가 정하게 하면 된다.
+ *
+ * ── 시계 ──────────────────────────────────────────────────────────────────
+ * [10-14] 흐름은 벽시계를 따른다(clockFlow). 기록마다 "쓰인 순간 화면 왼쪽의 빈 곳"을
+ * 받으므로(arrivalSlot) 전시 화면·둘러보기·새로고침 어디서 열어도 같은 배가 같은 데 떠 있고,
+ * 새 배는 늘 왼쪽에서 떠오른다. 예전엔 화면을 켤 때마다 흐름을 0부터 세고 섞어 둔 순서대로 자리를 줘서
+ * 두 화면이 서로 달랐다.
  * ========================================================================== */
 
 import {
-  FLOW_CORRIDOR_W, FLOW_DEPTH_MIN, FLOW_DEPTH_MAX, FLOW_DIR, FLEET_MIN_GAP,
+  FLOW_CORRIDOR_W, FLOW_DIR, FLEET_MIN_GAP, FLOW_EPOCH,
+  CAM_FOV, CAM_HEIGHT, STAGE_ASPECT, ARRIVAL_CLEAR, ARRIVAL_TRIES,
+  ARRIVAL_DEPTH_MIN, ARRIVAL_DEPTH_MAX, ARRIVAL_X_MIN, ARRIVAL_X_MAX,
 } from "./config.js";
+
+const STAGE_TAN_HALF = Math.tan((CAM_FOV * Math.PI) / 360);
 
 /** 띠 폭을 주기로 좌표를 접는다. 토러스라 정확히 폭만큼 옮겨야 간격이 유지된다. */
 export function wrapCorridor(x) {
   const W = FLOW_CORRIDOR_W;
   return x - W * Math.round(x / W);
+}
+
+/**
+ * 벽시계 시각 tSec(초)에 흐름이 띠를 민 거리(접은 값). 같은 시각이면 어느 화면에서든 같은 값이다.
+ * 한 바퀴 시간으로 먼저 접고 곱한다 — 그냥 곱하면 값이 수억이 돼 소수점이 뭉개진다.
+ */
+export function clockFlow(tSec, speed) {
+  if (!(speed > 0)) return 0;
+  const period = FLOW_CORRIDOR_W / speed;
+  const e = tSec - FLOW_EPOCH;
+  return wrapCorridor(FLOW_DIR * speed * (e - period * Math.floor(e / period)));
+}
+
+/** 그 깊이에서 9:16 무대 화면의 가로 절반(월드) — camera.js frameHalfWidthAt 과 같은 식을 기기와 상관없이 */
+export function stageHalfWidthAt(depth) {
+  return Math.hypot(depth, CAM_HEIGHT) * STAGE_TAN_HALF * STAGE_ASPECT;
 }
 
 /** 고정 시드 난수 (mulberry32). 같은 시드면 언제나 같은 수열. */
@@ -111,45 +138,38 @@ export function poissonRect(w, h, minGap, rng, tries = 24) {
 }
 
 /**
- * 자리 배정기. 띠 안에 미리 뽑아둔 자리를 섞어 두고 순서대로 꺼낸다.
- * 앞에서부터 순서대로 주면 띠 한쪽부터 차곡차곡 차서 부자연스럽다.
+ * 새 기록의 자리(띠 좌표 x0 · 깊이). 그 기록이 쓰인 순간(phase — 그때 흐름이 민 거리, clockFlow) 화면 왼쪽
+ * 등장 구역(깊이 ARRIVAL_DEPTH_MIN~MAX · 그 깊이 9:16 화면 반폭의 ARRIVAL_X_MIN~MAX)에서 이웃과 먼 곳을 고른다.
+ *   1. 최소 간격 FLEET_MIN_GAP 을 먼저 지키고  2. 그다음 줌 화면에 이웃이 덜 잡히게(ARRIVAL_CLEAR 타원)
+ * 구역 안에서 ARRIVAL_TRIES 번 뽑아 보고 둘 다 만족하는 첫 자리, 없으면 가장 나은 자리.
+ * 배는 전부 같이 흐르니(토러스) 한 번 벌어진 간격은 영원히 그대로다 — 언제 재도 같다.
+ * 난수는 record_id 에서, 이웃은 그때 떠 있던 배 — 같은 기록·같은 차례면 어느 화면에서든 같은 자리가 나온다.
+ *
+ * [10-14] 처음엔 미리 뽑은 푸아송 자리(116개)에서 골랐는데, 80척이 떠 있으면 등장 구역을 지나는 빈 자리가
+ * 없는 때가 절반이라(모의 실험 2000건 중 1005건) 새 배가 왼쪽이 아닌 데 떴다. 직접 고르면 늘 구역 안이고,
+ * 간격은 같은 모의 실험에서 99.5%가 2.0 이상(배 길이 1.3 — 안 겹친다).
+ * @param {{slot: {x0: number, depth: number}}[]} boats 지금 떠 있는 배
+ * @param {number} phase
+ * @param {() => number} rng
  */
-export class SlotPool {
-  constructor(seed = 20260824) {
-    const rng = makeRng(seed);
-    const depthSpan = FLOW_DEPTH_MAX - FLOW_DEPTH_MIN;
-    this.slots = poissonRect(FLOW_CORRIDOR_W, depthSpan, FLEET_MIN_GAP, rng).map((p) => ({
-      // 띠 좌표를 월드로 옮긴다. x는 띠 가운데가 0이 되도록, y는 깊이로.
-      x0: p.x - FLOW_CORRIDOR_W / 2,
-      depth: FLOW_DEPTH_MIN + p.y,
-      used: false,
-    }));
-    this.order = this.slots.map((_, i) => i);
-    for (let i = this.order.length - 1; i > 0; i--) {
-      const j = (rng() * (i + 1)) | 0;
-      [this.order[i], this.order[j]] = [this.order[j], this.order[i]];
+export function arrivalSlot(boats, phase, rng) {
+  let best = null, bestScore = -Infinity;
+  for (let n = 0; n < ARRIVAL_TRIES; n++) {
+    const depth = ARRIVAL_DEPTH_MIN + rng() * (ARRIVAL_DEPTH_MAX - ARRIVAL_DEPTH_MIN);
+    const x = stageHalfWidthAt(depth) * (ARRIVAL_X_MIN + rng() * (ARRIVAL_X_MAX - ARRIVAL_X_MIN));
+    let gap = Infinity, ell = Infinity;
+    for (const b of boats) {
+      const dx = wrapCorridor(x - b.slot.x0 - phase), dz = depth - b.slot.depth;
+      const g = Math.hypot(dx, dz);
+      if (g < gap) gap = g;
+      const e = Math.hypot(dx / ARRIVAL_CLEAR.x, dz / ARRIVAL_CLEAR.z);
+      if (e < ell) ell = e;
     }
+    const score = Math.min(1, gap / FLEET_MIN_GAP) * 2 + Math.min(1, ell);
+    if (score > bestScore) { bestScore = score; best = { x0: wrapCorridor(x - phase), depth }; }
+    if (score >= 3) break;
   }
-
-  /**
-   * 빈 자리 하나. 없으면 null.
-   *
-   * 처음 쌓여 있던 기록들을 한꺼번에 놓을 때만 쓴다. 등장 연출을 하는 배는 "화면
-   * 왼쪽 절반, 정해진 깊이 범위"라는 조건이 붙는데, 그 창에 들어와 있는 자리는
-   * 한순간에 서너 개뿐이라 여기서 골라서는 거의 언제나 실패한다
-   * (main.js의 _pickArrivalSpot 머리말 참고).
-   */
-  take() {
-    for (const i of this.order) {
-      const s = this.slots[i];
-      if (s.used) continue;
-      s.used = true;
-      return s;
-    }
-    return null;
-  }
-
-  release(slot) { if (slot) slot.used = false; }
+  return best;
 }
 
 /**
@@ -161,9 +181,7 @@ export function makeBoat(record, slot, startX) {
   return {
     record,
     slot,
-    // 띠 안에서의 진행 거리. 흐름은 이 값만 키우고, 화면 좌표는 여기서 파생된다.
-    // startX 를 주지 않으면 자리의 원래 좌표에서 시작한다. 흐름이 이미 돌고 있는
-    // 중에 들어오는 배는 그만큼 밀린 자리를 받아야 격자가 유지된다 (main.js의 _latticeX).
+    // 지금 가로 좌표. 매 프레임 자리 + 흐름이 민 거리로 다시 쓴다(world.js latticeX) — 배는 자리를 떠나지 않는다.
     x: startX !== undefined ? startX : slot.x0,
     z: slot.depth,
     // 뱃머리는 진행 방향. 파도에 따라 아주 조금씩만 흔들린다.
@@ -179,20 +197,10 @@ export function makeBoat(record, slot, startX) {
 }
 
 /**
- * 뱃머리 흔들림만. 제시 중이라 흐르지 않는 배도 이건 계속 돌려야 한다 —
+ * 뱃머리 흔들림. 흐름이 늦춰져 거의 서 있는 배도 이건 계속 돌려야 한다 —
  * 완전히 굳어 있으면 바다 위에서 혼자 죽은 물체로 보인다.
  */
 export function swayBoat(b, t) {
   const base = FLOW_DIR > 0 ? 0 : Math.PI;
   b.heading = base + Math.sin(t * b.yawSpeed + b.yawPhase) * b.yawAmp;
-}
-
-/**
- * 한 프레임의 흐름.
- * @param {number} speed 월드 단위/초 (main.js가 카메라 화각에서 역산해 넘긴다)
- */
-export function stepBoat(b, dt, t, speed) {
-  // 띠 폭을 다 지나면 반대편 끝으로. 정확히 폭만큼 옮기므로 이웃과의 간격이 유지된다.
-  b.x = wrapCorridor(b.x + FLOW_DIR * speed * dt);
-  swayBoat(b, t);
 }

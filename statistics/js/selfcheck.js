@@ -13,7 +13,7 @@ import * as C from "./config.js";
 // 랩 검사는 공유 파도 표 자체를 본다 — 지도의 seaGain(월드 위치에 따라 다름)은 주기가 없어서 뺀다
 import { waveHeightAt } from "../shared/ocean-core.js";
 import { seaHeightAt } from "./ocean.js";
-import { SlotPool } from "./motion.js";
+import { poissonRect, makeRng } from "./motion.js";
 
 // 전시 화면(index.html)의 패널 DOM. 인터랙티브(explore.html)는 자기 목록을 넘긴다(8번).
 const EXHIBIT_IDS = ["panel", "countNum", "countPlus", "mNext", "mBarFill", "mNextIdx", "mNextLabel", "stageDim",
@@ -124,7 +124,8 @@ export function runSelfChecks(scene, { domIds = EXHIBIT_IDS } = {}) {
   }
 
   // 6) 자리 풀이 정원을 감당하는가. 못 하면 뒤에 온 기록이 조용히 안 그려진다.
-  const pool = new SlotPool();
+  //    [10-14] 자리는 놓일 때 직접 고르지만(motion.js arrivalSlot), 띠가 정원만큼을 최소 간격으로 품을 수 있는지는 여전히 잰다.
+  const pool = { slots: poissonRect(C.FLOW_CORRIDOR_W, C.FLOW_DEPTH_MAX - C.FLOW_DEPTH_MIN, C.FLEET_MIN_GAP, makeRng(20260824)) };
   console.assert(
     pool.slots.length >= C.FLEET_CAPACITY,
     `[selfCheck] 푸아송 자리 ${pool.slots.length}개 < 정원 ${C.FLEET_CAPACITY} ` +

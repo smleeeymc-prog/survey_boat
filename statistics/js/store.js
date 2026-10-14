@@ -103,7 +103,7 @@ export class MockStore {
     this._timer = null;
   }
 
-  _make(ageSec) {
+  _make(ageSec, at = Date.now()) {
     const src = MOCK_TEXTS[(this.rng() * MOCK_TEXTS.length) | 0];
     // 목업이라도 분포가 한쪽으로 쏠려야 통계 화면이 실제처럼 보인다.
     // 문장은 시드에서 가져오되 지역·상태·키워드는 조금씩 섞는다.
@@ -113,7 +113,7 @@ export class MockStore {
     const kws = swap < 0.55 ? src[3] : [KEYWORDS[(this.rng() * KEYWORDS.length) | 0]];
     return {
       record_id: `mock-${++this.n}`,
-      created_at: new Date(Date.now() - ageSec * 1000).toISOString(),
+      created_at: new Date(at - ageSec * 1000).toISOString(),
       region,
       state,
       text: src[2],
@@ -133,7 +133,10 @@ export class MockStore {
 
   subscribe({ onReady, onInsert }) {
     const seeded = [];
-    for (let i = this.seedCount; i > 0; i--) seeded.push(this._make(i * 900));
+    // 쌓인 기록의 시각은 15분 눈금에 맞춘다 — 전시 화면과 둘러보기를 따로 켜도 같은 기록·같은 시각이라
+    // 바다가 같다(배 자리는 기록 시각에서 정해진다 — motion.js arrivalSlot).
+    const at = Math.floor(Date.now() / 900e3) * 900e3;
+    for (let i = this.seedCount; i > 0; i--) seeded.push(this._make(i * 900, at));
     onReady(seeded);
     if (this.intervalSec > 0) {
       const tick = () => {

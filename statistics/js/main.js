@@ -124,7 +124,7 @@ class Exhibit {
    * 등장 배의 깊이 범위(ARRIVAL_DEPTH_MIN/MAX)를 숫자로 정하기 어려워서 만든 화면.
    * 주요 깊이마다 배를 한 척씩, 전부 같은 화면 가로 위치(왼쪽 절반의 한가운데)에
    * 놓는다. 깊이만 다르므로 화면에서 달라지는 건 크기와 세로 위치뿐이고, 그게 바로
-   * 고르려는 값이다. 흐름은 세워 둔다(frame()의 speed).
+   * 고르려는 값이다. 흐름은 세워 둔다(world.still — 흐름 거리 0).
    * 각 배 위에 그 깊이 숫자를 띄운다 — 보고 마음에 드는 범위를 고르면 된다.
    */
   _setupCalibration() {
@@ -198,7 +198,8 @@ class Exhibit {
       `boats ${W.boats.length} / records ${this.records.length}\n` +
       `draw calls ${info.calls}  tris ${info.triangles.toLocaleString()}\n` +
       `glass ${document.documentElement.dataset.glass}  time ${TIME_KEY}\n` +
-      `flow ${W.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 ${C.FLOW_CROSS_SEC}초에 화면 횡단)`;
+      `flow ${W.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 ${C.FLOW_CROSS_SEC}초에 화면 횡단)\n` +
+      `시계보다 ${(W._lag / W.flowSpeed).toFixed(1)}초 뒤 · 흐름 ×${W._flowMul.toFixed(2)}`;
   }
 }
 

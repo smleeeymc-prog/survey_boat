@@ -23,7 +23,7 @@ import { buildLandmarks } from "./landmarks.js";
 import { makeSkyDome, skyDir } from "./sky.js";
 import { setSurfaceFxSky, setSurfaceFxViewport, setBoatGrade } from "./surface-fx.js";
 import { TiltShift } from "./tilt-shift.js";
-import { SlotPool, makeBoat, stepBoat, swayBoat, wrapCorridor, makeRng, hashSeed } from "./motion.js";
+import { arrivalSlot, makeBoat, swayBoat, wrapCorridor, makeRng, hashSeed, clockFlow, stageHalfWidthAt } from "./motion.js";
 import { makeStyle } from "./style.js";
 import { TourCamera } from "./camera.js";
 
@@ -129,7 +129,6 @@ export class MapWorld {
     this.cam.attachPointer(canvas);
 
     this.tilt = new TiltShift(document);
-    this.slots = new SlotPool();
     this.boats = [];
     this.fleet = null;
     this.landmarks = null;
@@ -142,10 +141,12 @@ export class MapWorld {
     this.lensT = 0;
     this.clock = new THREE.Clock();
     this.elapsed = 0;
-    // 흐름이 지금까지 띠를 얼마나 밀었는가. 도중에 들어오는 배도 이만큼 밀린 자리를
-    // 받아야 푸아송 격자가 유지된다 — 예전에는 자리의 원래 좌표(x0)에서 그냥 시작해서,
-    // 오래 켜 둘수록 새 배가 기존 배 사이에 끼어들 수 있었다.
+    // 흐름이 지금 띠를 얼마나 밀었는가. 배는 전부 "자리 + 이 값"에 있다(latticeX).
+    // [10-14] 벽시계에서 계산한다(motion.js clockFlow) — 전시 화면·둘러보기·새로고침이 같은 바다를 본다.
+    // 배를 보여주느라 흐름을 늦춘 만큼은 시계보다 뒤처지고(_lag, 월드 단위), 끝나면 조금 빨리 흘러 따라잡는다.
     this.flowDist = 0;
+    this._lag = 0;
+    this._flowMul = 1;
 
     // 성능 워치독 — 온보딩과 같은 패턴이되, 리퀴드 글래스까지 같은 스위치에 물린다.
     // 배경이 매 프레임 변하는 WebGL 캔버스라 backdrop-filter가 정적 배경보다 훨씬 비싸다.
@@ -155,7 +156,9 @@ export class MapWorld {
     this._perf = { samples: [], wall: 0, checkAt: 2.0, step: 0 };
 
     this._rippleScratch = [];
-    this.flowSpeed = 0;
+    // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다. 화면은 9:16 무대라
+    // 무대 폭에서 한 번 계산하고 기기·창 크기와 상관없이 고정한다 — 화면마다 다르면 시계를 맞춰도 자리가 어긋난다.
+    this.flowSpeed = (2 * stageHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
     this._resize();
     window.addEventListener("resize", () => this._resize());
   }
@@ -165,10 +168,6 @@ export class MapWorld {
     this.renderer.setSize(w, h, false);
     this._syncFxViewport();
     this.cam.setAspect(w / h);
-    // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다.
-    // 화면 폭은 기기 화면비마다 다르므로 상수로 박을 수 없고, 카메라에서 역산한다.
-    // (창 크기를 바꾸면 속도도 따라 바뀐다 — 전시장에서는 한 번 고정되므로 무해하다)
-    this.flowSpeed = (2 * this.cam.frameHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
   }
 
   /** 표면 효과가 "배가 화면에서 몇 픽셀인가"를 재는 기준 — 그리기 버퍼 높이(픽셀비 포함). */
@@ -191,67 +190,24 @@ export class MapWorld {
   latticeX(slot) { return wrapCorridor(slot.x0 + this.flowDist); }
 
   /**
-   * 등장 연출을 할 배의 자리를 직접 고른다.
-   *
-   * 미리 뽑아둔 푸아송 자리에서 고르지 않는 이유: 화면에 보이는 바다는 띠(88) 중
-   * 10 남짓이고, 그중 왼쪽 절반이면 4 정도다. 115개 자리 가운데 그 창에 들어와 있는
-   * 건 한순간에 서너 개뿐이라, 그것들이 이미 차 있으면 조건을 만족하는 빈 자리가
-   * 아예 없다 — 실제로 그래서 배가 화면 밖 깊이 43에 등장하고 카메라가 28 단위를
-   * 날아갔다. 그래서 조건(왼쪽 절반·깊이 범위)을 먼저 만족시켜 놓고 겹침은 직접 잰다.
-   *
-   * 난수는 record_id에서 유도한다. 같은 기록이면 새로고침해도 같은 자리에 뜬다 —
-   * 이 화면의 다른 난수들과 같은 원칙이다(motion.js 머리말).
+   * 기록 하나를 바다에 놓는다. 처음 쌓여 있던 기록(쓰인 차례대로 — store.js onReady)도, 방금 도착한 기록도 같은 길이다.
+   * 자리는 그 기록이 쓰인 시각에 화면 왼쪽 등장 구역에서 이웃과 먼 곳(motion.js arrivalSlot) —
+   * 방금 쓴 기록이면 지금 왼쪽이라 거기서 떠오르고, 오래된 기록은 그 뒤로 흘러간 만큼 가 있다.
+   * 난수(과녁)는 record_id 에서 — 같은 기록이면 어느 화면에서 열어도 같은 자리다.
+   * [10-14] 예전엔 쌓인 기록은 섞어 둔 순서대로, 새 기록은 그때 빈 곳을 따로 찾아(pickArrivalSpot) 놓고
+   * 보여주는 동안 그 배만 세워 뒀다. 그래서 화면마다·켤 때마다 바다가 달랐다.
    */
-  pickArrivalSpot(record) {
-    const rng = makeRng(hashSeed(String(record.record_id)) ^ 0x5f3a);
-    // 제시하는 동안 이 배만 멈춰 서 있고 나머지는 계속 흐른다. 그 시간만큼 흐름
-    // 방향으로 격자가 밀리므로, 얼어 있는 자리가 곧 "연출이 끝났을 때의 격자 자리"다.
-    // 배가 얼어 있는 시간은 카메라 이동 시간 + 머무는 시간이다. 이동 시간은 거리에서
-    // 나오므로 자리를 정하기 전에는 모른다 — 겹침 검사에는 상한을 쓴다(길게 잡을수록 안전).
-    // 보여주는 동안 흐름은 ARRIVAL_FLOW_MUL 로 늦춰진다(늦춰지고 돌아오는 데 1초 남짓 — 여유로 1.5초 몫을 더한다).
-    const freeze = C.ARRIVAL_ZOOM_SEC + C.ARRIVAL_HOLD_SEC;
-    const lead = C.FLOW_DIR * this.flowSpeed * (freeze * C.ARRIVAL_FLOW_MUL + 1.5);
-    let best = null, bestClear = -Infinity;
-    for (let n = 0; n < 160; n++) {   // 배가 촘촘해서(FLEET_MIN_GAP 2.7) 넉넉한 빈 곳을 찾으려면 더 많이 본다
-      const depth = C.ARRIVAL_DEPTH_MIN + rng() * (C.ARRIVAL_DEPTH_MAX - C.ARRIVAL_DEPTH_MIN);
-      const hw = this.cam.frameHalfWidthAt(depth);
-      const spawnX = hw * (C.ARRIVAL_X_MIN + rng() * (C.ARRIVAL_X_MAX - C.ARRIVAL_X_MIN));
-      // 얼어 있는 동안 이웃들이 옆을 흘러 지나간다. 한 점이 아니라 그 구간 전체에서
-      // 간격이 유지돼야 한다 — 지금 비어 있어도 3초 뒤에 옆구리를 스칠 수 있다.
-      // 한쪽으로만 쓸면 된다: 이 배는 서 있고 남들만 흐른다. 제시는 한 번에 하나뿐이고
-      // 이 자리를 고르는 시점엔 앞 연출이 이미 끝나 있으므로, 서 있는 다른 배는 없다.
-      let clear = Infinity;
-      for (let k = 0; k <= 6; k++) {
-        const x = spawnX - lead * (k / 6);
-        for (const o of this.boats) {
-          // 타원 거리 — 1이면 ARRIVAL_CLEAR 타원 가장자리(옆은 좁게, 앞뒤는 넓게 비운다)
-          const d = Math.hypot(wrapCorridor(x - o.x) / C.ARRIVAL_CLEAR.x, (depth - o.z) / C.ARRIVAL_CLEAR.z);
-          if (d < clear) clear = d;
-        }
-      }
-      if (clear > bestClear) { bestClear = clear; best = { spawnX, depth }; }
-      if (clear >= 1) break;   // 타원 안에 아무도 없으면(줌 화면에 이웃이 안 잡힌다) 더 볼 것 없다
-    }
-    this._lastArrivalClear = bestClear;   // 확인용(?debug)
-    return best;
-  }
-
-  /** 처음 쌓여 있던 기록 — 푸아송 격자에 고르게 놓는다. 수십 척을 한꺼번에 놓는 데는 거절 샘플링보다 낫다. */
   placeRecord(record) {
-    const slot = this.slots.take();
-    if (!slot) return null;
+    const now = Date.now();
+    const t = Date.parse(record.created_at);
+    const at = (Number.isFinite(t) ? Math.min(t, now) : now) / 1000;
+    const rng = makeRng(hashSeed(String(record.record_id)) ^ 0x5f3a);
+    const slot = arrivalSlot(this.boats, clockFlow(at, this.flowSpeed), rng);
     return this._addBoat(record, slot, this.latticeX(slot));
   }
 
-  /**
-   * 등장 연출을 받을 새 기록 — 직접 고른 자리(pickArrivalSpot)에 만든다. 연출이 끝나면 이 배는 여기서부터
-   * 그냥 흐른다. 푸아송 풀에서 꺼낸 게 아니라 새로 만든 자리이고, 겹치지 않는다는 보장은 위에서 직접 잰 것이다.
-   * x0(격자 좌표)는 얼어 있는 시간이 정확히 정해지는 present 에서 확정한다.
-   */
-  spawnArrival(record) {
-    const spot = this.pickArrivalSpot(record);
-    return this._addBoat(record, { x0: 0, depth: spot.depth, used: true }, spot.spawnX);
-  }
+  /** 등장 연출을 받을 새 기록 — 놓는 법은 placeRecord 와 같다(이름은 부르는 쪽 읽기 좋으라고 둔다). */
+  spawnArrival(record) { return this.placeRecord(record); }
 
   _addBoat(record, slot, spawnX) {
     const boat = makeBoat(record, slot, spawnX);
@@ -269,7 +225,6 @@ export class MapWorld {
     // "바다에 떠 있는 배"와 "쌓인 문장"은 다른 값이고, 화면에도 그렇게 적혀 있다.
     while (this.boats.length > C.FLEET_CAPACITY) {
       const gone = this.boats.shift();
-      this.slots.release(gone.slot);
       if (this.presenting === gone) this._cancelPresent();
     }
     this.reindex();
@@ -281,7 +236,6 @@ export class MapWorld {
     const i = this.boats.findIndex((b) => b.record.record_id === recordId);
     if (i < 0) return null;
     const gone = this.boats[i];
-    this.slots.release(gone.slot);
     if (this.presenting === gone) this._cancelPresent();
     this.boats.splice(i, 1);
     this.reindex();
@@ -305,16 +259,17 @@ export class MapWorld {
    * 배는 자기 자리에 생겨서 그대로 있고, 카메라는 제자리에서 그쪽으로 고개를 돌려 렌즈를
    * 당긴다(camera.js 머리말 — 수면 위를 날아가지 않는다).
    *   approach  고개를 돌리며 줌. 줌이 끝나기 0.3초 전에 배가 나타난다       → onPresent("incoming") 시작할 때
-   *   hold      문장 카드를 띄우고 머문다. 배는 흐르지 않는다               → ("shown") 줌이 끝났을 때
-   *   return    카드를 내리고 줌을 푼다. 배는 여기서부터 흐르기 시작한다    → ("hiding") · 다 풀리면 ("done")
+   *   hold      문장 카드를 띄우고 머문다. 흐름이 늦춰진다(카메라가 따라간다) → ("shown") 줌이 끝났을 때
+   *   return    카드를 내리고 줌을 푼다. 흐름이 제 속도로 돌아온다          → ("hiding") · 다 풀리면 ("done")
    *
    * 줌 배율은 "예전 제시 화면보다 배가 3배 크게"(config.js ARRIVAL_ZOOM). 배가 화면에서
    * 차지하는 크기는 거리 × tan(화각/2) 에 반비례하므로 배까지 거리로 화각을 정한다.
    * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y)에 둔다 — 아래에 방금 도착한 문장이 뜬다.
    *
-   * 인터랙티브는 이미 떠 있는 배도 이렇게 본다(opts.appear = false — 나타나는 연출이 없다). 그때는 배를
-   * 혼자 세우지 않는다: 혼자 서 있으면 이웃이 옆을 지나가 격자 간격이 깨지고, 다시 흐를 때 엉뚱한 자리에
-   * 낀다. 대신 흐름 전체를 늦추고(ARRIVAL_FLOW_MUL) 카메라가 그 배를 따라간다 — 상대 위치가 그대로다.
+   * 인터랙티브는 이미 떠 있는 배도 이렇게 본다(opts.appear = false — 나타나는 연출이 없다).
+   * 어느 쪽이든 배를 혼자 세우지 않는다: 혼자 서 있으면 이웃이 옆을 지나가 격자 간격이 깨진다. 대신 흐름
+   * 전체를 늦추고(ARRIVAL_FLOW_MUL) 카메라가 그 배를 따라간다 — 상대 위치가 그대로다.
+   * [10-14] 새 배도 이제 그렇다(예전엔 새 배만 세워 두고 다시 흐를 때 격자 좌표를 새로 줬다 — 시계 흐름과 안 맞는다).
    * 머무는 시간도 정해져 있지 않을 수 있다(hold = Infinity) — release() 로 푼다.
    *
    * @param {object} boat
@@ -332,10 +287,6 @@ export class MapWorld {
     boat.zoomTan = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
     this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, C.ARRIVAL_FRAME_Y);
     boat.camSec = zoomSec;
-    // 새 배는 지금부터 줌 + 머무는 시간 동안 멈춰 있고, 그 동안 격자만 (늦춰진 속도로) 흘러간다.
-    // 격자 좌표(x0)는 이 배가 다시 흐르기 시작하는 순간(return)에 그때의 흐름 거리로 정한다 — 흐름이
-    // 늦춰졌다 돌아오는 모양과 상관없이 정확하다. 예전엔 일정한 속도를 가정해 여기서 미리 역산했다.
-    if (appear) boat.slot.x0 = wrapCorridor(boat.x - this.flowDist);
     this.presenting = boat;
     // 카메라가 먼저 움직인다. 화면의 통계 카드는 지금 바로 비켜서고(panel.js), 줌이 끝나
     // 배가 선 뒤에(hold) 문장 카드가 뜬다 — 레퍼런스의 순서.
@@ -346,7 +297,7 @@ export class MapWorld {
    * 보는 중인 배에서 다른 떠 있는 배로 바로 옮겨 간다(인터랙티브 — 10-11 사용자: 줌아웃했다 다시 줌인하지 말고
    * 곧장 그 배로). 카메라는 지금 보고 있는 데서 새 배의 줌으로 hopSec 동안 옮겨 간다(camera.js hopFrom) —
    * 렌즈도 새 배 거리에 맞춰 당기거나 푼다. 보던 배는 그 자리에서 다시 흐른다(떠 있던 배라 격자 그대로).
-   * 새로 나타나는 중인 배(appear — 혼자 멈춰 서 있다)를 보는 중이면 옮겨 가지 않는다 → false(예전처럼 닫고 다시).
+   * 새로 나타나는 중인 배(appear — 나타나는 연출 중)를 보는 중이면 옮겨 가지 않는다 → false(예전처럼 닫고 다시).
    * 이벤트: 보던 배 "hiding" → 새 배 "incoming" → 옮겨 가기가 끝나면 "shown".
    * @returns {boolean} 옮겨 갔는가
    */
@@ -386,7 +337,6 @@ export class MapWorld {
   _startReturn(b, from = 1) {
     b.phase = "return";
     b.phaseT = (1 - from) * b.camSec;
-    if (b.appear) b.slot.x0 = wrapCorridor(b.x - this.flowDist);   // 지금부터 격자와 함께 흐른다(present 주석)
     b.renderScale = b.appear ? C.ARRIVAL_SCALE : 1;
     this._emit("hiding", b);
   }
@@ -405,8 +355,8 @@ export class MapWorld {
     const b = this.presenting;
     if (!b) { this.cam.setZoomProgress(0); return; }
     b.phaseT += dt;
-    // 떠 있는 배를 보는 중이면 카메라가 그 배를 따라간다(흐름이 늦춰졌을 뿐 멈추진 않았다 — present 머리말)
-    if (!b.appear && b.phase !== "return") this.cam.setZoomTarget(b.x, ARRIVAL_AIM_Y, b.z, b.zoomTan, C.ARRIVAL_FRAME_Y);
+    // 카메라가 그 배를 따라간다(흐름이 늦춰졌을 뿐 멈추진 않았다 — present 머리말)
+    if (b.phase !== "return") this.cam.setZoomTarget(b.x, ARRIVAL_AIM_Y, b.z, b.zoomTan, C.ARRIVAL_FRAME_Y);
 
     if (b.phase === "approach" && b.hop) {
       this.cam.setZoomProgress(1);
@@ -444,7 +394,7 @@ export class MapWorld {
       return;
     }
 
-    // 줌을 푸는 길. 이 구간부터 배도 흐르기 시작한다 (tick()의 stepBoat 조건).
+    // 줌을 푸는 길. 흐름이 제 속도로 돌아온다 (tick()의 _flowMul).
     const k = Math.min(1, b.phaseT / b.camSec);
     this.cam.setZoomProgress(1 - k);
     const wake = this.water.material.uniforms.uWake.value;
@@ -566,18 +516,23 @@ export class MapWorld {
       // 보정 화면(?depths=1)에서는 흐름을 세운다 — 깊이마다 어떻게 보이는지 재는 게
       // 목적이라 배가 지나가 버리면 볼 수가 없다.
       // 배를 보여주는 동안(줌·머묾)은 흐름을 늦춘다 — 이웃이 줌 화면을 쓸고 지나가지 않게(ARRIVAL_FLOW_MUL)
+      // 흐름은 시계를 따르고(constructor 의 flowDist 주석), 늦춘 만큼(_lag) 뒤처졌다가 FLOW_CATCHUP 까지 빨리 흘러 따라잡는다.
+      // 따라잡는 속도는 남은 차이에 비례해 줄어 — 시계에 닿을 때 툭 느려지지 않는다. 차이는 띠 한 바퀴로 접는다(앞서 있으면 늦춘다).
       const a = this.presenting;
-      const mulTo = a && (a.phase === "approach" || a.phase === "hold") ? C.ARRIVAL_FLOW_MUL : 1;
-      this._flowMul = (this._flowMul ?? 1) + (mulTo - (this._flowMul ?? 1)) * Math.min(1, dt * 2.5);
-      const speed = this.still ? 0 : this.flowSpeed * this._flowMul;
-      this.flowDist = wrapCorridor(this.flowDist + C.FLOW_DIR * speed * dt);
+      const slow = a && (a.phase === "approach" || a.phase === "hold");
+      const W = C.FLOW_CORRIDOR_W;
+      this._lag -= W * Math.round(this._lag / W);
+      const mulTo = slow ? C.ARRIVAL_FLOW_MUL
+        : 1 + Math.max(-C.FLOW_CATCHUP, Math.min(C.FLOW_CATCHUP, this._lag / (this.flowSpeed * 4)));
+      this._flowMul += (mulTo - this._flowMul) * Math.min(1, dt * 2.5);
+      this._lag += (1 - this._flowMul) * this.flowSpeed * dt;
+      this.flowDist = this.still ? 0
+        : wrapCorridor(clockFlow(Date.now() / 1000, this.flowSpeed) - C.FLOW_DIR * this._lag);
       for (let i = 0; i < this.boats.length; i++) {
         const b = this.boats[i];
-        // 새로 나타나 제시 중인 배는 흐르지 않는다. 카메라가 돌아가기 시작하는 'return'부터 다시 흐른다.
-        // 이미 떠 있던 배를 보는 중이면 다른 배와 같이 흐른다(present 머리말).
-        // 뱃머리 흔들림은 멈춰 있는 동안에도 돌려야 혼자 죽은 물체로 보이지 않는다.
-        if (!b.phase || b.phase === "return" || !b.appear) stepBoat(b, dt, t, speed);
-        else swayBoat(b, t);
+        // 배는 자리를 떠나지 않는다 — 자리 + 흐름. 뱃머리 흔들림은 거의 서 있을 때도 돌려야 죽은 물체로 안 보인다.
+        b.x = this.latticeX(b.slot);
+        swayBoat(b, t);
         const x = b.x, z = b.z, heading = b.heading;
         const scale = b.phase ? b.renderScale : 1;
 
