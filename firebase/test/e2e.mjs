@@ -170,21 +170,31 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".qnext").click();                        // Ⅳ 나눔
   for (const i of keywordIdx) await page.locator(".kw-word").nth(i).click();   // Ⅴ 키워드
   await page.locator(".qnext").click();
-  await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (명암 판 위 0~1 자리)
+  // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (명암 판 위 0~1 자리)
+  // [10-17] 팔레트·판은 칠할 곳 버튼을 눌러야 열린다(버튼 오른쪽 위 창). openPart 는 그 창을 열고 기다린다
+  await page.locator(".paint-part").first().waitFor();
+  const openPart = async (label) => {
+    const btn = label ? page.locator(".paint-part", { hasText: label }) : page.locator(".paint-part").first();
+    if ((await btn.getAttribute("aria-expanded")) !== "true") await btn.click();
+    await page.locator(".paint-pop.placed").waitFor();   // 자리를 잡은 뒤(그 전엔 숨어 있다)
+    await page.waitForTimeout(250);                       // 떠오르는 움직임(0.18초)이 끝난 뒤에 잰다
+  };
   if (color && color.wheel) {
+    await openPart();
     const box = await page.locator(".paint-sv").boundingBox();
     await page.mouse.click(box.x + box.width * color.wheel[0], box.y + box.height * color.wheel[1]);
   } else if (color) {
     if (color.deck !== undefined) await page.locator(".paint-mode", { hasText: "투톤" }).click();
+    await openPart();
     await page.locator(".paint-pad").nth(color.hull).click();
     if (color.deck !== undefined) {
-      await page.locator(".paint-part", { hasText: "갑판" }).click();
+      await openPart("갑판");
       await page.locator(".paint-pad").nth(color.deck).click();
     }
   }
   // 소품 칠 — props: { 칩 이름: 동그라미 순번 } (고양이는 털 무늬 순번)
   for (const [label, idx] of Object.entries(props || {})) {
-    await page.locator(".paint-part", { hasText: label }).click();
+    await openPart(label);
     await page.locator(label === "고양이" ? ".paint-coat" : ".paint-pad").nth(idx).click();
   }
   await page.locator(".qnext").click();

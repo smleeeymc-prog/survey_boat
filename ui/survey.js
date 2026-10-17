@@ -159,10 +159,15 @@ function questionStep({ title, sub, content, prev, nextLabel = "다음", onNext 
   next.type = "button";
   next.innerHTML = `${nextLabel}${ICON_NEXT}`;
   next.onclick = onNext;
-  nav.appendChild(back); nav.appendChild(next);
+  // [10-17 UX] 다음이 잠겨 있으면 왜 잠겼는지 바로 옆에 적는다(setLock). 회색 버튼만 보이면 무엇을 해야 하는지 모른다
+  const hint = h("span", "qhint");
+  hint.setAttribute("aria-live", "polite");
+  nav.appendChild(back); nav.appendChild(hint); nav.appendChild(next);
   panel.appendChild(nav);
   d.appendChild(panel);
-  return { el: d, next };
+  /** 다음 잠금 + 이유. reason 이 없으면 풀린다 */
+  const setLock = (reason) => { next.disabled = !!reason; hint.textContent = reason || ""; };
+  return { el: d, next, setLock };
 }
 
 /** 씬(모듈)이 준비될 때까지 기다린다. 끝내 안 오면(WebGL 실패 등) 없는 채로 부른다. */
@@ -327,7 +332,8 @@ function renderRegion(){
   const picker = snapPicker(
     REGIONS.map(r => ({ id: r, label: r })), state.region,
     // 고르는 즉시 씬의 모래 색도 바꾼다 (다음 단계로 넘어갈 때까지 기다리지 않게)
-    (v) => { state.region = v; if(window.BottleScene) window.BottleScene.applyRegion(v); }
+    (v) => { state.region = v; if(window.BottleScene) window.BottleScene.applyRegion(v); },
+    "지역"
   );
   return questionStep({
     title: "지금 활동하는 지역은 어디인가요?",
@@ -349,14 +355,14 @@ function renderRegionDetail(){
   let step = null;
   const map = RegionMap.create(list, state.regionDetail, (v) => {
     state.regionDetail = v;
-    if(step) step.next.disabled = !v;
+    if(step) step.setLock(v ? null : "지도에서 골라주세요");
     Draft.save(state);   // render()를 안 부르므로 이어 쓰기 저장은 여기서
   });
   let content;
   if(map) content = map.el;
   else {
     if(!list.includes(state.regionDetail)) state.regionDetail = list[0];
-    content = snapPicker(list.map(r => ({ id: r, label: r })), state.regionDetail, (v) => { state.regionDetail = v; });
+    content = snapPicker(list.map(r => ({ id: r, label: r })), state.regionDetail, (v) => { state.regionDetail = v; }, "세부 지역");
   }
   step = questionStep({
     title: `${state.region} 중 어디인가요?`,
@@ -364,7 +370,7 @@ function renderRegionDetail(){
     content, prev: "region",
     onNext: () => { if(!state.regionDetail) return; state.step = "state"; render(); },
   });
-  step.next.disabled = !state.regionDetail;
+  step.setLock(state.regionDetail ? null : "지도에서 골라주세요");
   return step.el;
 }
 
@@ -373,7 +379,8 @@ function renderState(){
   // 고른 상태의 설명(desc)은 적지 않는다 — 사용자 결정(09-30): 고른 것에 딸린 설명은 뺀다
   const picker = snapPicker(
     STATES.map(x => ({ id: x.id, label: x.label })), state.stateId,
-    (v) => { state.stateId = v; if(window.BottleScene) window.BottleScene.setMode(v); }
+    (v) => { state.stateId = v; if(window.BottleScene) window.BottleScene.setMode(v); },
+    "지금 상태"
   );
   return questionStep({
     title: "지금 당신의 상태에 가장 가까운 것은?",
@@ -403,9 +410,9 @@ function renderSentence(){
     state.text = ta.value;
     Draft.save(state);
     count.textContent = `${ta.value.length} / 80`;
-    step.next.disabled = ta.value.trim().length === 0;
+    step.setLock(ta.value.trim().length === 0 ? "한 문장을 적어주세요" : null);
   });
-  step.next.disabled = state.text.trim().length === 0;
+  step.setLock(state.text.trim().length === 0 ? "한 문장을 적어주세요" : null);
   return step.el;
 }
 
@@ -454,9 +461,9 @@ function renderKeywords(){
 }
 
 /* ── Ⅵ 색 — 배를 칠한다 (10-06 · 10-07 사용자) ──────────────────────────────
-   위 왼쪽: 원톤 · 투톤 / 칠할 곳 칩 — 투톤이면 선체 · 갑판, 고른 키워드에 소품이 있으면 그 소품도(튜브·서핑보드·클로버·고양이).
-   위 오른쪽: 명암 판(가로 채도 · 세로 밝기) + 그 아래 색조 막대 — dh 전시의 색 고르기처럼.
-   아래: 기본 + 팔레트 한 줄(지도 톤 작품 색 8개, 빨주노초파남보흑 순). 고양이는 색 대신 털 무늬 다섯(판은 숨긴다).
+   원톤 · 투톤 / 칠할 곳 이름을 가로 한 줄 — 원톤이면 배, 투톤이면 선체 · 갑판, 고른 키워드에 소품이 있으면 그 소품도(튜브·서핑보드·클로버·고양이).
+   이름을 누르면 그 버튼 오른쪽 위에 색 창(10-17): 기본 + 팔레트(지도 톤 작품 색 8개, 빨주노초파남보흑 순) +
+   명암 판(가로 채도 · 세로 밝기)과 색조 막대 — dh 전시의 색 고르기처럼. 고양이는 색 대신 털 무늬 다섯.
    배는 고른 색 그대로 보이게 칠한다(원색 — 10-07 "원색 버전으로 가자". 예전 '누름' 방식과 시험 체크는 뺐다).
    팔레트를 누르면 명암 판·색조 막대의 표시도 그 색 자리로 옮겨 간다(값은 팔레트 id 그대로 — 통계에서 셀 수 있게).
    판·막대를 움직이면 "#rrggbb"가 된다. 둘 다 statistics/shared/boat-look.js 가 배 색으로 푼다.
@@ -489,27 +496,66 @@ function applyPaint(scene, opts){
   scene.setProps(state.props, state.catCoat);
 }
 
+/* [10-17 UX] 팔레트·명암 판은 늘 펼쳐 두지 않는다 — 칠할 곳 이름(선체·갑판·소품)을 가로로 늘어놓고, 누르면 그 버튼의
+   오른쪽 위에 작은 창(팝오버)으로 연다(사용자). 화면엔 칠할 곳과 지금 색만 남아 고를 게 한눈에 들어온다(점진적 공개).
+   창은 다시 누르기 · 바깥 누르기 · ✕ · Esc 로 닫힌다. 색을 바꿔도 창은 열린 채라 여러 색을 차례로 대 볼 수 있다.
+   paintOpen 은 화면용 — 이어 쓰기에 저장하지 않는다. */
+let paintOpen = null;          // 지금 창이 열린 칠할 곳 id (닫혀 있으면 null)
+let paintOpenAnim = false;     // 방금 열었으면 한 번만 떠오르는 움직임을 준다(색을 바꿀 때마다 다시 그려도 깜빡이지 않게)
+let paintKeyOpen = false;      // 키보드로 열었으면 창 안으로 초점을 옮긴다
+/** 창을 화면만 고쳐서 닫는다 — 바깥을 누른 그 순간 화면을 통째로 다시 만들면 그 손가락이 누르려던 버튼(다음 등)이 사라진다 */
+function closePaintPop(focusTrigger){
+  if(!paintOpen) return;
+  const id = paintOpen;
+  paintOpen = null;
+  const pop = document.querySelector(".paint-pop");
+  if(pop) pop.remove();
+  document.querySelectorAll(".paint-part.on").forEach(b => { b.classList.remove("on"); b.setAttribute("aria-expanded", "false"); });
+  if(focusTrigger){ const t = document.querySelector(`.paint-part[data-part="${id}"]`); if(t) t.focus(); }
+}
+document.addEventListener("pointerdown", (e) => {
+  if(!paintOpen || state.step !== "color") return;
+  if(e.target.closest(".paint-pop") || e.target.closest(".paint-part")) return;
+  closePaintPop(false);
+}, true);
+document.addEventListener("keydown", (e) => {
+  if(e.key === "Escape" && paintOpen && state.step === "color"){ e.preventDefault(); closePaintPop(true); }
+});
+window.addEventListener("resize", () => { if(paintOpen && state.step === "color") placePaintPop(); });
+/** 창의 왼쪽 아래 모서리를 버튼의 오른쪽 위 모서리에 붙인다. 화면 밖으로 나가면 안쪽으로 밀고, 꼬리는 버튼 모서리를 계속 가리킨다 */
+function placePaintPop(){
+  const pop = document.querySelector(".paint-pop");
+  const btn = paintOpen && document.querySelector(`.paint-part[data-part="${paintOpen}"]`);
+  if(!pop || !btn) return;
+  const r = btn.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth, M = 12;
+  const w = pop.offsetWidth, hgt = pop.offsetHeight;
+  const anchorX = r.right - 6;                              // 버튼 오른쪽 위 모서리(조금 안쪽)
+  const left = Math.max(M, Math.min(vw - w - M, anchorX - 14));
+  const top = Math.max(M, r.top - hgt - 10);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.style.setProperty("--tail-x", `${Math.max(14, Math.min(w - 14, anchorX - left))}px`);
+  pop.classList.add("placed");
+}
+
 function renderColor(){
   const box = h("div", "paint");
   const two = state.tone === "two";
-  // 칠할 곳 — 고른 키워드의 소품만. 키워드를 바꾸고 돌아와 칠하던 소품이 빠졌으면 선체로
+  // 칠할 곳 — 원톤이면 배 하나, 투톤이면 선체·갑판, 그리고 고른 키워드의 소품(최대 둘). 키워드를 바꾸고 돌아와 소품이 빠졌으면 닫는다
   const props = PROP_PAINTS.filter(p => state.keywords.includes(p.keyword));
-  const parts = (two ? ["hull", "deck"] : ["hull"]).concat(props.map(p => p.id));
-  if(!parts.includes(state.paintPart)) state.paintPart = "hull";
-  const part = state.paintPart;
-  const prop = PROP_PAINTS.find(p => p.id === part);
-  const isCoat = !!prop && prop.kind === "coat";
-  const partName = prop ? prop.label : part === "deck" ? "갑판" : two ? "선체" : "배";
-  const current = () => prop ? (state.props[part] || "base") : part === "deck" ? state.deckColor : state.hullColor;
-  const setCurrent = (v) => {
-    if(prop) state.props = { ...state.props, [part]: v };
-    else if(part === "deck") state.deckColor = v;
-    else state.hullColor = v;
+  const parts = (two ? [["hull", "선체"], ["deck", "갑판"]] : [["hull", "배"]]).concat(props.map(p => [p.id, p.label]));
+  if(paintOpen && !parts.some(([id]) => id === paintOpen)) paintOpen = null;
+  const valueOf = (id) => {
+    const pr = PROP_PAINTS.find(p => p.id === id);
+    return pr ? (state.props[id] || "base") : id === "deck" ? state.deckColor : state.hullColor;
   };
-  const applyScene = () => { if(window.BottleScene) applyPaint(window.BottleScene); };
+  const dotOf = (id) => {
+    const pr = PROP_PAINTS.find(p => p.id === id);
+    if(pr && pr.kind === "coat") return (CAT_COATS.find(c => c.id === state.catCoat) || CAT_COATS[0]).swatch;
+    return paintSwatch(valueOf(id), id);
+  };
 
-  const top = h("div", "paint-top");
-  const left = h("div", "paint-left");
   const modes = h("div", "paint-modes");
   modes.setAttribute("role", "radiogroup");
   modes.setAttribute("aria-label", "칠하는 방식");
@@ -521,107 +567,76 @@ function renderColor(){
     b.onclick = () => {
       if(state.tone === id) return;
       state.tone = id;
-      if(!prop) state.paintPart = "hull";   // 소품을 칠하던 중이면 그대로
+      if(paintOpen === "hull" || paintOpen === "deck") paintOpen = null;   // 배 칸 이름이 바뀐다 — 창을 닫는다
       render();
     };
     modes.appendChild(b);
   });
-  left.appendChild(modes);
-  // 칠할 곳 칩. 원톤인데 소품이 없으면 고를 게 없어 비워 둔다. 투톤 + 소품이면 소품은 둘째 줄
-  const mid = h("div", "paint-mid");
-  const chips = two ? [["hull", "선체"], ["deck", "갑판"]] : props.length ? [["hull", "배"]] : [];
-  props.forEach((p, i) => {
-    if(i === 0 && two) chips.push(null);
-    chips.push([p.id, p.label]);
-  });
-  chips.forEach((c) => {
-    if(!c){ mid.appendChild(h("span", "paint-break")); return; }
-    const [id, label] = c;
-    const t = h("button", "paint-part" + (part === id ? " on" : ""), label);
-    t.type = "button";
-    t.setAttribute("aria-pressed", part === id ? "true" : "false");
-    t.onclick = () => { state.paintPart = id; render(); };
-    mid.appendChild(t);
-  });
-  left.appendChild(mid);
-  top.appendChild(left);
+  box.appendChild(modes);
 
-  // ── 명암 판 + 색조 막대 ── 표시는 지금 값(팔레트든 직접이든)의 자리에.
-  // 흰색·검은색은 색조가 없어 hex 만으로는 막대 자리를 모른다 — 칠할 곳마다 마지막 판·막대 자리를 기억해 둔다(10-07 버그:
-  // 흰/검을 잡고 막대를 돌리면 손을 뗄 때 빨강 자리로 돌아갔다)
-  const hex0 = isCoat ? "#808080" : paintSwatch(current(), part);   // 고양이는 판을 숨긴다 — 자리만 채운다
-  const mem = state.paintHsv[part];
-  const hsv0 = mem && mem.hex === hex0 ? mem : hexToHsv(hex0);
-  let wh = hsv0.h, ws = hsv0.s, wv = hsv0.v;
-  const picker = h("div", "paint-picker" + (isCoat ? " off" : ""));
-  const sv = h("div", "paint-sv");
-  sv.setAttribute("role", "slider");
-  sv.setAttribute("aria-label", `${partName} 색 — 채도와 밝기`);
-  const svDot = h("span", "paint-sv-dot");
-  sv.appendChild(svDot);
-  const hue = h("div", "paint-hue");
-  hue.setAttribute("role", "slider");
-  hue.setAttribute("aria-label", "색조");
-  const hueDot = h("span", "paint-hue-dot");
-  hue.appendChild(hueDot);
-  picker.appendChild(sv); picker.appendChild(hue);
-  if(isCoat) picker.setAttribute("aria-hidden", "true");
-  top.appendChild(picker);
-  box.appendChild(top);
+  // 칠할 곳 — 가로 한 줄. 버튼마다 지금 색 동그라미를 달아, 창을 열지 않아도 무엇이 어떤 색인지 보인다
+  const row = h("div", "paint-parts");
+  parts.forEach(([id, label]) => {
+    const open = paintOpen === id;
+    const b = h("button", "paint-part" + (open ? " on" : ""));
+    b.type = "button";
+    b.dataset.part = id;
+    b.setAttribute("aria-haspopup", "dialog");
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+    const dot = h("span", "dot");
+    dot.style.background = dotOf(id);
+    b.appendChild(dot);
+    b.appendChild(h("span", "lb", label));
+    b.onclick = (e) => {
+      if(paintOpen === id){ closePaintPop(false); return; }
+      paintOpen = id; state.paintPart = id;
+      paintOpenAnim = true; paintKeyOpen = e.detail === 0;    // detail 0 = 키보드(Enter·Space)로 누름
+      render();
+    };
+    row.appendChild(b);
+  });
+  box.appendChild(row);
 
-  const drawPicker = () => {
-    sv.style.background = `linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, ${hsvToHex(wh, 1, 1)})`;
-    svDot.style.left = `${ws * 100}%`;
-    svDot.style.top = `${(1 - wv) * 100}%`;
-    svDot.style.background = hsvToHex(wh, ws, wv);
-    hueDot.style.left = `${wh / 360 * 100}%`;
-    hueDot.style.background = hsvToHex(wh, 1, 1);
+  const step = questionStep({
+    title: "배를 어떤 색으로 칠할까요?",
+    sub: "칠할 곳을 누르면 색을 고를 수 있어요.",
+    content: box, prev: "keywords",
+    onNext: () => { paintOpen = null; state.step = "consent"; render(); },
+  });
+  if(paintOpen) step.el.appendChild(buildPaintPop(paintOpen, parts.find(([id]) => id === paintOpen)[1]));
+  return step.el;
+}
+
+/** 칠할 곳 하나의 색 창 — 왼쪽 기본 + 팔레트(3×3), 오른쪽 명암 판 + 색조 막대. 고양이는 털 무늬 다섯 */
+function buildPaintPop(part, partLabel){
+  const prop = PROP_PAINTS.find(p => p.id === part);
+  const isCoat = !!prop && prop.kind === "coat";
+  const partName = prop ? prop.label : part === "deck" ? "갑판" : state.tone === "two" ? "선체" : "배";
+  const current = () => prop ? (state.props[part] || "base") : part === "deck" ? state.deckColor : state.hullColor;
+  const setCurrent = (v) => {
+    if(prop) state.props = { ...state.props, [part]: v };
+    else if(part === "deck") state.deckColor = v;
+    else state.hullColor = v;
   };
-  drawPicker();
+  const applyScene = () => { if(window.BottleScene) applyPaint(window.BottleScene); };
 
-  const pick = () => {
-    const hex = hsvToHex(wh, ws, wv);
-    state.paintHsv[part] = { h: wh, s: ws, v: wv, hex };
-    setCurrent(hex);
-    applyScene(); drawPicker();
-    pads.querySelectorAll(".paint-pad.on").forEach(p => { p.classList.remove("on"); p.setAttribute("aria-pressed", "false"); });
-  };
-  // 끌기 — 손가락 하나만 따라간다. 손을 떼거나(up) 놓치면(cancel · 잡기 풀림) 정리하고, 화면은 다음 프레임에 다시 만든다.
-  // (손을 뗀 그 이벤트 안에서 화면을 갈아엎지 않는다 — 브라우저가 뒤이어 보내는 click 이 새로 생긴 엉뚱한 요소에 떨어질 수 있다)
-  const drag = (el, onMove) => {
-    if(isCoat) return;
-    el.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      const id = e.pointerId;
-      try { el.setPointerCapture(id); } catch(_) {}
-      onMove(e);
-      let done = false;
-      const move = (ev) => { if(ev.pointerId === id) onMove(ev); };
-      const end = (ev) => {
-        if(done || ev.pointerId !== id) return;
-        done = true;
-        el.removeEventListener("pointermove", move);
-        ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => el.removeEventListener(t, end));
-        requestAnimationFrame(() => { if(state.step === "color") render(); });
-      };
-      el.addEventListener("pointermove", move);
-      ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => el.addEventListener(t, end));
-    });
-  };
-  const clamp01 = (x) => Math.max(0, Math.min(1, x));
-  drag(sv, (e) => {
-    const r = sv.getBoundingClientRect();
-    ws = clamp01((e.clientX - r.left) / r.width);
-    wv = clamp01(1 - (e.clientY - r.top) / r.height);
-    pick();
-  });
-  drag(hue, (e) => {
-    const r = hue.getBoundingClientRect();
-    wh = clamp01((e.clientX - r.left) / r.width) * 359.9;
-    pick();
-  });
+  const pop = h("div", "paint-pop" + (isCoat ? " coats" : "") + (paintOpenAnim ? " enter" : ""));
+  paintOpenAnim = false;
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", `${partLabel} ${isCoat ? "무늬" : "색"} 고르기`);
+  pop.tabIndex = -1;
+  const head = h("div", "paint-pop-head");
+  head.appendChild(h("span", "paint-pop-title", `${partLabel} ${isCoat ? "무늬" : "색"}`));
+  const x = h("button", "paint-pop-close");
+  x.type = "button";
+  x.setAttribute("aria-label", "닫기");
+  x.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+  x.onclick = () => closePaintPop(true);
+  head.appendChild(x);
+  pop.appendChild(head);
 
-  // ── 기본 + 팔레트 한 줄 (고양이는 털 무늬 다섯) ──
+  const body = h("div", "paint-pop-body");
+  pop.appendChild(body);
   const pads = h("div", "paint-pads" + (isCoat ? " coats" : ""));
   if(isCoat){
     CAT_COATS.forEach(c => {
@@ -636,6 +651,7 @@ function renderColor(){
       b.onclick = () => { state.catCoat = c.id; render(); };
       pads.appendChild(b);
     });
+    body.appendChild(pads);
   } else {
     BOAT_COLORS.forEach(c => {
       const on = current() === c.id;
@@ -647,14 +663,92 @@ function renderColor(){
       b.onclick = () => { setCurrent(c.id); render(); };
       pads.appendChild(b);
     });
+    body.appendChild(pads);
   }
-  box.appendChild(pads);
 
-  return questionStep({
-    title: "배를 어떤 색으로 칠할까요?",
-    content: box, prev: "keywords",
-    onNext: () => { state.step = "consent"; render(); },
-  }).el;
+  if(!isCoat){
+    // ── 명암 판 + 색조 막대 ── 표시는 지금 값(팔레트든 직접이든)의 자리에.
+    // 흰색·검은색은 색조가 없어 hex 만으로는 막대 자리를 모른다 — 칠할 곳마다 마지막 판·막대 자리를 기억해 둔다(10-07 버그:
+    // 흰/검을 잡고 막대를 돌리면 손을 뗄 때 빨강 자리로 돌아갔다)
+    const hex0 = paintSwatch(current(), part);
+    const mem = state.paintHsv[part];
+    const hsv0 = mem && mem.hex === hex0 ? mem : hexToHsv(hex0);
+    let wh = hsv0.h, ws = hsv0.s, wv = hsv0.v;
+    const picker = h("div", "paint-picker");
+    const sv = h("div", "paint-sv");
+    sv.setAttribute("role", "slider");
+    sv.setAttribute("aria-label", `${partName} 색 — 채도와 밝기`);
+    const svDot = h("span", "paint-sv-dot");
+    sv.appendChild(svDot);
+    const hue = h("div", "paint-hue");
+    hue.setAttribute("role", "slider");
+    hue.setAttribute("aria-label", "색조");
+    const hueDot = h("span", "paint-hue-dot");
+    hue.appendChild(hueDot);
+    picker.appendChild(sv); picker.appendChild(hue);
+    body.appendChild(picker);
+
+    const drawPicker = () => {
+      sv.style.background = `linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, ${hsvToHex(wh, 1, 1)})`;
+      svDot.style.left = `${ws * 100}%`;
+      svDot.style.top = `${(1 - wv) * 100}%`;
+      svDot.style.background = hsvToHex(wh, ws, wv);
+      hueDot.style.left = `${wh / 360 * 100}%`;
+      hueDot.style.background = hsvToHex(wh, 1, 1);
+    };
+    drawPicker();
+    const trigDot = () => document.querySelector(`.paint-part[data-part="${part}"] .dot`);
+    const pick = () => {
+      const hex = hsvToHex(wh, ws, wv);
+      state.paintHsv[part] = { h: wh, s: ws, v: wv, hex };
+      setCurrent(hex);
+      applyScene(); drawPicker();
+      const d = trigDot(); if(d) d.style.background = hex;
+      pads.querySelectorAll(".paint-pad.on").forEach(p => { p.classList.remove("on"); p.setAttribute("aria-pressed", "false"); });
+    };
+    // 끌기 — 손가락 하나만 따라간다. 손을 떼거나(up) 놓치면(cancel · 잡기 풀림) 정리하고, 화면은 다음 프레임에 다시 만든다.
+    // (손을 뗀 그 이벤트 안에서 화면을 갈아엎지 않는다 — 브라우저가 뒤이어 보내는 click 이 새로 생긴 엉뚱한 요소에 떨어질 수 있다)
+    const drag = (el, onMove) => {
+      el.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        const id = e.pointerId;
+        try { el.setPointerCapture(id); } catch(_) {}
+        onMove(e);
+        let done = false;
+        const move = (ev) => { if(ev.pointerId === id) onMove(ev); };
+        const end = (ev) => {
+          if(done || ev.pointerId !== id) return;
+          done = true;
+          el.removeEventListener("pointermove", move);
+          ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => el.removeEventListener(t, end));
+          requestAnimationFrame(() => { if(state.step === "color") render(); });
+        };
+        el.addEventListener("pointermove", move);
+        ["pointerup", "pointercancel", "lostpointercapture"].forEach(t => el.addEventListener(t, end));
+      });
+    };
+    const clamp01 = (v) => Math.max(0, Math.min(1, v));
+    drag(sv, (e) => {
+      const r = sv.getBoundingClientRect();
+      ws = clamp01((e.clientX - r.left) / r.width);
+      wv = clamp01(1 - (e.clientY - r.top) / r.height);
+      pick();
+    });
+    drag(hue, (e) => {
+      const r = hue.getBoundingClientRect();
+      wh = clamp01((e.clientX - r.left) / r.width) * 359.9;
+      pick();
+    });
+  }
+
+  // 화면에 끼워진 뒤에 자리를 잡는다(버튼 위치를 재야 한다). 키보드로 열었으면 창 안으로 초점
+  const focusIn = paintKeyOpen;
+  paintKeyOpen = false;
+  requestAnimationFrame(() => {
+    placePaintPop();
+    if(focusIn){ const t = pop.querySelector(".on") || x; t.focus(); }
+  });
+  return pop;
 }
 
 function renderConsent(){
@@ -722,8 +816,8 @@ function renderConsent(){
   // 별칭/실명을 골랐으면 이름이 실제로 적혀 있어야 한다.
   // 비워둔 채 제출되면 카드에 표시할 이름이 없는데 익명도 아닌 상태가 된다.
   function updateNext(){
-    const needsName = state.disclose !== "익명";
-    step.next.disabled = !state.consent || (needsName && (state.name || "").trim() === "");
+    const needsName = state.disclose !== "익명" && (state.name || "").trim() === "";
+    step.setLock(needsName ? `${state.disclose === "별칭" ? "별칭" : "이름"}을 적어주세요` : !state.consent ? "동의에 체크해 주세요" : null);
   }
   renderNameField();
   updateNext();
@@ -770,7 +864,11 @@ function renderResult(){
   bottom.appendChild(h("p", "res-label", "MY SENTENCE · 지금 이곳"));
   bottom.appendChild(h("p", "res-sentence" + (state.text.length > 40 ? " long" : ""), `“${state.text}”`));
   bottom.appendChild(h("p", "res-meta", [placeOf(state), stateLabel(state.stateId), ...state.keywords].join(" · ")));
-  bottom.appendChild(h("p", "res-note", "당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다."));
+  // [10-17 UX] 인터넷이 끊긴 채 제출하면 문장은 이 기기 대기열에 남았다가 연결되면 올라간다(record-sync.js) — 그렇다고 솔직히 적는다
+  const offline = navigator.onLine === false && RecordSync.mode && RecordSync.mode !== "mock";
+  bottom.appendChild(h("p", "res-note", offline
+    ? "지금은 인터넷이 끊겨 있어요. 연결되면 문장이 자동으로 올라가요."
+    : "당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다."));
   const btn = h("button", "cta");
   btn.type = "button";
   btn.innerHTML = `머무름의 지도 보러가기${ICON_NEXT}`;

@@ -15,15 +15,24 @@
  *
  * (예전의 가로 피커는 나눔 질문이 다이얼(share-dial.js)로 바뀌면서 뺐다.)
  *
+ * [10-17 UX] 한 번에 보이는 건 두세 줄뿐이라 아래에 선택지가 더 있는지 안 보였다(지역 5개 중 처음엔 2개만 보인다).
+ * 오른쪽에 위·아래 버튼을 달아 "더 있다"를 보여 주고 한 칸씩 옮길 수 있게 했다(끝에 닿으면 흐려진다).
+ * 키보드로도 고른다 — 목록에 초점을 두고 ↑↓ · Home · End.
+ *
  * items  : [{id, label}]
  * value  : 처음 고를 id
  * onPick : 고른 것이 바뀔 때마다 id로 부른다
+ * label  : 목록 이름(화면 낭독기용, 생략 가능)
  * ========================================================================== */
 
-function snapPicker(items, value, onPick){
+let snapPickerSeq = 0;
+function snapPicker(items, value, onPick, label){
   const wrap=document.createElement("div"); wrap.className="picker";
   const track=document.createElement("div"); track.className="picker-track";
   track.setAttribute("role","listbox");
+  track.tabIndex=0;
+  if(label) track.setAttribute("aria-label", label);
+  const uid = "pk" + (++snapPickerSeq);
   const list=document.createElement("div"); list.className="picker-list";
   track.appendChild(list); wrap.appendChild(track);
 
@@ -33,11 +42,33 @@ function snapPicker(items, value, onPick){
   const els=items.map((it,i)=>{
     const el=document.createElement("div"); el.className="picker-item";
     el.setAttribute("role","option");
+    el.id = `${uid}-${i}`;
     el.innerHTML=`<span class="lab">${it.label}</span>`;
     el.addEventListener("click",()=>{ if(!moved) scrollToIndex(i, true); });
     list.appendChild(el); return el;
   });
   list.appendChild(pad());
+
+  // 위·아래 한 칸 — 누르는 자리 44px. 화면 낭독기에는 목록 자체가 ↑↓로 움직이므로 숨긴다(같은 일을 두 번 읽지 않게)
+  const chev = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+  const steps=document.createElement("div"); steps.className="picker-steps";
+  steps.setAttribute("aria-hidden","true");
+  const mkStep=(cls, d, delta)=>{
+    const b=document.createElement("button"); b.type="button"; b.className="picker-step "+cls; b.tabIndex=-1;
+    b.innerHTML=chev(d);
+    b.addEventListener("click",()=>scrollToIndex(nearest()+delta, true));
+    steps.appendChild(b); return b;
+  };
+  const stepUp=mkStep("up","M6 15l6-6 6 6",-1), stepDown=mkStep("down","M6 9l6 6 6-6",1);
+  wrap.appendChild(steps);
+
+  track.addEventListener("keydown",(e)=>{
+    const n=nearest();
+    const to = e.key==="ArrowUp" ? n-1 : e.key==="ArrowDown" ? n+1 : e.key==="Home" ? 0 : e.key==="End" ? els.length-1 : null;
+    if(to===null) return;
+    e.preventDefault();
+    scrollToIndex(to, true);
+  });
 
   /** 트랙 가운데에 가장 가까운 항목. 스크롤을 읽기만 한다. */
   function nearest(){
@@ -57,6 +88,8 @@ function snapPicker(items, value, onPick){
       els[i].setAttribute("aria-selected", i===n ? "true" : "false");
       els[i].dataset.dist = String(Math.min(2, Math.abs(i-n)));
     }
+    if(els[n]) track.setAttribute("aria-activedescendant", els[n].id);
+    stepUp.disabled = n<=0; stepDown.disabled = n>=els.length-1;
     if(items[n] && items[n].id!==value){ value=items[n].id; onPick(value); }
   }
 

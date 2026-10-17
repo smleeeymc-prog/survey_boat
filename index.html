@@ -4823,7 +4823,9 @@ try {
   window.BottleScene = new BottleScene();
   selfCheck(window.BottleScene);
   // 그림 톤 테스트 메뉴(임시, 오른쪽 위 "룩") — 지울 때는 이 줄과 dev/look-lab.js 만 지우면 된다
-  import("./dev/look-lab.js").then((m) => m.installLookLab(window.BottleScene)).catch((e) => console.warn("[look-lab]", e));
+  // [10-17 UX] 참여자 화면에는 띄우지 않는다 — 뜻 모를 버튼이 모든 단계 오른쪽 위에 떠서 등대·지도와 겹쳤다. 주소에 ?dev=1 을 붙이면 나온다
+  if (new URLSearchParams(location.search).get("dev") === "1")
+    import("./dev/look-lab.js").then((m) => m.installLookLab(window.BottleScene)).catch((e) => console.warn("[look-lab]", e));
 } catch (err) {
   console.error("BottleScene 초기화 실패:", err);
 }

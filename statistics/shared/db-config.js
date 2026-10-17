@@ -46,6 +46,7 @@ export function dbConfigured() {
 /**
  * 이 화면이 어느 저장소를 쓰나 — "mock" | "emu" | "live".
  *   ?mock=1                          → 목업 (설정이 있어도)
+ *   Vercel 미리보기 주소(…-projects.vercel.app — 브랜치 시험 링크) → 목업. 실DB로 보려면 ?live=1 (10-17)
  *   ?emu=1 이고 localhost 에서 열었을 때 → 에뮬레이터 (설정이 비어 있어도)
  *   설정이 채워져 있으면                → 실DB
  *   그 밖                              → 목업
@@ -55,6 +56,8 @@ export function dbConfigured() {
 export function dbMode(search = globalThis.location ? location.search : "", hostname = globalThis.location ? location.hostname : "") {
   const qs = new URLSearchParams(search);
   if (qs.get("mock") === "1") return "mock";
+  // 브랜치 미리보기에서 시험으로 낸 문장이 전시장 지도에 뜨지 않게. 실서비스 주소(…-tau.vercel.app 등)는 여기 안 걸린다
+  if (/-projects\.vercel\.app$/.test(hostname) && qs.get("live") !== "1") return "mock";
   if (qs.get("emu") === "1" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname)) return "emu";
   return dbConfigured() ? "live" : "mock";
 }

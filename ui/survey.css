@@ -52,9 +52,11 @@ html.lock body, html.lock #app{ min-height:100%; min-height:100dvh; }
 /* 조작하는 요소만 포인터를 되살린다 (빈 곳을 끌면 캔버스가 받아 배를 둘러본다) */
 #app button, #app input, #app textarea, #app select, #app label,
 #app .picker-track, #app .dial, #app .archive-screen, #app .paint-sv, #app .paint-hue,
-#app .rmap-area, #app .rmap-hit, #app .rmap-lift.on{ pointer-events:auto; }
+#app .rmap-area, #app .rmap-hit, #app .rmap-lift.on, #app .paint-pop, #app .paint-parts{ pointer-events:auto; }
 #app textarea, #app input{ user-select:text; -webkit-user-select:text; }
 #app button{ font-family:var(--ui); cursor:pointer; }
+/* 키보드 초점 — 어두운 바다 위에서도 보이게 금색으로 통일(10-17 UX). 손가락으로 누를 땐 안 뜬다(:focus-visible) */
+#app button:focus-visible{ outline:2px solid var(--b-gold); outline-offset:3px; }
 
 /* 선택지를 고를 때마다 render()가 화면을 통째로 다시 만드는 구조라, 여기에 등장 애니메이션을
    걸면 누를 때마다 UI 전체가 깜빡인다. 등장은 단계가 바뀔 때만 따로 건다(.step-fade). */
@@ -99,7 +101,8 @@ h2.q{ font-family:var(--serif); font-size:27px; line-height:1.45; font-weight:70
   margin-bottom:8px; text-shadow:0 2px 14px rgba(0,0,0,.4); word-break:keep-all; }
 p.sub{ font-size:13px; line-height:1.5; color:var(--b-text3); }
 .qcontent{ flex:1 1 auto; display:flex; flex-direction:column; justify-content:center; padding:10px 0 14px; min-height:0; }
-.qnav{ display:flex; align-items:center; justify-content:space-between; }
+.qnav{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.qhint{ flex:1 1 auto; min-width:0; text-align:right; font-size:12px; line-height:1.3; color:rgba(246,242,234,.72); word-break:keep-all; }
 /* 이전·다음은 예전 크기의 70% (09-30 사용자). 보이는 크기만 줄이고 누르는 자리는 ::after로 넓혀 둔다 */
 .qback, .qnext{ position:relative; }
 .qback::after, .qnext::after{ content:""; position:absolute; inset:-6px -4px; }
@@ -133,6 +136,16 @@ p.sub{ font-size:13px; line-height:1.5; color:var(--b-text3); }
 .picker-item::before{ content:""; position:absolute; left:0; top:6px; width:3px; height:24px; border-radius:2px;
   background:var(--b-gold); opacity:0; transition:opacity .25s ease; }
 .picker-item.active::before{ opacity:1; }
+.picker-track:focus-visible{ outline:1px dashed var(--b-gold); outline-offset:4px; border-radius:4px; }
+/* 위·아래 한 칸(10-17) — 선택지가 더 있음을 보여 준다. 끝에 닿은 쪽은 흐리게 */
+.picker-steps{ position:absolute; right:-6px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:6px; }
+.picker-step{ position:relative; width:32px; height:32px; border-radius:50%; border:1px solid rgba(246,242,234,.32);
+  background:rgba(7,9,14,.35); color:rgba(246,242,234,.85); display:flex; align-items:center; justify-content:center; padding:0;
+  transition:opacity .2s ease; }
+.picker-step::after{ content:""; position:absolute; inset:-6px; }
+.picker-step.up::after{ bottom:-3px; } .picker-step.down::after{ top:-3px; }
+.picker-step svg{ width:16px; height:16px; }
+.picker-step:disabled{ opacity:.25; cursor:default; }
 
 /* ── 한 문장 입력 — 밑줄만 있는 명조 칸 ── */
 textarea.sentence, input.name-input{
@@ -183,42 +196,65 @@ textarea.sentence:focus, input.name-input:focus{ outline:none; border-bottom-col
 body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230px + var(--safe-b)); }
 
 /* ── Ⅵ 색 — 위: 왼쪽(원톤·투톤 / 칠할 곳 칩) + 오른쪽(명암 판 + 색조 막대), 아래: 동그라미 팔레트 한 줄(고양이는 털 무늬) ── */
-.paint{ display:flex; flex-direction:column; }
-.paint-top{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.paint-left{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; }
+.paint{ display:flex; flex-direction:column; gap:14px; }
 .paint-modes{ display:flex; gap:22px; }
 .paint-mode{ height:36px; padding:0 0 2px; border:0; border-bottom:1.5px solid transparent; background:transparent;
   font-family:var(--serif) !important; font-size:18px; color:rgba(246,242,234,.6); }
 .paint-mode.on{ font-weight:700; color:var(--b-gold); border-bottom-color:var(--b-gold); }
-/* 칠할 곳 칩 — 선체·갑판에 소품(최대 둘)이 붙으면 줄을 바꾼다. 투톤의 소품은 늘 둘째 줄(.paint-break) */
-.paint-mid{ min-height:34px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 6px; margin-top:8px; }
-.paint-break{ flex-basis:100%; height:0; }
-.paint-part{ height:28px; padding:0 11px; border-radius:14px; border:1px solid rgba(246,242,234,.4); background:transparent;
-  font-size:12.5px; font-weight:500; color:rgba(246,242,234,.82); white-space:nowrap; }
+/* 칠할 곳 — 가로 한 줄(10-17 사용자). 버튼마다 지금 색 동그라미. 넘치면 옆으로 민다(최대 넷: 선체·갑판·소품 둘) */
+.paint-parts{ display:flex; flex-wrap:nowrap; gap:6px; overflow-x:auto; scrollbar-width:none; margin:-6px -26px; padding:6px 26px; }
+.paint-parts::-webkit-scrollbar{ display:none; }
+.paint-part{ position:relative; flex:0 0 auto; height:40px; padding:0 13px 0 7px; border-radius:20px;
+  border:1px solid rgba(246,242,234,.4); background:rgba(7,9,14,.35); display:flex; align-items:center; gap:7px;
+  font-size:14px; font-weight:500; color:var(--b-text); white-space:nowrap; transition:background .15s ease, border-color .15s ease; }
+.paint-part::after{ content:""; position:absolute; inset:-3px 0; }      /* 누르는 자리 46px */
+.paint-part .dot{ width:22px; height:22px; border-radius:50%; flex:0 0 auto; box-shadow:0 0 0 1.5px rgba(246,242,234,.55); }
 .paint-part.on{ background:var(--b-text); border-color:var(--b-text); color:var(--b-ink); font-weight:600; }
+.paint-part.on .dot{ box-shadow:0 0 0 1.5px rgba(17,19,24,.35); }
+.paint-part:focus-visible{ outline:2px solid var(--b-gold); outline-offset:3px; }
+
+/* 색 창 — 누른 버튼의 오른쪽 위에 붙는다(자리는 survey.js placePaintPop). 꼬리(--tail-x)가 그 버튼 모서리를 가리킨다 */
+/* 자리를 잡기 전(한 프레임)엔 숨긴다 — 엉뚱한 곳에 잠깐 비치거나 눌리지 않게(.placed 는 placePaintPop 이 붙인다) */
+.paint-pop{ position:fixed; z-index:30; left:-9999px; top:0; visibility:hidden; padding:10px 14px 14px; border-radius:16px;
+  background:rgba(18,21,28,.94); color:var(--b-text); box-shadow:0 14px 36px rgba(0,0,0,.45), 0 0 0 1px rgba(246,242,234,.14);
+  -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+.paint-pop.placed{ visibility:visible; }
+.paint-pop::after{ content:""; position:absolute; left:var(--tail-x, 20px); bottom:-6px; width:12px; height:12px; margin-left:-6px;
+  background:rgb(18,21,28); transform:rotate(45deg); box-shadow:1px 1px 0 0 rgba(246,242,234,.14); }
+.paint-pop.enter{ animation:paintPopIn .18s cubic-bezier(.2,.7,.3,1) both; transform-origin:var(--tail-x, 20px) 100%; }
+@keyframes paintPopIn{ from{ opacity:0; transform:translateY(6px) scale(.96); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){ .paint-pop.enter{ animation:none; } }
+.paint-pop:focus{ outline:none; }
+.paint-pop-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.paint-pop-title{ font-size:13px; font-weight:600; letter-spacing:.02em; color:rgba(246,242,234,.9); }
+.paint-pop-close{ position:relative; width:28px; height:28px; margin-right:-6px; border:0; border-radius:50%; background:transparent;
+  color:rgba(246,242,234,.8); display:flex; align-items:center; justify-content:center; }
+.paint-pop-close::after{ content:""; position:absolute; inset:-8px; }
+.paint-pop-close svg{ width:16px; height:16px; }
+.paint-pop-body{ display:flex; gap:14px; align-items:stretch; }
+/* 기본 + 팔레트 8 = 3×3 — 동그라미 32px, 사이 10px(누르는 자리가 서로 겹치지 않게 42px) */
+.paint-pop .paint-pads{ display:grid; grid-template-columns:repeat(3, 32px); gap:10px; padding:0; }
+.paint-pop .paint-pad{ position:relative; width:32px; height:32px; border-radius:50%; border:1.5px solid rgba(246,242,234,.38); padding:0;
+  transition:transform .15s ease; }
+.paint-pop .paint-pad::after{ content:""; position:absolute; inset:-5px; }
+.paint-pad.on{ box-shadow:0 0 0 2px rgba(18,21,28,.95), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
+.paint-pad:focus-visible, .paint-coat:focus-visible{ outline:2px solid var(--b-gold); outline-offset:4px; }
 /* 명암 판(dh 전시처럼): 왼쪽 위 흰색 → 오른쪽 위 순색, 아래로 검정. 그 아래 색조 막대. 그림과 고르는 식(HSV)이 같다 */
-.paint-picker{ flex:0 0 auto; width:min(168px, 48%); display:flex; flex-direction:column; gap:9px; }
-.paint-picker.off{ visibility:hidden; }   /* 고양이 — 판은 숨기되 자리는 남겨 화면이 흔들리지 않게 */
-.paint-sv{ position:relative; height:72px; border-radius:8px; touch-action:none; cursor:crosshair;
+.paint-picker{ width:min(150px, calc(100vw - 24px - 28px - 14px - 116px)); display:flex; flex-direction:column; gap:10px; }
+.paint-sv{ position:relative; flex:1 1 auto; min-height:92px; border-radius:8px; touch-action:none; cursor:crosshair;
   box-shadow:0 0 0 1.5px rgba(246,242,234,.38); }
-.paint-hue{ position:relative; height:14px; border-radius:7px; touch-action:none; cursor:ew-resize;
+.paint-hue{ position:relative; height:16px; border-radius:8px; touch-action:none; cursor:ew-resize;
   background:linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
   box-shadow:0 0 0 1.5px rgba(246,242,234,.38); }
 .paint-sv-dot, .paint-hue-dot{ position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px; border-radius:50%;
   border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.55); pointer-events:none; }
 .paint-hue-dot{ top:50%; }
-/* 동그라미 9개를 한 줄에 — 좁은 폰(판 안쪽 308px)에서도 넘치지 않게 크기를 폭에 맞춘다 */
-.paint-pads{ display:flex; justify-content:space-between; gap:4px; padding:12px 2px 2px; }
-.paint-pad{ position:relative; flex:0 0 auto; width:min(32px, calc((100% - 32px) / 9)); aspect-ratio:1; border-radius:50%;
-  border:1.5px solid rgba(246,242,234,.38); padding:0; transition:transform .15s ease; }
-.paint-pad::after{ content:""; position:absolute; inset:-7px; }      /* 누르는 자리는 더 넓게 */
-.paint-pad.on{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
 /* 고양이 털 무늬 다섯 — 동그라미 아래 이름 */
-.paint-pads.coats{ justify-content:space-around; padding-top:10px; }
-.paint-coat{ position:relative; display:flex; flex-direction:column; align-items:center; gap:5px; border:0; background:transparent;
-  padding:0; font-size:11px; color:rgba(246,242,234,.72); }
-.paint-coat .sw{ width:30px; height:30px; border-radius:50%; border:1.5px solid rgba(246,242,234,.38); transition:transform .15s ease; }
-.paint-coat.on .sw{ box-shadow:0 0 0 2px rgba(7,9,14,.9), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
+.paint-pop .paint-pads.coats{ display:flex; gap:6px; }
+.paint-coat{ position:relative; width:52px; display:flex; flex-direction:column; align-items:center; gap:6px; border:0; background:transparent;
+  padding:2px 0; font-size:12px; color:rgba(246,242,234,.78); }
+.paint-coat .sw{ width:34px; height:34px; border-radius:50%; border:1.5px solid rgba(246,242,234,.38); transition:transform .15s ease; }
+.paint-coat.on .sw{ box-shadow:0 0 0 2px rgba(18,21,28,.95), 0 0 0 4px var(--b-gold); transform:scale(1.06); }
 .paint-coat.on .lb{ color:var(--b-gold); font-weight:600; }
 
 /* ── 공개 방식과 동의 ── */
@@ -322,6 +358,8 @@ body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230p
 .ar-sub{ font-size:13px; color:#5E5A53; }
 .ar-tabs{ display:flex; gap:18px; overflow-x:auto; scrollbar-width:none; padding:0 2px; margin:0 -20px; padding-left:20px; padding-right:20px; }
 .ar-tabs::-webkit-scrollbar{ display:none; }
+/* 오른쪽 끝을 흐리게 — 탭이 옆으로 더 있다는 표시(10-17 UX) */
+.ar-tabs{ -webkit-mask-image:linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image:linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
 .ar-tab{ flex:0 0 auto; height:40px; border:0; background:transparent; font-family:var(--serif) !important; font-size:16px;
   color:#8A847A; border-bottom:1.5px solid transparent; padding:0 0 2px; }
 .ar-tab.on{ color:var(--b-paper-ink); font-weight:700; border-bottom-color:#B8955E; }
