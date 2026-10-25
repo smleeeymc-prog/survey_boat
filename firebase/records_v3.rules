@@ -1,0 +1,57 @@
+// records_v3 블록 — 기존 저장소(smleeeymc-prog/survey_boat)의 firebase/records_v3.rules로 복사하면 build-rules.mjs가 'match /{document=**}' 앞에 끼운다.
+// 원본은 exhibition-2026 firestore/firestore.rules의 같은 블록 — 고치면 그쪽에서 npm run rules:block 후 여기로 다시 복사(값은 exhibition-2026이 관리).
+    // ── records_v3 시작 ── 「그래도, 여기 살고 있습니다」 v3(테이프)
+    // 값 목록 = src/spec/survey.ts(원본 handoff/spec/survey.ts). 질문 값을 바꾸면 여기도 같이 — 빠뜨리면 제출이 조용히 거절된다.
+    // 만들기 = 익명 로그인 필요(기존 records와 같은 기준). 고치기 · 지우기 없음 — 숨길 땐 운영자가 콘솔에서 moderation_status를 'hidden'으로.
+    // 검토 = 기존 사이트와 같이 사후 검토: 만들 때 'public', 운영자가 'hidden'으로 내리면 목록 · id 읽기에서 빠진다.
+    match /records_v3/{id} {
+      allow create: if request.auth != null && isRecordV3(id, request.resource.data);
+      allow get: if resource == null || resource.data.moderation_status != 'hidden'; // 다시 보낸 기록이 이미 들어갔는지 확인(검토 전 기록도)
+      allow list: if resource.data.moderation_status == 'public' && request.query.limit <= 50;
+
+      function isRecordV3(id, d) {
+        let req = ['record_id', 'schema_version', 'region', 'state', 'share', 'text', 'keywords', 'display_name', 'consent_public',
+                   'consent_archive', 'shell_kind', 'shell_color', 'pen_color', 'sticker_colors', 'moderation_status', 'created_at'];
+        let colors = ['base', 'red', 'orange', 'lemon', 'lime', 'cyan', 'blue', 'violet', 'pink'];
+        return d.keys().hasAll(req) && d.keys().hasOnly(req.concat(['region_detail', 'shell_color2', 'specimen_no']))
+          && d.record_id == id && id.matches('^[A-Za-z0-9-]{8,64}$')
+          && d.schema_version == 3
+          && d.region in ['아산', '천안', '기타 충남', '충남 밖', '비공개']
+          && (d.region == '기타 충남'
+                ? d.get('region_detail', '') in ['계룡', '공주', '금산', '논산', '당진', '보령', '부여', '서산', '서천', '예산', '청양', '태안', '홍성']
+                : !('region_detail' in d))
+          && d.state in ['stay', 'leaving', 'between', 'returned', 'unsure']
+          && d.share in ['many', 'close', 'few', 'none']
+          && isTextV3(d.text, 80)
+          && d.keywords is list && d.keywords.size() <= 2 && d.keywords.toSet().size() == d.keywords.size()
+          && d.keywords.hasOnly(['일', '관계', '가족', '창작', '익숙함', '주거', '불안', '자유', '소속감', '우연'])
+          && isTextV3(d.display_name, 12)
+          && d.consent_public == true && d.consent_archive == true
+          && d.shell_kind in ['clear', 'jelly', 'prism', 'solid', 'duo']
+          && d.shell_color in colors
+          && (d.shell_kind == 'duo' ? d.get('shell_color2', '') in colors : !('shell_color2' in d))
+          && d.pen_color in ['ink', 'blue', 'red']
+          && d.sticker_colors is list && d.sticker_colors.size() == d.keywords.size() && d.sticker_colors.hasOnly([0, 1, 2])
+          && (!('specimen_no' in d) || (d.specimen_no is int && d.specimen_no >= 1))
+          && d.moderation_status == 'public'
+          && d.created_at == request.time;
+      }
+
+      // 글자 수 = 화면과 같은 '보이는 글자'(grapheme). size()는 UTF-16 단위라 이모지 하나가 2–14로 세진다(에뮬레이터 확인).
+      // 결합 부호 · 이음표(ZWJ)와 다음 글자 · 변형 선택자 · 피부색 · 태그 · 한글 중성/종성 자모를 지우고, 국기 한 쌍과 BMP 밖 글자를 한 칸으로 센다.
+      // → 화면(Intl.Segmenter)보다 많이 세지 않으므로 화면에서 통과한 글은 늘 통과(rules.test.mjs). 상한 20배(피부색 넣은 4인 가족 이모지 한 글자 = 19)는 장난 글자 막기.
+      function isTextV3(s, max) {
+        return s is string && s.size() <= max * 20 && s.trim().size() > 0
+          && s.replace('[\\p{M}\\x{200C}\\x{FE00}-\\x{FE0F}\\x{1F3FB}-\\x{1F3FF}\\x{E0020}-\\x{E007F}\\x{1160}-\\x{11FF}\\x{D7B0}-\\x{D7FF}]|\\x{200D}.?', '')
+              .replace('[\\x{1F1E6}-\\x{1F1FF}]{2}', 'x')
+              .replace('[\\x{10000}-\\x{10FFFF}]', 'x')
+              .size() <= max;
+      }
+    }
+
+    // 표본 번호 카운터 — 익명 로그인 후 한 번에 1씩만 오른다(읽기 없음, 커밋 응답이 새 번호)
+    match /records_v3_meta/specimen {
+      allow create: if request.auth != null && request.resource.data.keys().hasOnly(['n']) && request.resource.data.n == 1;
+      allow update: if request.auth != null && request.resource.data.keys().hasOnly(['n']) && request.resource.data.n == resource.data.n + 1;
+    }
+    // ── records_v3 끝 ──

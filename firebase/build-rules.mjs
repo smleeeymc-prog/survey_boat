@@ -22,6 +22,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHARED = path.resolve(HERE, "..", "statistics", "shared");
 const OUT = path.join(HERE, "firestore.rules");
+// 같은 프로젝트를 쓰는 다른 사이트(exhibition-2026 「그래도, 여기 살고 있습니다」 v3 테이프)의 records_v3 블록.
+// 값은 그쪽이 관리하고 여기선 '전부 거부' 앞에 그대로 끼우기만 한다 — 원본: exhibition-2026 firestore/firestore.rules.
+// 이 파일이 없으면 생성이 멈춘다(빠뜨리고 게시하면 그 사이트 제출이 막힌다).
+const V3 = path.join(HERE, "records_v3.rules");
 
 /**
  * survey-taxonomy.js → record-schema.js 를 브라우저처럼 한 전역에 평가해 둘 다 꺼낸다.
@@ -56,6 +60,7 @@ export async function buildRules() {
   const newFields = S.FIELDS;
   const allowedFields = S.FIELDS.concat(S.EXTRA_FIELDS);
   const typeAlt = T.TYPES.join("|");
+  const v3 = fs.readFileSync(V3, "utf8").trimEnd();
 
   return `rules_version = '2';
 
@@ -70,6 +75,7 @@ export async function buildRules() {
 //            생성: 로그인(익명 포함) + 필드·타입·값 범위 전부 + 서버 시각 + 공개 상태 고정
 //            수정·삭제: 금지 — 운영자는 콘솔에서 moderation_status 를 "${S.STATUS.HIDDEN}" 으로 (콘솔은 규칙을 우회한다)
 //   ${COL.thumbs}   읽기: 짝이 되는 기록이 공개일 때만 / 생성: 기록이 먼저 있어야 / 수정·삭제 금지
+//   records_v3 · records_v3_meta  다른 사이트(exhibition-2026) 몫 — firebase/records_v3.rules 를 그대로 끼운다
 //   그 밖의 경로는 전부 거부
 //
 // 글자 수(size)는 UTF-16 코드 단위 — JS .length, textarea maxLength 와 같다.
@@ -152,6 +158,8 @@ ${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list
         && request.resource.data.data.matches('^data:image/(${typeAlt});base64,[A-Za-z0-9+/=]+$');
       allow update, delete: if false;
     }
+
+${v3}
 
     match /{document=**} {
       allow read, write: if false;

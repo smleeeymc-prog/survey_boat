@@ -1404,6 +1404,10 @@ textarea `maxLength`와 같은 단위라 설문 입력칸의 80자 제한과 서
 - **records 수정·삭제:** 전부 금지. 운영자는 콘솔에서(콘솔은 규칙을 우회한다).
 - **thumbs 생성:** 로그인 + 기록이 먼저 있어야 함(`exists`) + 키 화이트리스트 + `data`가 `data:image/(webp|jpeg);base64,`
   + base64 글자만 + 150,000자 이하. 수정·삭제·목록 금지. **읽기:** 짝이 되는 기록이 공개일 때만.
+- **records_v3 · records_v3_meta (10-25):** 같은 Firebase 프로젝트를 쓰는 **다른 사이트**(exhibition-2026, 「그래도, 여기 살고 있습니다」 v3 테이프) 몫.
+  `firebase/records_v3.rules` 를 생성기가 '그 밖의 경로 거부' 앞에 그대로 끼운다 — **값은 그쪽 저장소가 관리**하고 여기서 고치지 않는다
+  (바뀌면 그쪽에서 `npm run rules:block` 으로 뽑아 이 파일에 다시 복사). 이 파일이 없으면 생성이 멈춘다 —
+  **빠뜨린 규칙을 이 저장소에서 게시하면 테이프 사이트 제출이 막힌다.** 색인(`firestore.indexes.json`)에도 records_v3 목록용 하나가 붙었다.
 - **그 밖의 경로:** 전부 거부.
 - **배 색(10-06):** `hull_color`·`deck_color`는 `hasOnly`에만 들어 있고 `hasAll`에는 없다(선택). 있으면 `BOAT_COLORS` id 중 하나
   또는 컬러휠의 `"#rrggbb"`(소문자 6자리, `paintHex`), `deck_color`는 `"auto"`도. **이 두 필드가 든 규칙은 콘솔에 다시 게시해야 색이 저장된다**(그 전엔 설문이 색을 빼고 보낸다 — 6.25).
