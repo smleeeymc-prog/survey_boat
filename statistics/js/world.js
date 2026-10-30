@@ -23,7 +23,7 @@ import { buildLandmarks } from "./landmarks.js";
 import { makeSkyDome, skyDir } from "./sky.js";
 import { setSurfaceFxSky, setSurfaceFxViewport, setBoatGrade } from "./surface-fx.js";
 import { TiltShift } from "./tilt-shift.js";
-import { arrivalSlot, makeBoat, swayBoat, wrapCorridor, makeRng, hashSeed, clockFlow, stageHalfWidthAt } from "./motion.js";
+import { arrivalSlot, makeBoat, swayBoat, wrapCorridor, makeRng, hashSeed, clockFlow, refHalfWidthAt } from "./motion.js";
 import { makeStyle } from "./style.js";
 import { TourCamera } from "./camera.js";
 
@@ -36,7 +36,7 @@ const TILT_KNEE = (C.BOAT_TILT.knee * Math.PI) / 180, TILT_CAP = (C.BOAT_TILT.ca
 // 줌이 겨누는 높이 — 흘수선이 아니라 선체·캐빈의 가운데쯤 (배 몸 높이 약 0.9)
 const ARRIVAL_AIM_Y = 0.45;
 
-/** 9:16 무대(#stage)의 크기 — 캔버스·카메라 비율은 창이 아니라 무대를 따른다(css/panel.css #stage). */
+/** 무대(#stage — 전시 16:9 · ?stage=9x16 · 둘러보기 세로)의 크기 — 캔버스·카메라 비율은 창이 아니라 무대를 따른다(css/panel.css #stage). */
 export function stageSize() {
   const el = document.getElementById("stage");
   return el ? { w: el.clientWidth, h: el.clientHeight } : { w: window.innerWidth, h: window.innerHeight };
@@ -157,9 +157,10 @@ export class MapWorld {
     this._perf = { samples: [], wall: 0, checkAt: 2.0, step: 0 };
 
     this._rippleScratch = [];
-    // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다. 화면은 9:16 무대라
-    // 무대 폭에서 한 번 계산하고 기기·창 크기와 상관없이 고정한다 — 화면마다 다르면 시계를 맞춰도 자리가 어긋난다.
-    this.flowSpeed = (2 * stageHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
+    // 흐름 속도는 "기준 깊이의 배가 FLOW_CROSS_SEC초에 화면을 건넌다"로 정의돼 있다. 화면은 바다의 기준 화면(9:16)이라
+    // 그 폭에서 한 번 계산하고 기기·창 크기와 상관없이 고정한다 — 화면마다 다르면 시계를 맞춰도 자리가 어긋난다.
+    // [10-30] 16:9 전시 무대에서도 같은 값 — 그 화면에서는 기준 깊이의 배가 약 2분에 건넌다(config.js SEA_REF_ASPECT).
+    this.flowSpeed = (2 * refHalfWidthAt(C.FLOW_REF_DEPTH)) / C.FLOW_CROSS_SEC;
     this._resize();
     window.addEventListener("resize", () => this._resize());
   }
@@ -169,6 +170,8 @@ export class MapWorld {
     this.renderer.setSize(w, h, false);
     this._syncFxViewport();
     this.cam.setAspect(w / h);
+    // 줌 화면에서 배가 앉는 높이 — 가로 무대는 아래 자막이 더 높이 올라와서 조금 위에(config.js ARRIVAL_FRAME_Y_WIDE)
+    this.frameY = w > h ? C.ARRIVAL_FRAME_Y_WIDE : C.ARRIVAL_FRAME_Y;
   }
 
   /** 표면 효과가 "배가 화면에서 몇 픽셀인가"를 재는 기준 — 그리기 버퍼 높이(픽셀비 포함). */
@@ -265,7 +268,7 @@ export class MapWorld {
    *
    * 줌 배율은 "예전 제시 화면보다 배가 3배 크게"(config.js ARRIVAL_ZOOM). 배가 화면에서
    * 차지하는 크기는 거리 × tan(화각/2) 에 반비례하므로 배까지 거리로 화각을 정한다.
-   * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y)에 둔다 — 아래에 방금 도착한 문장이 뜬다.
+   * 배는 화면 가운데보다 조금 위(ARRIVAL_FRAME_Y, 가로 무대는 _WIDE — this.frameY)에 둔다 — 아래에 방금 도착한 문장이 뜬다.
    *
    * 인터랙티브는 이미 떠 있는 배도 이렇게 본다(opts.appear = false — 나타나는 연출이 없다).
    * 어느 쪽이든 배를 혼자 세우지 않는다: 혼자 서 있으면 이웃이 옆을 지나가 격자 간격이 깨진다. 대신 흐름
@@ -286,7 +289,7 @@ export class MapWorld {
     boat.renderScale = appear ? 0 : 1;      // 새 배는 줌이 거의 끝날 때까지 안 보인다
     const slant = Math.hypot(boat.x, C.CAM_HEIGHT - ARRIVAL_AIM_Y, boat.z);
     boat.zoomTan = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
-    this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, C.ARRIVAL_FRAME_Y);
+    this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, this.frameY);
     boat.camSec = zoomSec;
     this.presenting = boat;
     // 카메라가 먼저 움직인다. 화면의 통계 카드는 지금 바로 비켜서고(panel.js), 줌이 끝나
@@ -316,7 +319,7 @@ export class MapWorld {
     boat.renderScale = 1;
     const slant = Math.hypot(boat.x, C.CAM_HEIGHT - ARRIVAL_AIM_Y, boat.z);
     boat.zoomTan = (C.ARRIVAL_REF_SLANT * Math.tan((C.CAM_FOV * Math.PI) / 360)) / C.ARRIVAL_ZOOM / slant;
-    this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, C.ARRIVAL_FRAME_Y);
+    this.cam.setZoomTarget(boat.x, ARRIVAL_AIM_Y, boat.z, boat.zoomTan, this.frameY);
     boat.camSec = hopSec;
     boat.returnSec = zoomSec;   // 닫을 때 줌아웃은 이 배의 보통 줌 시간으로
     this.presenting = boat;
@@ -357,7 +360,7 @@ export class MapWorld {
     if (!b) { this.cam.setZoomProgress(0); return; }
     b.phaseT += dt;
     // 카메라가 그 배를 따라간다(흐름이 늦춰졌을 뿐 멈추진 않았다 — present 머리말)
-    if (b.phase !== "return") this.cam.setZoomTarget(b.x, ARRIVAL_AIM_Y, b.z, b.zoomTan, C.ARRIVAL_FRAME_Y);
+    if (b.phase !== "return") this.cam.setZoomTarget(b.x, ARRIVAL_AIM_Y, b.z, b.zoomTan, this.frameY);
 
     if (b.phase === "approach" && b.hop) {
       this.cam.setZoomProgress(1);

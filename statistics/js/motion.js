@@ -30,11 +30,11 @@
 
 import {
   FLOW_CORRIDOR_W, FLOW_DIR, FLEET_MIN_GAP, FLOW_EPOCH,
-  CAM_FOV, CAM_HEIGHT, STAGE_ASPECT, ARRIVAL_CLEAR, ARRIVAL_TRIES,
+  CAM_FOV, CAM_HEIGHT, SEA_REF_ASPECT, ARRIVAL_CLEAR, ARRIVAL_TRIES,
   ARRIVAL_DEPTH_MIN, ARRIVAL_DEPTH_MAX, ARRIVAL_X_MIN, ARRIVAL_X_MAX,
 } from "./config.js";
 
-const STAGE_TAN_HALF = Math.tan((CAM_FOV * Math.PI) / 360);
+const REF_TAN_HALF = Math.tan((CAM_FOV * Math.PI) / 360);
 
 /** 띠 폭을 주기로 좌표를 접는다. 토러스라 정확히 폭만큼 옮겨야 간격이 유지된다. */
 export function wrapCorridor(x) {
@@ -53,9 +53,12 @@ export function clockFlow(tSec, speed) {
   return wrapCorridor(FLOW_DIR * speed * (e - period * Math.floor(e / period)));
 }
 
-/** 그 깊이에서 9:16 무대 화면의 가로 절반(월드) — camera.js frameHalfWidthAt 과 같은 식을 기기와 상관없이 */
-export function stageHalfWidthAt(depth) {
-  return Math.hypot(depth, CAM_HEIGHT) * STAGE_TAN_HALF * STAGE_ASPECT;
+/**
+ * 그 깊이에서 바다 기준 화면(9:16, config.js SEA_REF_ASPECT)의 가로 절반(월드) — camera.js frameHalfWidthAt 과 같은 식을
+ * 기기와 상관없이. 흐름 속도와 새 배 구역을 이걸로 잰다 — 16:9 전시와 폰 둘러보기가 같은 값을 써야 같은 바다다.
+ */
+export function refHalfWidthAt(depth) {
+  return Math.hypot(depth, CAM_HEIGHT) * REF_TAN_HALF * SEA_REF_ASPECT;
 }
 
 /** 고정 시드 난수 (mulberry32). 같은 시드면 언제나 같은 수열. */
@@ -139,7 +142,7 @@ export function poissonRect(w, h, minGap, rng, tries = 24) {
 
 /**
  * 새 기록의 자리(띠 좌표 x0 · 깊이). 그 기록이 쓰인 순간(phase — 그때 흐름이 민 거리, clockFlow) 화면 왼쪽
- * 등장 구역(깊이 ARRIVAL_DEPTH_MIN~MAX · 그 깊이 9:16 화면 반폭의 ARRIVAL_X_MIN~MAX)에서 이웃과 먼 곳을 고른다.
+ * 등장 구역(깊이 ARRIVAL_DEPTH_MIN~MAX · 그 깊이 기준 9:16 화면 반폭의 ARRIVAL_X_MIN~MAX)에서 이웃과 먼 곳을 고른다.
  *   1. 최소 간격 FLEET_MIN_GAP 을 먼저 지키고  2. 그다음 줌 화면에 이웃이 덜 잡히게(ARRIVAL_CLEAR 타원 — 멀수록 앞뒤로 길다)
  * 구역 안에서 ARRIVAL_TRIES 번 뽑아 보고 둘 다 만족하는 첫 자리, 없으면 가장 나은 자리.
  * 배는 전부 같이 흐르니(토러스) 한 번 벌어진 간격은 영원히 그대로다 — 언제 재도 같다.
@@ -155,8 +158,8 @@ export function poissonRect(w, h, minGap, rng, tries = 24) {
 export function arrivalSlot(boats, phase, rng) {
   // 점수는 간격·타원 모두 1에서 잘리므로, 구역 가로 범위에서 옆으로 ARRIVAL_CLEAR.x(> FLEET_MIN_GAP) 넘게 떨어진 배는 볼 필요가 없다.
   // 미리 걸러 두면 전체 기록을 다시 놓는(새로고침) 시간이 1/3 남짓으로 준다.
-  const xLo = stageHalfWidthAt(ARRIVAL_DEPTH_MIN) * ARRIVAL_X_MIN - ARRIVAL_CLEAR.x;
-  const xHi = stageHalfWidthAt(ARRIVAL_DEPTH_MAX) * ARRIVAL_X_MAX + ARRIVAL_CLEAR.x;
+  const xLo = refHalfWidthAt(ARRIVAL_DEPTH_MIN) * ARRIVAL_X_MIN - ARRIVAL_CLEAR.x;
+  const xHi = refHalfWidthAt(ARRIVAL_DEPTH_MAX) * ARRIVAL_X_MAX + ARRIVAL_CLEAR.x;
   const nx = [], nz = [];
   for (const b of boats) {
     const px = wrapCorridor(b.slot.x0 + phase);
@@ -165,7 +168,7 @@ export function arrivalSlot(boats, phase, rng) {
   let best = null, bestScore = -Infinity;
   for (let n = 0; n < ARRIVAL_TRIES; n++) {
     const depth = ARRIVAL_DEPTH_MIN + rng() * (ARRIVAL_DEPTH_MAX - ARRIVAL_DEPTH_MIN);
-    const x = stageHalfWidthAt(depth) * (ARRIVAL_X_MIN + rng() * (ARRIVAL_X_MAX - ARRIVAL_X_MIN));
+    const x = refHalfWidthAt(depth) * (ARRIVAL_X_MIN + rng() * (ARRIVAL_X_MAX - ARRIVAL_X_MIN));
     const clearZ = ARRIVAL_CLEAR.z * Math.max(1, depth / ARRIVAL_CLEAR.ref);   // 멀수록 줌 화면에 앞뒤가 더 들어온다
     let gap = Infinity, ell = Infinity;
     for (let k = 0; k < nx.length; k++) {

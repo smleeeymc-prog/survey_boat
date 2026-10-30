@@ -26,10 +26,13 @@
  *   flat  backdrop-filter 없이 불투명 배경        (프레임이 계속 모자랄 때 최종 강등)
  * 실기기에서 파도를 켠 채 프레임타임을 재고 자동으로 내려간다 — main.js의 워치독 참고.
  *
- * ── 9:16 무대와 크기 단위 --u ───────────────────────────────────────────────
- * 화면은 9:16 하나로 구성한다(10-03 사용자: "그냥 9:16 비율로"). #stage 가 창 안에서 가장 큰
- * 9:16 상자로 가운데 서고, 남는 곳은 어둡게 비운다 — 가로 모니터에서 띄워도 전시 화면과 같은 그림이다.
- * 모든 크기를 --u 의 배수로 적는다. --u = min(1vw, .5625vh) = 무대 폭의 1/100. 무대 높이는 177.78u.
+ * ── 무대와 크기 단위 --u ───────────────────────────────────────────────────
+ * #stage 가 창 안에서 가장 큰 무대 상자로 가운데 서고, 남는 곳은 어둡게 비운다 — 어느 창에서 띄워도 전시 화면과 같은 그림이다.
+ * 모든 크기를 --u 의 배수로 적는다. --u = 무대 짧은 변의 1/100.
+ *   9:16 세로  이 파일의 기본 규칙. --u = min(1vw, .5625vh) = 무대 폭의 1/100, 높이 177.78u.
+ *              둘러보기(explore.html, 폰)와 ?stage=9x16 전시(10-03~10-29의 전시 화면)가 이 무대다.
+ *   16:9 가로  전시 화면(10-30 사용자: "16:9 가로모드로"). <html data-stage="16x9"> 일 때 맨 아래 블록이 덮어쓴다.
+ *              --u = 무대 높이의 1/100, 폭 177.78u. 짧은 변 기준이라 같은 화면을 돌려 세웠을 때 글자 픽셀이 같다.
  * ========================================================================== */
 
 :root {
@@ -57,7 +60,7 @@
 
 html, body {
   height: 100%;
-  /* 무대 밖(9:16이 아닌 창의 남는 곳) — 어둡게 비운다 */
+  /* 무대 밖(무대와 비율이 다른 창의 남는 곳) — 어둡게 비운다 */
   background: #05070b;
   color: var(--t1);
   font-family: var(--ui);
@@ -65,7 +68,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* 9:16 무대. transform 이 있어서 안의 position: fixed 층들이 화면이 아니라 무대를 기준으로 선다
+/* 무대(기본 9:16 — 16:9 는 맨 아래 블록). transform 이 있어서 안의 position: fixed 층들이 화면이 아니라 무대를 기준으로 선다
    (그래서 층마다 따로 고칠 것 없이 inset: 0 이 곧 무대 전체다). */
 #stage {
   position: fixed;
@@ -550,6 +553,88 @@ html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filte
 .arrival.on .log-row:nth-child(2) { animation-delay: 1.52s; }
 .arrival.on .log-row:nth-child(3) { animation-delay: 1.64s; }
 .arrival.on .log-row:nth-child(4) { animation-delay: 1.76s; }
+
+/* ── 16:9 가로 무대 — 전시 화면 (10-30) ──────────────────────────────────────
+   사용자: "16:9 가로모드로 바꿔줘". 위 규칙(9:16)은 둘러보기와 ?stage=9x16 이 그대로 쓰고, 전시 index.html 만
+   <html data-stage="16x9"> 로 이 블록을 얹는다. 카메라는 세로 화각(50°)이 같아 수평선이 그대로 위에서 28%에 있고
+   옆으로만 넓어진다 — 그래서 높이가 빠듯하다(세로 무대 177.78u → 100u). 자리를 이렇게 다시 놓았다:
+     제목     왼쪽 위 그대로, 작게 — 하늘 띠(28u) 안팎에 들어가게. 어둠도 왼쪽 위 모서리만(오른쪽 하늘의 해·구름은 밝게 둔다)
+     통계     오른쪽 기둥 카드 — 가운데에 띄우면 배가 흐르는 바다 한복판을 덮는다. 왼쪽 바다(새 배가 뜨는 곳)는 남는다
+     새 문장  아래 가운데 자막 그대로, 기록 넷은 한 줄 네 칸 */
+html[data-stage="16x9"] {
+  --u: min(.5625vw, 1vh);
+  --pad-x: calc(5.4 * var(--u));
+  /* 차트 자리가 세로 무대보다 낮다(약 47u, 세로는 65u) — 글자 기준을 한 단계 내려 같은 차트가 들어가게 */
+  --stat-base: calc(5.6 * var(--u));
+}
+html[data-stage="16x9"] #stage {
+  width: calc(177.78 * var(--u));
+  height: calc(100 * var(--u));
+}
+html[data-stage="16x9"] .scrimTop {
+  height: calc(46 * var(--u));
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 38%, transparent 70%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 38%, transparent 70%);
+}
+html[data-stage="16x9"] .stageDim {
+  /* 카드(오른쪽 기둥) 뒤를 깊게 — 왼쪽 바다는 옅게 남는다 */
+  background: radial-gradient(ellipse 60% 100% at 73% 50%,
+    rgba(var(--night), .42) 0%, rgba(var(--night), .26) 62%, rgba(var(--night), .12) 100%);
+}
+html[data-stage="16x9"] .masthead {
+  top: calc(5.4 * var(--u));
+  min-width: calc(58 * var(--u));
+  max-width: calc(72 * var(--u));
+}
+html[data-stage="16x9"] .m-title { font-size: calc(3.6 * var(--u)); }
+html[data-stage="16x9"] .m-count { font-size: calc(12 * var(--u)); margin-top: calc(1.1 * var(--u)); }
+html[data-stage="16x9"] .p-plus { font-size: calc(2.6 * var(--u)); }
+html[data-stage="16x9"] .m-sub { font-size: calc(2.7 * var(--u)); margin-top: calc(1 * var(--u)); }
+html[data-stage="16x9"] .m-next.on { margin-top: calc(2 * var(--u)); }
+html[data-stage="16x9"] .m-next-text { gap: calc(1.2 * var(--u)); margin-top: calc(1 * var(--u)); }
+html[data-stage="16x9"] .m-next-num { font-size: calc(3 * var(--u)); }
+html[data-stage="16x9"] .m-next-name { font-size: calc(2.2 * var(--u)); }
+html[data-stage="16x9"] .m-next-tag { font-size: calc(1.8 * var(--u)); }
+
+html[data-stage="16x9"] .report {
+  left: auto; right: var(--pad-x); top: 50%;
+  width: calc(94 * var(--u));
+  height: calc(86 * var(--u));
+  padding: calc(4.6 * var(--u)) calc(4.8 * var(--u)) calc(4.2 * var(--u));
+  border-radius: calc(3.4 * var(--u));
+  transform: translate(0, calc(-50% + 3 * var(--u))) scale(.985);
+}
+html[data-stage="16x9"] .report.show { transform: translate(0, -50%); }
+html[data-stage="16x9"] .r-chapter { gap: calc(1.3 * var(--u)); }
+html[data-stage="16x9"] .r-num { font-size: calc(3.2 * var(--u)); }
+html[data-stage="16x9"] .r-name { font-size: calc(2 * var(--u)); }
+html[data-stage="16x9"] .r-idx { font-size: calc(1.9 * var(--u)); }
+html[data-stage="16x9"] .r-rule { margin: calc(1.3 * var(--u)) 0 calc(2.2 * var(--u)); }
+html[data-stage="16x9"] .r-headline { font-size: calc(4.8 * var(--u)); line-height: 1.4; }
+html[data-stage="16x9"] .r-chart { margin-top: calc(2 * var(--u)); font-size: calc(2.2 * var(--u)); }
+html[data-stage="16x9"] .r-foot { margin-top: calc(1.5 * var(--u)); font-size: calc(1.85 * var(--u)); }
+
+html[data-stage="16x9"] .arrival {
+  padding: calc(11 * var(--u)) var(--pad-x) calc(4.6 * var(--u));
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 calc(9 * var(--u)));
+  mask-image: linear-gradient(180deg, transparent 0, #000 calc(9 * var(--u)));
+}
+html[data-stage="16x9"] .arrival-in { max-width: calc(136 * var(--u)); }
+html[data-stage="16x9"] .log-tag,
+html[data-stage="16x9"] .log-no { font-size: calc(1.9 * var(--u)); }
+html[data-stage="16x9"] .log-rule { margin: calc(1.2 * var(--u)) 0 calc(2.2 * var(--u)); }
+html[data-stage="16x9"] .arrival-text { font-size: calc(4.6 * var(--u)); }
+html[data-stage="16x9"] .arrival-text.long { font-size: calc(3.9 * var(--u)); }
+html[data-stage="16x9"] .arrival-sign { margin-top: calc(1 * var(--u)); font-size: calc(2.1 * var(--u)); }
+html[data-stage="16x9"] .log-rows {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: calc(1.6 * var(--u)) calc(3.6 * var(--u));
+  margin-top: calc(2.4 * var(--u));
+  padding-top: calc(2 * var(--u));
+}
+html[data-stage="16x9"] .log-row dt { font-size: calc(1.7 * var(--u)); }
+html[data-stage="16x9"] .log-row dd { font-size: calc(2.6 * var(--u)); }
+html[data-stage="16x9"] .log-row dd.num { font-size: calc(2.3 * var(--u)); }
 
 /* 움직임을 줄이도록 설정한 환경 — 전부 끄고 마지막 모습만 보여준다 */
 @media (prefers-reduced-motion: reduce) {

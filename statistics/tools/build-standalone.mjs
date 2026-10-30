@@ -16,9 +16,10 @@
  * 씬 문서 자체는 원본과 동작이 같아야 하므로, 소스를 고치는 건 아래 REWRITES에 적힌
  * 세 군데뿐이다. 그 밖에는 한 글자도 안 바꾼다.
  *
- * 바깥 껍데기는 세로 9:16 액자다. 전시장 화면이 세로라, 가로 모니터에서 그냥 띄우면
- * 레이아웃 판단이 안 된다. 액자 안은 iframe이고 그 안에서는 vw/vh와 position:fixed가
+ * 바깥 껍데기는 가로 16:9 액자다(10-30 전시 화면이 16:9 가로 — 그 전엔 세로 9:16 액자였다). 다른 비율의 창에서
+ * 그냥 띄우면 레이아웃 판단이 안 된다. 액자 안은 iframe이고 그 안에서는 vw/vh와 position:fixed가
  * 실제 전시 화면과 똑같이 동작한다 — 그래서 CSS를 시안용으로 고칠 필요가 없다.
+ * 씬 문서의 <html> 에 data-stage="16x9" 를 박는다 — index.html 머리의 ?stage= 스크립트는 몸통만 가져오는 이 빌드에 안 들어온다.
  *
  * 사용법:  node statistics/tools/build-standalone.mjs [three 패키지 경로] [출력 경로] [씬 base64 출력]
  *   three 패키지 경로 기본값: ./node_modules/three  (npm i three@0.160.1 로 받으면 된다)
@@ -223,7 +224,7 @@ const FONTS_URL = (indexHtml.match(/href="(https:\/\/fonts\.googleapis\.com\/css
 if (!FONTS_URL) throw new Error("[build] index.html 에서 구글 폰트 주소를 못 찾음");
 
 const sceneDoc = `<!doctype html>
-<html lang="ko"data-glass="lens">
+<html lang="ko" data-glass="lens" data-stage="16x9">
 <head><meta charset="utf-8"><title>머무름의 지도</title>
 <link rel="stylesheet" href="${FONTS_URL}">
 <style>${css}</style></head>
@@ -254,7 +255,7 @@ const shell = `<!doctype html>
   h1 { font-size:17px; font-weight:600; color:#e8f0f5; letter-spacing:-.01em; }
   .note { font-size:12.5px; line-height:1.65; color:#7e94a3; max-width:620px; text-align:center; }
   .note b { color:#b9ccd8; font-weight:600; }
-  .frame { position:relative; height:min(76vh, 900px); aspect-ratio:9/16;
+  .frame { position:relative; width:min(94vw, calc(76vh * 16 / 9), 1280px); aspect-ratio:16/9;
            border-radius:18px; overflow:hidden; background:#bfe9ef;
            box-shadow:0 18px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.09); }
   .frame iframe { width:100%; height:100%; border:0; display:block; }
@@ -269,11 +270,11 @@ const shell = `<!doctype html>
 <body>
   <h1>머무름의 지도 — 시안</h1>
   <p class="note">
-    전시장 세로 화면(9:16) 기준입니다. 배는 <b>왼쪽 끝에서 나타나 오른쪽으로 빠지고</b>,
-    화면 세로 중앙 근처의 배가 <b>40초</b>에 화면을 건넙니다. 가까운 배는 24초, 먼 배는 90초 —
-    그 차이가 깊이감입니다.<br>
-    배의 <b>요소는 그 문장이 고른 키워드</b>이고, 선체 색조만 아직 난수입니다(채널 미확정).
-    화면은 <b>풍경 30초 ↔ 통계 3장</b>을 번갈아 갑니다 — 통계는 가운데 카드에 한 장씩, 장마다
+    전시장 가로 화면(16:9) 기준입니다. 배는 <b>왼쪽에서 오른쪽으로 흐르고</b>,
+    화면 세로 가운데쯤의 배가 <b>약 2분</b>에 화면을 건넙니다. 가까운 배는 1분 반, 먼 배는 5분 —
+    그 차이가 깊이감입니다(폰 둘러보기와 같은 바다·같은 시계라 화면이 넓은 만큼 오래 걸립니다).<br>
+    배의 <b>요소는 그 문장이 고른 키워드</b>이고, 배 색은 참여자가 고른 색입니다.
+    화면은 <b>풍경 30초 ↔ 통계 3장</b>을 번갈아 갑니다 — 통계는 오른쪽 카드에 한 장씩, 장마다
     한 줄 결론 · 근거 차트 · 기간·표본 각주. 약 14초에 한 번 새 기록이 도착하면 통계 카드가 비켜서고,
     카메라가 제자리에서 그 배로 고개를 돌려 렌즈를 당긴 뒤, 배가 서면 숫자가 +1 되고 항해일지 카드가 8초간 뜹니다.
   </p>

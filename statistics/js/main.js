@@ -198,7 +198,8 @@ class Exhibit {
       `boats ${W.boats.length} / records ${this.records.length}\n` +
       `draw calls ${info.calls}  tris ${info.triangles.toLocaleString()}\n` +
       `glass ${document.documentElement.dataset.glass}  time ${TIME_KEY}\n` +
-      `flow ${W.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 ${C.FLOW_CROSS_SEC}초에 화면 횡단)\n` +
+      // 속도는 기준 9:16 화면에서 정한 값이라(config.js SEA_REF_ASPECT) 16:9 무대에서는 같은 배가 더 오래 건넌다
+      `flow ${W.flowSpeed.toFixed(3)} u/s  (깊이 ${C.FLOW_REF_DEPTH}에서 이 화면 ${(2 * W.cam.frameHalfWidthAt(C.FLOW_REF_DEPTH) / W.flowSpeed).toFixed(0)}초 · 기준 9:16 ${C.FLOW_CROSS_SEC}초에 횡단)\n` +
       `시계보다 ${(W._lag / W.flowSpeed).toFixed(1)}초 뒤 · 흐름 ×${W._flowMul.toFixed(2)}`;
   }
 }

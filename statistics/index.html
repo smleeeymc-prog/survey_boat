@@ -1,7 +1,10 @@
 <!doctype html>
-<html lang="ko" data-glass="lens">
+<html lang="ko" data-glass="lens" data-stage="16x9">
 <head>
 <meta charset="utf-8" />
+<!-- 무대 비율 — 전시 화면은 16:9 가로(10-30). ?stage=9x16 이면 예전 세로 무대(css/panel.css 기본 규칙).
+     CSS 가 그리기 전에 바꿔야 한 프레임 가로로 번쩍이지 않아서 머리에서 바로 고친다. -->
+<script>if (new URLSearchParams(location.search).get("stage") === "9x16") document.documentElement.dataset.stage = "9x16";</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>머무름의 지도 — 그래도, 여기 살고 있습니다</title>
 <meta name="description" content="참여자들이 남긴 문장이 배가 되어 한 바다에 모이는 전시용 화면" />
@@ -38,10 +41,11 @@
         ?interactive=1                      드래그로 시점 조작 (리허설용)
         ?seed=46&interval=14                목업 데이터 초기 개수·유입 간격(초)
         ?depths=1                           등장 깊이 보정 — 주요 깊이마다 배 한 척 + 숫자
+        ?stage=9x16                         예전 세로 무대(10-03~10-29의 전시 화면). 기본은 16:9 가로
   ===========================================================================
 -->
 
-<!-- 9:16 무대 — 전시 화면 비율 하나로 구성한다. 다른 비율의 창에서는 무대가 가운데 서고 양옆(위아래)은 어둡게 비운다.
+<!-- 무대 — 전시 화면 비율(16:9) 하나로 구성한다. 다른 비율의 창에서는 무대가 가운데 서고 위아래(양옆)는 어둡게 비운다.
      아래 층들(position: fixed)은 무대의 transform 때문에 화면이 아니라 이 무대를 기준으로 선다. css/panel.css #stage -->
 <div id="stage">
 <canvas id="scene"></canvas>

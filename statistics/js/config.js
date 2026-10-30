@@ -24,8 +24,8 @@
 export const MODEL_URLS = ["./assets/Scene.glb", "../assets/Scene.glb"];
 
 // ── 입구 ────────────────────────────────────────────────────────────────────
-// 같은 장면을 두 입구가 쓴다 — 전시 송출(index.html)과 인터랙티브(explore.html, <html data-page="explore">).
-// 인터랙티브는 바다를 좌우로 더 둘러볼 수 있어서 배가 사는 띠를 그만큼 넓혀야 한다(아래 FLOW_ASPECT_MAX).
+// 같은 장면을 두 입구가 쓴다 — 전시 송출(index.html, 16:9 가로)과 인터랙티브(explore.html, <html data-page="explore">, 폰 세로).
+// 두 화면이 같은 바다라 배가 사는 띠는 둘 중 더 넓게 보는 화면(16:9 전시)에 맞춘다(아래 FLOW_ASPECT_MAX).
 // node(tools/check-insights.mjs)에서도 이 파일을 읽으므로 document 가 없을 수 있다.
 export const IS_EXPLORE = typeof document !== "undefined" && document.documentElement.dataset.page === "explore";
 // 인터랙티브 바다 조작(js/explore/view-control.js). 10-06 사용자 결정:
@@ -131,7 +131,7 @@ export const SENTENCE_Q = TAXONOMY.SENTENCE_Q || {};
 // 배는 한 방향으로 천천히 흐른다. 화면 한쪽 끝에서 나타나 반대쪽으로 빠진다.
 // 속도는 "기준 깊이(FLOW_REF_DEPTH)에 있는 배가 화면을 가로지르는 데 걸리는 시간"으로
 // 정의한다 — 화면 폭은 기기 화면비마다 다르므로, 실제 속도는 카메라에서 역산한다
-// (motion.js stageHalfWidthAt / world.js flowSpeed — 9:16 무대 폭에서 한 번 계산해 고정한다).
+// (motion.js refHalfWidthAt / world.js flowSpeed — 기준 9:16 화면(SEA_REF_ASPECT) 폭에서 한 번 계산해 고정한다).
 // 모든 배가 같은 월드 속도로 움직이므로 가까운 배는 40초보다 빨리, 먼 배는 느리게
 // 지나간다 — 그게 원근이고, 깊이감이 거기서 나온다. 깊이마다 속도를 달리 주면
 // 전부 한 덩어리로 미끄러져서 평면 스크롤처럼 보인다.
@@ -146,14 +146,19 @@ export const FLOW_DIR = -1;            // 화면에서 왼→오른쪽으로 흐
 // [변경] 예전엔 80으로 박고 "가로 화면(비율 1.6)"을 기준으로 삼았는데, 전시장 가로 화면은
 //   16:9(1.78)라 가장 먼 배 깊이에서 화면 반폭이 40.3 — 띠 반폭 40보다 넓어서 배가 화면
 //   안에서 감겼다(selfcheck 7). 기준 화면비만 적어 두면 카메라를 고쳐도 폭이 따라온다.
-// 화면비. 10-03부터 화면은 9:16 무대 하나다(css/panel.css #stage — 다른 창에서도 9:16으로 선다).
-// 예전엔 16:9 가로 화면까지 받느라 띠가 86으로 넓어서, 세로 화면에서는 배의 2/3가 화면 밖을 돌았다
-// (사용자: "바다가 휑하다, 더 빽빽하게"). 9:16으로 역산하면 띠가 30 남짓 — 같은 배가 화면 안에 모인다.
-// 인터랙티브(IS_EXPLORE)는 양옆으로 화면 폭의 EXPLORE_VIEW.pan 씩 더 둘러보므로, 보이는 가로가 그만큼(1 + 2·pan배) 넓다.
-// [10-14] 전시 화면도 같은 폭을 쓴다 — 두 화면이 같은 바다(같은 자리·같은 시계)를 보여야 해서다(아래 FLOW_EPOCH).
-//   예전엔 전시만 좁은 띠(30)라 같은 배가 두 화면에서 다른 데 떠 있었다.
-export const STAGE_ASPECT = 9 / 16;
-export const FLOW_ASPECT_MAX = STAGE_ASPECT * (1 + 2 * EXPLORE_VIEW.pan);
+// 화면비. 10-03부터 화면은 9:16 무대 하나였다(예전엔 16:9 가로까지 받느라 띠가 86으로 넓어서, 세로 화면에서는 배의 2/3가
+// 화면 밖을 돌았다 — 사용자: "바다가 휑하다, 더 빽빽하게"). [10-30] 전시 화면이 다시 16:9 가로다(사용자: "16:9 가로모드로").
+//   EXHIBIT_ASPECT  전시 무대(css/panel.css html[data-stage="16x9"]). ?stage=9x16 이면 예전 세로 무대로 선다.
+//   SEA_REF_ASPECT  바다의 기준 화면 — 흐름 속도와 새 배가 떠오르는 구역을 이 화면 폭으로 잰다(motion.js refHalfWidthAt).
+//                   둘러보기(폰 세로)와 예전 전시가 이 9:16이다. 전시가 가로가 돼도 바꾸지 않는다: 두 화면이 같은 바다
+//                   (같은 자리·같은 시계, 아래 FLOW_EPOCH)라 속도·구역이 같아야 하고, 폰에서 새 배가 화면 안에서 떠올라야 한다.
+//                   그래서 가로 전시에서는 새 배가 화면 가운데에서 조금 왼쪽에 뜨고, 기준 깊이의 배가 화면을 약 2분에 건넌다
+//                   (배 길이로 잰 빠르기는 그대로 — 화면이 넓어진 만큼 오래 걸린다).
+// 띠는 두 화면 중 더 넓게 보는 쪽에 맞춘다 — 16:9 전시(1.78)가 둘러보기(9:16 + 양옆 pan, 0.79)보다 넓다.
+// [10-14] 두 화면이 같은 띠를 쓴다(예전엔 전시만 좁은 띠라 같은 배가 두 화면에서 다른 데 떠 있었다).
+export const EXHIBIT_ASPECT = 16 / 9;
+export const SEA_REF_ASPECT = 9 / 16;
+export const FLOW_ASPECT_MAX = Math.max(EXHIBIT_ASPECT, SEA_REF_ASPECT * (1 + 2 * EXPLORE_VIEW.pan));
 // 흐름은 벽시계를 따른다(world.js tick). 이 순간(2026-10-01 00:00 UTC)에 띠가 0만큼 밀려 있었다고 치고,
 // 지금 얼마나 밀렸는지는 시각에서 바로 계산한다 — 그래서 전시 화면과 둘러보기를 따로 켜도, 새로고침해도
 // 배가 같은 자리에 있다. 배를 크게 보여주는 동안 흐름을 늦추면(ARRIVAL_FLOW_MUL) 그 화면만 시계보다
@@ -185,7 +190,10 @@ export const ARRIVAL_CLEAR = { x: 2.8, z: 5.5, ref: 26 };
 export const ARRIVAL_TRIES = 160;
 // 띠에 동시에 띄우는 배의 상한. 넘으면 오래된 기록부터 자리를 물려준다.
 // (인스턴스 버퍼를 매번 다시 만들지 않으려고 처음부터 이 크기로 잡아 둔다)
-export const FLEET_CAPACITY = 80;
+// [10-30] 80 → 160: 16:9 전시에 맞춰 띠가 44 → 90으로 넓어졌다. 정원을 그대로 두면 같은 배가 두 배 길이에 퍼져
+// 둘러보기(폰) 화면의 배가 절반이 된다 — 띠 길이당 배 수를 지금과 같게 맞췄다. 꽉 차면 16:9 전시 화면에 100척 남짓이 보인다.
+// 두 화면이 같은 바다라 정원도 같아야 한다(자리를 고를 때 그때 떠 있던 배를 이웃으로 본다 — motion.js arrivalSlot).
+export const FLEET_CAPACITY = 160;
 
 // 바다 격자 — 월드에 고정된 한 장이고 칸 크기가 곳곳이 다르다(ocean.js buildWater).
 //   WATER_CORE_X/Z  새 배를 망원으로 당겨 보는 구역. 등장 자리(깊이 13~50, 화면 왼쪽 절반)와
@@ -196,13 +204,14 @@ export const FLEET_CAPACITY = 80;
 //                   온보딩은 셀 0.44에 배 3.38이고, 지도는 배가 1.5라 셀도 그만큼 작다.
 //   WATER_CELL_MAX  먼 바다 칸의 상한. 원근으로 작아 보이므로 화면에서는 가까운 칸과 비슷하다.
 //   범위            수평선 가까이까지 바다가 이어져야 한다 — 거리 페이드(아래)보다 넉넉히.
-//                   가로 ±70 은 9:16 무대에서 먼 바다(160) 양끝(±42)보다 넉넉한 폭이다(예전 16:9용 ±140).
+//                   가로 ±140 은 16:9 화면에서 먼 바다(160) 양끝(±133)까지 덮는 폭이다(10-30 다시 가로 — 9:16 때는 ±70).
+//                   늘어난 곳은 가장 굵은 칸(WATER_CELL_MAX)이라 꼭짓점은 몇 천 개 는다.
 export const WATER_CELL = 0.32;
 export const WATER_CELL_GROWTH = 1.045;
 export const WATER_CELL_MAX = 2.6;
 export const WATER_CORE_X = 16;
 export const WATER_CORE_Z = [8, 62];
-export const WATER_EXTENT_X = 70;
+export const WATER_EXTENT_X = 140;
 export const WATER_Z_MIN = 0;
 export const WATER_Z_MAX = 170;
 
@@ -310,8 +319,8 @@ export const CAM_SWAY_SEC = 71;
 // 배가 사는 띠의 폭(흐름 절 참고). 카메라 값을 읽어야 해서 여기 둔다 — const는 호이스팅되지
 // 않으므로 CAM_* 보다 위에 두면 모듈 로드 때 터진다(standalone 빌드도 같은 순서로 이어붙인다).
 // 가장 먼 배(FLOW_DEPTH_MAX)의 화면 반폭 — camera.js frameHalfWidthAt과 같은 식 — 을
-// FLOW_ASPECT_MAX 화면에서 재고, 여유를 더해 정수로 올린다. 16:9면 반폭 40.3 + 3 → 44, 폭 88.
-// 폭이 넓어져도 흐름 속도는 그대로다(속도는 화면 폭에서 역산하지 띠 폭과 무관, main.js
+// FLOW_ASPECT_MAX 화면에서 재고, 여유를 더해 정수로 올린다. 16:9면 반폭 42.0 + 3 → 45, 폭 90.
+// 폭이 넓어져도 흐름 속도는 그대로다(속도는 기준 화면 폭에서 역산하지 띠 폭과 무관, world.js
 // flowSpeed). 푸아송 자리는 폭에 비례해 늘 뿐이라 정원 검사(selfcheck 6)는 더 넉넉해진다.
 export const FLOW_CORRIDOR_W = 2 * Math.ceil(
   Math.hypot(FLOW_DEPTH_MAX, CAM_HEIGHT) * Math.tan((CAM_FOV * Math.PI) / 360) * FLOW_ASPECT_MAX
@@ -344,6 +353,9 @@ export const ARRIVAL_REF_SLANT = Math.hypot(11, 8);   // 예전 제시 화면의
 export const ARRIVAL_ZOOM_SEC = 3.2;
 // 줌 화면에서 배가 앉는 세로 자리(위에서). 아래에는 방금 도착한 문장이 자막으로 뜬다.
 export const ARRIVAL_FRAME_Y = 0.42;
+// [10-30] 가로 무대(16:9 전시)에서는 자막이 화면 높이의 절반 가까이를 쓴다(세로 무대는 40%) — 배를 조금 더 위에 세운다.
+// 줌 화면에서는 숨쉬기(CAM_BOB)로 배가 ±7% 오르내려서, 0.42면 내려간 때 선체 밑동(위에서 최대 64%)이 자막 글자 줄(긴 문장은 62%부터)에 닿는다.
+export const ARRIVAL_FRAME_Y_WIDE = 0.36;
 // 6.5 → 8.0: 카드가 문장 한 줄에서 항해일지(문장 + 출발한 곳·지금의 자리·싣고 온 것·기록 시각)로
 // 늘었다. 카드가 뜨는 데만 1.6초(css .arrival.on)가 쓰인다.
 export const ARRIVAL_HOLD_SEC = 8.0;     // 문장을 보여주는 시간 (이 동안 흐름이 늦춰진다)
@@ -359,8 +371,9 @@ export const ARRIVAL_SCALE = 1.0;
 // 가로는 "화면 한가운데에서 왼쪽 끝 사이"로 제한한다. 배는 화면 오른쪽으로 흐르므로
 // 오른쪽에서 등장하면 카메라가 물러나자마자 화면 밖으로 빠져 버린다.
 // (카메라는 +Z를 보고, 그래서 화면 왼쪽이 월드 +X다. FLOW_DIR=-1 이 곧 "오른쪽으로")
-export const ARRIVAL_X_MIN = 0.10;       // 그 깊이에서의 화면 반폭 대비 비율. 0=한가운데
-export const ARRIVAL_X_MAX = 0.88;       // 1=왼쪽 끝
+// 화면은 바다의 기준 화면(SEA_REF_ASPECT 9:16 — 둘러보기 폰 화면)이다. 16:9 전시에서는 가운데에서 왼쪽으로 반폭의 3~28%.
+export const ARRIVAL_X_MIN = 0.10;       // 그 깊이에서의 기준 화면 반폭 대비 비율. 0=한가운데
+export const ARRIVAL_X_MAX = 0.88;       // 1=기준 화면 왼쪽 끝
 // 깊이(카메라에서의 거리)는 무작위지만 이 범위 안에서만 고른다. 너무 가까우면 화면
 // 아래로 잘리고, 너무 멀면 상단 패널 뒤로 들어간다. 세로 화면(FOV 50, 높이 8) 실측 —
 // 괄호 안은 그 깊이의 배가 카메라가 물러난 뒤 화면 세로 어디에 앉는가:
