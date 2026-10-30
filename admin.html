@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- 관리자 페이지(10-30) — 어디에도 링크하지 않는다. 검색에도 안 걸리게 -->
+<meta name="robots" content="noindex, nofollow" />
+<title>기록 관리 · 그래도, 여기 살고 있습니다</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="./ui/admin/admin.css" />
+</head>
+<body>
+<header class="top">
+  <h1>기록 관리 <span class="badge b-emu" id="modeBadge" hidden>에뮬레이터</span></h1>
+  <div class="who"><span id="who"></span><button type="button" class="btn ghost" id="logout" hidden>로그아웃</button></div>
+</header>
+
+<main>
+  <!-- 로그인 — db-config.js ADMIN_EMAILS 계정만 규칙이 받는다 -->
+  <section id="login" class="login" hidden>
+    <form id="loginForm" autocomplete="on">
+      <h2>관리자 로그인</h2>
+      <label>이메일<input id="email" type="email" autocomplete="username" required /></label>
+      <label>비밀번호<input id="password" type="password" autocomplete="current-password" required /></label>
+      <button type="submit" class="btn primary" id="loginBtn">로그인</button>
+      <p class="msg" id="loginMsg" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="bar">
+      <select id="fStatus" aria-label="공개 상태">
+        <option value="all">공개·숨김 전부</option>
+        <option value="public">공개만</option>
+        <option value="hidden">숨김만</option>
+      </select>
+      <select id="fKind" aria-label="종류">
+        <option value="all">실제·더미 전부</option>
+        <option value="real">실제만</option>
+        <option value="dummy">더미만</option>
+      </select>
+      <input id="fQ" type="search" placeholder="문장·마음·이름·지역·id 찾기" aria-label="찾기" />
+      <button type="button" class="btn" id="reload">새로고침</button>
+    </div>
+    <div class="bar sel">
+      <button type="button" class="btn" id="selAll">보이는 것 전부 고르기</button>
+      <button type="button" class="btn ghost" id="selClear">고른 것 풀기</button>
+      <span id="selCount" class="count"></span>
+      <span class="grow"></span>
+      <button type="button" class="btn" id="selHide">숨기기</button>
+      <button type="button" class="btn" id="selShow">되살리기</button>
+      <button type="button" class="btn danger" id="selRemove">완전 삭제</button>
+    </div>
+    <p class="summary" id="summary"></p>
+    <p class="status" id="status" role="status"></p>
+    <div id="list" class="list"></div>
+    <button type="button" class="btn more" id="more" hidden>더 불러오기</button>
+  </section>
+</main>
+
+<!-- 라벨·스키마는 설문과 같은 클래식 스크립트(전역) -->
+<script src="./statistics/shared/survey-taxonomy.js"></script>
+<script src="./statistics/shared/record-schema.js"></script>
+<script type="module" src="./ui/admin/admin-main.js"></script>
+</body>
+</html>

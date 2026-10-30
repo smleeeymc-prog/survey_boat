@@ -462,6 +462,73 @@ try {
   }
   await putRules(newRules);
 
+  // ═══ 9 — 관리자 페이지(admin.html, 10-30) ═══════════════════════════════════
+  // 콘솔에서 만든 이메일/비밀번호 계정(db-config.js ADMIN_EMAILS)으로 로그인 → 숨긴 것까지 목록 · 그림 · 숨기기·되살리기 · 완전 삭제 · 고른 것 한꺼번에
+  console.log("\n[9] 관리자 페이지");
+  {
+    const ADMIN_EMAIL = (cfgSrc.match(/ADMIN_EMAILS = \["([^"]+)"/) || [])[1];
+    const PASS = "e2e-admin-pass";
+    await new Promise((resolve, reject) => {   // 인증 에뮬레이터에 관리자 계정 — 프록시를 타지 않게 http 로 직접
+      const body = JSON.stringify({ email: ADMIN_EMAIL, password: PASS, returnSecureToken: true });
+      const req = http.request({ host: "127.0.0.1", port: 9099, method: "POST", path: "/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-key",
+        headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (res) => {
+        let out = ""; res.on("data", (c) => (out += c));
+        res.on("end", () => (res.statusCode === 200 ? resolve() : reject(new Error(`관리자 계정 만들기 실패 ${res.statusCode} ${out.slice(0, 200)}`))));
+      });
+      req.on("error", reject); req.end(body);
+    });
+    const tag = `관리자확인${Date.now() % 100000}`;
+    const pub = await seedRecord({ text: `${tag} 공개 문장`, feeling: "관리자가 보는 마음" });
+    const hid = await seedRecord({ text: `${tag} 숨긴 문장`, moderation_status: "hidden" });
+    const B64 = fs.readFileSync(path.join(ROOT, "assets", "icons", "icon-192.png")).toString("base64");
+    for (const r of [pub, hid]) await admin((db) => setDoc(doc(db, "thumbs", r.record_id), { record_id: r.record_id, data: `data:image/png;base64,${B64}`, created_at: Timestamp.now() }));
+
+    const ctxA = await newContext({ width: 1100, height: 900 });
+    const pa = await ctxA.newPage();
+    const aLogs = watch(pa);
+    pa.on("dialog", (d) => d.accept());
+    await pa.goto(`${BASE}/admin.html?emu=1`);
+    await pa.locator("#loginForm").waitFor({ timeout: 30000 });
+    check("관리자: 로그인 화면에 관리자 이메일이 미리 채워진다", (await pa.inputValue("#email")) === ADMIN_EMAIL, ADMIN_EMAIL);
+    await pa.fill("#password", "틀린비밀번호");
+    await pa.click("#loginBtn");
+    await waitFor(() => pa.locator("#loginMsg").textContent(), { label: "틀린 비밀번호 안내" });
+    check("관리자: 틀린 비밀번호는 안내만 뜨고 목록은 안 보인다", /맞지 않아요/.test(await pa.textContent("#loginMsg")) && await pa.locator("#app").isHidden(),
+      await pa.textContent("#loginMsg"));
+    await pa.fill("#password", PASS);
+    await pa.click("#loginBtn");
+    await pa.locator(".row").first().waitFor({ timeout: 30000 });
+    const all = await adminDocs("records");
+    const shown = await pa.locator(".row").count();
+    const rowOf = (r) => pa.locator(`.row[data-id="${r.record_id}"]`);
+    check("관리자: 숨긴 기록까지 전부 보인다 (DB 문서 수 = 카드 수)", shown === all.length && await rowOf(hid).count() === 1 && /숨김/.test(await rowOf(hid).textContent()),
+      `${shown} / ${all.length}`);
+    check("관리자: 마음·문장이 글자 그대로 보인다", /관리자가 보는 마음/.test(await rowOf(pub).textContent()));
+    await rowOf(pub).locator(".thumb").click();
+    await rowOf(pub).locator(".thumb img").waitFor({ timeout: 10000 });
+    check("관리자: '그림'을 누르면 배 그림을 받는다", true);
+    await rowOf(pub).getByRole("button", { name: "숨기기" }).click();
+    await waitFor(async () => (await adminDocs("records")).find((d) => d.id === pub.record_id).moderation_status === "hidden", { label: "숨기기" });
+    await rowOf(pub).getByRole("button", { name: "되살리기" }).click();
+    await waitFor(async () => (await adminDocs("records")).find((d) => d.id === pub.record_id).moderation_status === "public", { label: "되살리기" });
+    check("관리자: 숨기기 → 되살리기가 DB 에 그대로", true);
+    await rowOf(hid).getByRole("button", { name: "삭제" }).click();
+    await waitFor(async () => !(await adminDocs("records")).some((d) => d.id === hid.record_id) && !(await adminDocs("thumbs")).some((d) => d.id === hid.record_id), { label: "완전 삭제" });
+    check("관리자: 완전 삭제 — 기록과 썸네일 문서가 같이 사라진다", await rowOf(hid).count() === 0);
+    const extra = await seedRecord({ text: `${tag} 하나 더` });
+    await pa.click("#reload");
+    await rowOf(extra).waitFor({ timeout: 10000 });
+    await pa.fill("#fQ", tag);
+    await pa.click("#selAll");
+    await pa.click("#selHide");
+    await waitFor(async () => (await adminDocs("records")).filter((d) => [pub.record_id, extra.record_id].includes(d.id)).every((d) => d.moderation_status === "hidden"), { label: "고른 것 숨기기" });
+    check("관리자: 찾기로 거른 뒤 '전부 고르기 → 숨기기'가 고른 것만 숨긴다",
+      (await adminDocs("records")).filter((d) => d.moderation_status === "hidden").length === (all.filter((d) => d.moderation_status === "hidden").length - 1 + 2));
+    const aErr = errorsIn(aLogs, [/status of 400|Failed to load resource/]);   // 틀린 비밀번호 → 인증 서버 400 은 브라우저가 찍는다
+    check("관리자: 콘솔 에러 0", aErr.length === 0, aErr.map((l) => l.text).join(" | ").slice(0, 300));
+    await ctxA.close();
+  }
+
   // ═══ 7 — 목업 ═════════════════════════════════════════════════════════════
   // 원래 "설정이 빈 상태"를 봤는데, 09-30 실제 웹 설정값(ibda-2026-exhibition)이 들어간 뒤로는 주소만 열면 실DB로 간다.
   // dbMode()는 설정이 비었을 때와 ?mock=1 일 때 같은 "mock"을 돌려주므로(db-config.js) ?mock=1 로 같은 길을 본다.

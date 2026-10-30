@@ -327,6 +327,43 @@ test("썸네일: 수정·삭제 금지, 숨긴 기록의 썸네일은 못 읽는
   await assertFails(getDoc(doc(guest(), "thumbs", r.record_id)));
 });
 
+// ── 관리자(admin.html, 10-30) ──────────────────────────────────────────────
+const ADMIN = "admin@ibda-2026-exhibition.firebaseapp.com";   // db-config.js ADMIN_EMAILS
+const admin = (email = ADMIN, provider = "password") =>
+  env.authenticatedContext(`adm-${provider}-${email}`, { email, firebase: { sign_in_provider: provider } }).firestore();
+
+test("관리자: 숨긴 기록도 읽고 status 없는 목록도 받는다 · 숨기기·되살리기 · 다른 필드는 못 고친다", async () => {
+  const hid = await seedPublic({ moderation_status: "hidden" });
+  const pub = await seedPublic();
+  const db = admin();
+  await assertSucceeds(getDoc(doc(db, "records", hid.record_id)));
+  await assertSucceeds(getDocs(query(collection(db, "records"), orderBy("created_at", "desc"), limit(200))));
+  await assertSucceeds(updateDoc(doc(db, "records", pub.record_id), { moderation_status: "hidden" }));
+  await assertSucceeds(updateDoc(doc(db, "records", pub.record_id), { moderation_status: "public" }));
+  await assertFails(updateDoc(doc(db, "records", pub.record_id), { moderation_status: "지움" }));
+  await assertFails(updateDoc(doc(db, "records", pub.record_id), { text: "관리자가 고친 문장" }));
+  await assertFails(updateDoc(doc(db, "records", pub.record_id), { moderation_status: "hidden", feeling: "몰래" }));
+});
+
+test("관리자: 기록·썸네일을 지운다 (숨긴 기록의 썸네일도 읽는다)", async () => {
+  const r = await seedPublic({ moderation_status: "hidden" });
+  await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "thumbs", r.record_id), thumb(r.record_id, { created_at: Timestamp.now() })));
+  const db = admin();
+  await assertSucceeds(getDoc(doc(db, "thumbs", r.record_id)));
+  await assertSucceeds(deleteDoc(doc(db, "thumbs", r.record_id)));
+  await assertSucceeds(deleteDoc(doc(db, "records", r.record_id)));
+  await assertFails(getDocs(collection(db, "thumbs")));   // 썸네일 목록은 관리자도 안 받는다(필요 없다)
+});
+
+test("관리자가 아니면: 다른 이메일 · 익명 토큰에 같은 이메일 · 비로그인 전부 숨기기·삭제 거절", async () => {
+  const r = await seedPublic();
+  for (const db of [admin("someone@example.com"), admin(ADMIN, "anonymous"), admin(ADMIN, "google.com"), user(), guest()]) {
+    await assertFails(updateDoc(doc(db, "records", r.record_id), { moderation_status: "hidden" }));
+    await assertFails(deleteDoc(doc(db, "records", r.record_id)));
+    await assertFails(getDocs(query(collection(db, "records"), limit(10))));
+  }
+});
+
 test("그 밖의 경로는 전부 거부", async () => {
   const db = user();
   await assertFails(setDoc(doc(db, "entries", "x"), { a: 1 }));

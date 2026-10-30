@@ -34,6 +34,12 @@ export const FIREBASE_SDK_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_
 
 export const COLLECTIONS = { records: "records", thumbs: "thumbs" };
 
+// 관리자 페이지(admin.html)로 기록을 숨기거나 지울 수 있는 계정 — 이메일/비밀번호 로그인만(10-30 사용자 결정).
+// 이 주소로 콘솔 Authentication → 사용자 추가에서 계정을 만들고 비밀번호는 운영자만 안다(레포·대화창에 넣지 않는다).
+// 주소 자체는 공개돼도 된다 — 비밀번호 없이는 로그인이 안 되고, 이미 만든 주소로는 아무도 새로 가입할 수 없다.
+// 바꾸면 node firebase/build-rules.mjs → 규칙 다시 게시.
+export const ADMIN_EMAILS = ["admin@ibda-2026-exhibition.firebaseapp.com"];
+
 // 로컬 에뮬레이터 (?emu=1, localhost 에서만). 포트는 firebase/firebase.json 과 같아야 한다.
 // demo- 로 시작하는 프로젝트 id는 에뮬레이터가 로그인 없이 받아 준다.
 export const EMULATOR = { host: "127.0.0.1", firestorePort: 8080, authPort: 9099, projectId: "demo-yeogi" };
