@@ -35,6 +35,8 @@ export const IS_EXPLORE = typeof document !== "undefined" && document.documentEl
 //     조금 더 — 맨손으로 당겨서도 먼 배를 알아볼 수 있게.
 //   · 한계 밖으로 끌면 이만큼만 고무줄처럼 늘었다가(over, 화면 폭 비율) 손을 떼면 돌아온다.
 export const EXPLORE_VIEW = { pan: 0.2, zoomMax: 4, over: 0.06 };
+// 설문 사이트 첫 화면 — 둘러보기의 "처음으로"가 지도만 따로 올린 사이트에서 열렸을 때 간다(js/explore/main.js surveyHome)
+export const SURVEY_URL = "https://survey-test-tau.vercel.app/";
 // 인터랙티브의 시간들(초)
 //   guideHide   둘러보기 안내가 첫 터치 뒤 사라지기까지
 //   toast       "새 배가 도착했어요" 알림이 떠 있는 시간

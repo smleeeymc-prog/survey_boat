@@ -66,6 +66,13 @@ function mockDetail(n, region) {
   return list.length ? { region_detail: list[(n * 7) % list.length] } : {};
 }
 
+// 목업 마음(Ⅳ, 10-30 — 선택 문항). 셋 중 둘만 적은 것으로 — 실제로도 비우는 사람이 있다. rng 를 쓰지 않는다(위와 같은 이유)
+const MOCK_FEELINGS = ["고맙고 조금 답답해요", "그냥 편해요", "불안한데 설레기도", "아직 잘 모르겠음", "지쳤지만 괜찮아요",
+  "미안한 마음", "든든해요", "왠지 쓸쓸함", "기대 반 걱정 반", "홀가분해요"];
+function mockFeeling(n) {
+  return n % 3 === 0 ? {} : { feeling: MOCK_FEELINGS[(n * 3) % MOCK_FEELINGS.length] };
+}
+
 /**
  * 목업 배 색·소품 칠·고양이 무늬(10-07) — 지도에서 배마다 다른 칠이 보이게. 실제처럼 기본 배도 꽤 남긴다.
  * 순번에서 시드를 따로 뽑는다 — MockStore 의 rng 를 더 부르면 뒤따르는 목업 기록(문장·지역·키워드)이 전부 달라진다.
@@ -128,6 +135,7 @@ export class MockStore {
       schema_version: globalThis.RECORD_SCHEMA.SCHEMA_VERSION,
       ...mockPaint(this.n, kws),
       ...mockDetail(this.n, region),
+      ...mockFeeling(this.n),
     };
   }
 

@@ -8,6 +8,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>그래도, 여기 살고 있습니다 — 참여형 아카이브</title>
 <!-- UI 색·서체 토큰. 지도 화면(statistics/)과 같은 파일을 읽는다 — 한쪽만 바뀌지 않게. -->
+<!-- 전시장 태블릿 — 홈 화면에 추가하면 상태바·주소창 없이 앱처럼(manifest display: fullscreen, 10-30). 운영자 설정은 statistics/shared/kiosk.js -->
+<link rel="manifest" href="./manifest.webmanifest" />
+<meta name="theme-color" content="#0d3346" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
 <link rel="stylesheet" href="./statistics/shared/tokens.css" />
 <!-- 설문 UI 서체: 질문·선택지는 고운바탕(명조), 나머지는 IBM Plex Sans KR -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -91,6 +98,8 @@
 <script src="./statistics/shared/survey-taxonomy.js"></script>
 <!-- 기록 한 건의 모양(필드·글자 수·검사) — 지도·보안 규칙과 같은 파일. 분류값을 읽으므로 그 다음에 -->
 <script src="./statistics/shared/record-schema.js"></script>
+<!-- 운영자 설정: 이 기기는 늘 전체화면(?operator=1 또는 왼쪽 위 구석 다섯 번) -->
+<script src="./statistics/shared/kiosk.js"></script>
 
 <script>
   // iOS Safari는 user-scalable=no를 무시하고 핀치로 페이지를 확대한다 — 페이지 확대 제스처만 막는다.
@@ -616,7 +625,7 @@ const FRAMING = {
   // 세부 지역(10-12) — 충남 지도가 질문 판을 위로 키워서 배를 더 올리고 조금 더 물러난다(ui/region-map.js)
   tallQuestion: { shift: 0.24, zoom: 1.32 },
 };
-const QUESTION_STEPS = ["region", "state", "sentence", "share", "keywords", "color", "consent"];
+const QUESTION_STEPS = ["region", "state", "sentence", "feeling", "share", "keywords", "color", "consent"];   // feeling = Ⅳ 마음(10-30)
 // 키워드 단계: 고른 키워드의 물건이 잘 보이게, 기본 구도에서 선체 양 끝이 화면 양 끝보다
 // 이만큼 넘치도록 거리를 맞춘다(1 = 끝이 딱 화면 끝, 1.06 = 양쪽 3%씩 넘침 — 09-30 사용자).
 // 화면 비율과 상관없이 같은 모습이 되도록 매 프레임 선체를 화면에 투영해 잰다(_measureKeywordFit).
@@ -731,7 +740,7 @@ function refreshLookScales() {
 }
 refreshLookScales();
 
-const ACTIVE_STEPS = ["onboard","prompt","region","state","sentence","share","keywords","color","consent","result"];
+const ACTIVE_STEPS = ["onboard","prompt","region","state","sentence","feeling","share","keywords","color","consent","result"];
 
 function easeOutCubic(x){ return 1 - Math.pow(1 - x, 3); }
 /**
@@ -4108,7 +4117,10 @@ ${CAT_COAT_GLSL}
     this._camDur = REENTER_ZOOM_SEC;
   }
 
-  /** 투명한 여백을 잘라 내고 내용만 남긴 PNG를 돌려준다. */
+  /** 투명한 여백을 잘라 내고 내용만 남긴 PNG를 돌려준다.
+   *  [10-30 버그] 3D 캔버스(WebGL)는 한 번만 읽고, 잘라 내기는 그 2D 사본(c)에서 한다. 예전엔 범위를 잰 뒤 3D 캔버스를
+   *  한 번 더 읽었는데, 아이폰·아이패드 사파리는 두 번째 읽기가 비어 나와 썸네일이 크림색 빈 판으로 저장됐다(실DB에서 확인 —
+   *  범위는 맞고 그림만 빈 JPEG. 사파리는 WebP 를 못 만들어 JPEG 로 가는 그 기기들뿐이라 "가끔" 안 보였다). 공유 카드 그림도 같은 이유로 비었을 것이다. */
   _cropToContent(src) {
     const w = src.width, h = src.height;
     const c = document.createElement("canvas");
@@ -4126,13 +4138,13 @@ ${CAT_COAT_GLSL}
         if (y > y1) y1 = y;
       }
     }
-    if (x1 < 0) return src.toDataURL("image/png");   // 내용이 없으면 원본 그대로
+    if (x1 < 0) return c.toDataURL("image/png");     // 내용이 없으면 원본 그대로
     const pad = 6;
     x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
     x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
     const out = document.createElement("canvas");
     out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
-    out.getContext("2d").drawImage(src, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+    out.getContext("2d").drawImage(c, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
     return out.toDataURL("image/png");
   }
 

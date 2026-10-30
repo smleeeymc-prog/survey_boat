@@ -512,6 +512,19 @@ html[data-glass="flat"] .arrival { backdrop-filter: none; -webkit-backdrop-filte
 }
 /* 설문은 80자까지 받는다. 긴 문장은 한 단계 줄여 자막이 배를 덮지 않게 한다. */
 .arrival-text.long { font-size: calc(4.6 * var(--u)); }
+/* Ⅳ 마음(10-30) — 문장 바로 아래 작은 명조 한 줄. 이름표("마음")는 금색 */
+.arrival-feeling {
+  margin-top: calc(1 * var(--u));
+  font-family: var(--serif);
+  font-size: calc(3.2 * var(--u));
+  line-height: 1.45;
+  color: var(--t2);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.arrival-feeling::before { content: "마음 · "; color: var(--accent); }
+.arrival-feeling[hidden] { display: none; }
+.arrival.on .arrival-feeling { animation: r-fade .8s var(--ease-out) 1.1s both; }
 .arrival-sign {
   margin-top: calc(1.2 * var(--u));
   font-size: calc(2.4 * var(--u));
@@ -626,6 +639,7 @@ html[data-stage="16x9"] .log-rule { margin: calc(1.2 * var(--u)) 0 calc(2.2 * va
 html[data-stage="16x9"] .arrival-text { font-size: calc(4.6 * var(--u)); }
 html[data-stage="16x9"] .arrival-text.long { font-size: calc(3.9 * var(--u)); }
 html[data-stage="16x9"] .arrival-sign { margin-top: calc(1 * var(--u)); font-size: calc(2.1 * var(--u)); }
+html[data-stage="16x9"] .arrival-feeling { font-size: calc(2.6 * var(--u)); margin-top: calc(.8 * var(--u)); }
 html[data-stage="16x9"] .log-rows {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: calc(1.6 * var(--u)) calc(3.6 * var(--u));

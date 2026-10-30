@@ -75,12 +75,12 @@ var RecordSync = (function () {
   /* ── 어댑터: 설문 기록 ↔ DB 기록 ───────────────────────── */
   function toRecord(e) {
     return S.makeRecord({ id: e.id, region: e.region, regionDetail: e.regionDetail, state: e.state, share: e.share,
-      text: e.text, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor,
+      text: e.text, feeling: e.feeling, keywords: e.keywords, name: e.name, hullColor: e.hullColor, deckColor: e.deckColor,
       props: e.props, catCoat: e.catCoat });
   }
   function toEntry(r, extra) {
     return Object.assign({
-      id: r.record_id, region: r.region, regionDetail: r.region_detail, state: r.state, share: r.share, text: r.text,
+      id: r.record_id, region: r.region, regionDetail: r.region_detail, state: r.state, share: r.share, text: r.text, feeling: r.feeling,
       keywords: Array.isArray(r.keywords) ? r.keywords.slice() : [], name: r.display_name,
       hullColor: r.hull_color, deckColor: r.deck_color,
       props: { tube: r.tube_color, board: r.board_color, clover: r.clover_color }, catCoat: r.cat_coat,
@@ -224,6 +224,12 @@ var RecordSync = (function () {
    * 브라우저(iOS 사파리 일부)는 toDataURL 이 조용히 PNG를 돌려준다 — 그러면 JPEG로 간다.
    * JPEG엔 투명이 없어 빈 곳이 검게 되므로 카드 바탕색을 먼저 깐다.
    */
+  /** 불투명한 점이 하나라도 있는가 — 성기게(8px 간격) 본다 */
+  function hasInk(g, w, h) {
+    const d = g.getImageData(0, 0, w, h).data;
+    for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) if (d[(y * w + x) * 4 + 3] > 8) return true;
+    return false;
+  }
   async function encodeThumb(png) {
     const img = await loadImage(png);
     const T = S.THUMB;
@@ -232,8 +238,10 @@ var RecordSync = (function () {
       const c = document.createElement("canvas");
       c.width = Math.max(1, Math.round(img.naturalWidth * k));
       c.height = Math.max(1, Math.round(img.naturalHeight * k));
-      const g = c.getContext("2d");
+      const g = c.getContext("2d", { willReadFrequently: true });
       g.drawImage(img, 0, 0, c.width, c.height);
+      // [10-30] 그림이 통째로 비었으면(3D 캔버스를 못 읽은 기기) 빈 판을 올리지 않는다 — 카드는 그림 없이 뜨는 게 낫다
+      if (!hasInk(g, c.width, c.height)) { console.warn("[record-sync] 스냅샷이 비어 썸네일을 건너뛴다"); return null; }
       let out = c.toDataURL("image/webp", T.QUALITY);
       if (!out.startsWith("data:image/webp")) {
         g.globalCompositeOperation = "destination-over";

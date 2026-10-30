@@ -1,0 +1,17 @@
+{
+  "name": "그래도, 여기 살고 있습니다",
+  "short_name": "여기 살고 있습니다",
+  "description": "입다 · 2026 다원예술 프로젝트 — 참여형 아카이브",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#0d3346",
+  "theme_color": "#0d3346",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

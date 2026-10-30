@@ -143,7 +143,7 @@ const errorsIn = (logs, allow = []) => logs.filter((l) =>
   ["error", "assert", "pageerror"].includes(l.type) && !allow.some((re) => re.test(l.text)));
 
 /** 설문을 실제로 눌러서 끝까지 — 결과 화면이 뜨면 돌아온다 */
-async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0], name = null, goto = true, color = null, props = null, region = null, detail = null, detailByKey = false }) {
+async function runSurvey(page, { url = `${BASE}/?emu=1`, text, feeling = null, keywordIdx = [0], name = null, goto = true, color = null, props = null, region = null, detail = null, detailByKey = false }) {
   if (goto) await page.goto(url);
   await page.locator(".ob-bottom .cta").click();
   await page.locator(".pr-next.show").click({ timeout: 30000 });
@@ -167,7 +167,10 @@ async function runSurvey(page, { url = `${BASE}/?emu=1`, text, keywordIdx = [0],
   await page.locator(".qnext").click();                        // Ⅱ 상태
   await page.locator("textarea.sentence").fill(text);          // Ⅲ 문장
   await page.locator(".qnext").click();
-  await page.locator(".qnext").click();                        // Ⅳ 나눔
+  await page.locator("textarea.feeling").waitFor();            // Ⅳ 마음(10-30, 선택 — 비워도 넘어간다)
+  if (feeling) await page.locator("textarea.feeling").fill(feeling);
+  await page.locator(".qnext").click();
+  await page.locator(".qnext").click();                        // Ⅴ 나눔
   for (const i of keywordIdx) await page.locator(".kw-word").nth(i).click();   // Ⅴ 키워드
   await page.locator(".qnext").click();
   await page.locator(".paint-pad").first().waitFor();          // Ⅵ 색 — color: { hull, deck? } (동그라미 순번) | { wheel: [x, y] } (명암 판 위 0~1 자리)
@@ -226,7 +229,8 @@ try {
   const survey = await ctxB.newPage();
   const surveyLogs = watch(survey);
   const myText = "지도가 이 문장을 받아야 한다 — 😀 이모지도";
-  await runSurvey(survey, { text: myText, keywordIdx: [0, 2], name: "바다", color: { hull: 6 }, props: { "튜브": 7 },   // 원톤 남색 · 튜브 자두
+  const myFeeling = "고맙고 조금 답답해요 😀";
+  await runSurvey(survey, { text: myText, feeling: myFeeling, keywordIdx: [0, 2], name: "바다", color: { hull: 6 }, props: { "튜브": 7 },   // 원톤 남색 · 튜브 자두
     region: "기타 충남", detail: "부여" });
   check("설문: 결과 화면이 뜬다", await survey.locator(".res-sentence").isVisible());
   check("설문: DB로 돌 땐 목업 배지가 없다", await survey.evaluate(() => document.getElementById("proto-badge").hidden));
@@ -237,6 +241,7 @@ try {
   check("records 문서가 생긴다 (스키마 필드 전부·서버 시각)",
     mine && S.FIELDS.every((k) => k in mine) && mine.created_at instanceof Timestamp && mine.display_name === "바다" &&
     mine.share === "many" && mine.keywords.join() === "일,가족", JSON.stringify({ ...mine, created_at: String(mine.created_at) }));
+  check("마음(Ⅳ, 선택)이 기록에 실린다 (feeling)", mine.feeling === myFeeling, mine.feeling);
   check("세부 지역이 기록에 실린다 (region 기타 충남 · region_detail 부여 — 통계는 region 으로 묶는다)",
     mine.region === "기타 충남" && mine.region_detail === "부여", `${mine.region} / ${mine.region_detail}`);
   check("배 색이 기록에 실린다 (원톤 남색 → hull_color navy · deck_color auto)", mine.hull_color === "navy" && mine.deck_color === "auto",
@@ -402,33 +407,54 @@ try {
   // ═══ 8 — 규칙 배포 전 ═══════════════════════════════════════════════════════
   // 새 설문이 먼저 나가고 사용자가 콘솔에서 규칙을 아직 안 바꾼 동안: 옛 규칙은 새 필드를 모르는 키로 거절한다.
   // 설문(record-sync)은 선택 필드를 새로 생긴 것부터 빼고 다시 보내야 한다 — 문장은 들어가고 대기열은 비어야 한다.
-  //   8a 세부 지역(10-12)만 모르는 규칙(10-07 배포본) → 세부 지역만 빼고 배 색은 살린다
+  //   8m 마음(10-30)만 모르는 규칙(10-12 배포본) → 마음만 빼고 세부 지역·배 색은 살린다
+  //   8a 세부 지역(10-12)도 모르는 규칙(10-07 배포본) → 세부 지역까지 빼고 배 색은 살린다
   //   8b 배 색(10-06)도 모르는 규칙 → 선택 필드를 다 뺀다
   console.log("\n[8] 규칙 배포 전(옛 규칙)");
   const newRules = fs.readFileSync(path.join(HERE, "..", "firestore.rules"), "utf8");
-  const noDetailRules = newRules
+  // 같은 파일에 끼운 테이프 사이트 records_v3 블록(2ec5fd1)에도 region_detail 이 있다 — 확인은 우리 records 규칙만 본다
+  const own = (r) => r.split("// records_v3 블록")[0];
+  const noFeelingRules = newRules
+    .replace(/, "feeling"\]\)/, "])")
+    .replace(/\n\s*\/\/ Ⅳ 마음[^\n]*\n[^\n]*feeling[^\n]*;/, ";");
+  check("옛 규칙 만들기 8m (마음 빠짐, 세부 지역·배 색은 있음)", !/feeling/.test(own(noFeelingRules)) && /region_detail/.test(own(noFeelingRules)) && noFeelingRules !== newRules);
+  const noDetailRules = noFeelingRules
     .replace(/, "region_detail"\]\)/, "])")
     .replace(/\n\s*\/\/ 세부 지역[^\n]*\n[^\n]*region_detail[^\n]*;/, ";")
     .replace(/(cat_coat in \[[^\]]*\]\))\s*;/, "$1;");
-  check("옛 규칙 만들기 8a (세부 지역 빠짐, 배 색은 있음)", !/region_detail/.test(noDetailRules) && /cat_coat/.test(noDetailRules) && noDetailRules !== newRules);
+  check("옛 규칙 만들기 8a (세부 지역 빠짐, 배 색은 있음)", !/region_detail/.test(own(noDetailRules)) && /cat_coat/.test(own(noDetailRules)) && noDetailRules !== newRules);
   const oldRules = noDetailRules
     .replace(/d\.keys\(\)\.hasOnly\(\[[^\]]*\]\)/, `d.keys().hasOnly([${S.FIELDS.map((f) => `"${f}"`).join(", ")}])`)
     .replace(/\n\s*\/\/ 배 색[\s\S]*?cat_coat[^\n]*;/, ";")   // 배 색 줄부터 소품 칠(마지막 cat_coat) 줄까지
     .replace(/(d\.schema_version == \d+)\s*;\s*;/, "$1;")
     .replace(/\n    \/\/ 컬러휠로 고른 배 색[^\n]*\n    function paintHex\(v\) \{\n[^\n]*\n    \}\n/, "");
-  check("옛 규칙 만들기 8b (색 필드도 빠짐)", !/hull_color|tube_color|cat_coat|region_detail/.test(oldRules) && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
+  check("옛 규칙 만들기 8b (색 필드도 빠짐)", !/hull_color|tube_color|cat_coat|region_detail/.test(own(oldRules)) && oldRules !== newRules && /schema_version == \d+;/.test(oldRules));
+  {   // 8m — 마음만 모르는 규칙: 마음만 빼고 나머지(세부 지역·배 색·고양이)는 살아 들어간다
+    await putRules(noFeelingRules);
+    const ctxM = await newContext();
+    const mp = await ctxM.newPage();
+    watch(mp);
+    const mText = "옛 규칙(8m)에서도 문장은 들어가야 한다";
+    await runSurvey(mp, { text: mText, feeling: "이 마음은 빠져도 된다", keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 },
+      region: "기타 충남", detail: "공주" });
+    const mDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", mText)))[0], { label: "옛 규칙(8m) records 문서", timeout: 40000 });
+    check("옛 규칙 8m: 마음만 빼고 들어간다 (세부 지역·배 색·고양이 무늬는 남는다)",
+      mDoc && !("feeling" in mDoc) && mDoc.region_detail === "공주" && mDoc.hull_color === "red" && mDoc.cat_coat === "tuxedo", mDoc ? Object.keys(mDoc).join(",") : "");
+    await waitFor(async () => (await queueOf(mp)).every((x) => !x.record), { label: "옛 규칙(8m): 대기열의 기록이 빈다", timeout: 20000 });
+    await ctxM.close();
+  }
   for (const [tag, rules, keepPaint] of [["8a", noDetailRules, true], ["8b", oldRules, false]]) {
     await putRules(rules);
     const ctxR = await newContext();
     const rp = await ctxR.newPage();
     watch(rp);
     const oldText = `옛 규칙(${tag})에서도 문장은 들어가야 한다`;
-    await runSurvey(rp, { text: oldText, keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 },   // 투톤 빨강·노랑 · 주거 고양이 턱시도
+    await runSurvey(rp, { text: oldText, feeling: "옛 규칙에선 빠질 마음", keywordIdx: [5], color: { hull: 1, deck: 3 }, props: { "고양이": 3 },   // 투톤 빨강·노랑 · 주거 고양이 턱시도
       region: "기타 충남", detail: "태안", detailByKey: true });   // 태안은 두 조각(안면도)이라 상자 가운데가 바다 — 키보드로
     const oldDoc = await waitFor(async () => (await adminDocs("records", where("text", "==", oldText)))[0], { label: `옛 규칙(${tag}) records 문서`, timeout: 40000 });
     const keys = oldDoc ? Object.keys(oldDoc).join(",") : "";
     check(keepPaint ? "옛 규칙 8a: 세부 지역만 빼고 들어간다 (배 색·고양이 무늬는 남는다)" : "옛 규칙 8b: 색·세부 지역을 뺀 기록으로 들어간다",
-      oldDoc && oldDoc.region === "기타 충남" && !("region_detail" in oldDoc) &&
+      oldDoc && oldDoc.region === "기타 충남" && !("region_detail" in oldDoc) && !("feeling" in oldDoc) &&
       (keepPaint ? oldDoc.hull_color === "red" && oldDoc.cat_coat === "tuxedo" : !("hull_color" in oldDoc) && !("deck_color" in oldDoc) && !("cat_coat" in oldDoc)), keys);
     await waitFor(async () => (await queueOf(rp)).every((x) => !x.record), { label: `옛 규칙(${tag}): 대기열의 기록이 빈다`, timeout: 20000 });
     check(`옛 규칙 ${tag}: 대기열의 기록이 빈다`, true);

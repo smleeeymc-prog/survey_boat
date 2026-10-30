@@ -19,6 +19,7 @@ const STATES = SURVEY_TAXONOMY.STATES;
 const SHARES = SURVEY_TAXONOMY.SHARES;
 const KEYWORDS = SURVEY_TAXONOMY.KEYWORDS;
 const SENTENCE_Q = SURVEY_TAXONOMY.SENTENCE_Q;
+const FEELING_Q = SURVEY_TAXONOMY.FEELING_Q;
 const BOAT_COLORS = SURVEY_TAXONOMY.BOAT_COLORS;
 const PROP_PAINTS = SURVEY_TAXONOMY.PROP_PAINTS;
 const CAT_COATS = SURVEY_TAXONOMY.CAT_COATS;
@@ -38,7 +39,7 @@ let entries = [
 ];
 
 const FRESH_STATE = () => ({
-  step: "onboard", region: null, regionDetail: null, stateId: null, text: "", share: null, keywords: [],
+  step: "onboard", region: null, regionDetail: null, stateId: null, text: "", feeling: "", share: null, keywords: [],
   // 배 색 — tone "one"(원톤: 갑판이 선체를 따라 물든다) | "two"(투톤). paintPart 는 지금 칠하는 곳(화면용 — 선체·갑판·소품 id)
   tone: "one", hullColor: "base", deckColor: "base", paintPart: "hull",
   // 키워드 소품 칠(10-07) — 튜브·서핑보드·클로버 색(배 색과 같은 모양), 고양이 털 무늬. 그 키워드를 고른 기록에만 실린다
@@ -70,6 +71,7 @@ function render(opts){
   else if(state.step==="regionDetail") el.appendChild(renderRegionDetail());
   else if(state.step==="state") el.appendChild(renderState());
   else if(state.step==="sentence") el.appendChild(renderSentence());
+  else if(state.step==="feeling") el.appendChild(renderFeeling());
   else if(state.step==="share") el.appendChild(renderShare());
   else if(state.step==="keywords") el.appendChild(renderKeywords());
   else if(state.step==="color") el.appendChild(renderColor());
@@ -100,15 +102,16 @@ const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_NEXT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>`;
 const ICON_CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>`;
 
-// 질문 단계 일곱 개 — 위 표시줄의 장 번호와 이름 (Ⅵ 색은 10-06 추가)
+// 질문 단계 여덟 개 — 위 표시줄의 장 번호와 이름 (색은 10-06, 마음은 10-30 추가)
 const CHAPTERS = {
   region:   ["Ⅰ", "지역"],
   state:    ["Ⅱ", "상태"],
   sentence: ["Ⅲ", "문장"],
-  share:    ["Ⅳ", "나눔"],
-  keywords: ["Ⅴ", "키워드"],
-  color:    ["Ⅵ", "색"],
-  consent:  ["Ⅶ", "공개"],
+  feeling:  ["Ⅳ", "마음"],
+  share:    ["Ⅴ", "나눔"],
+  keywords: ["Ⅵ", "키워드"],
+  color:    ["Ⅶ", "색"],
+  consent:  ["Ⅷ", "공개"],
 };
 const QUESTION_ORDER = Object.keys(CHAPTERS);
 // 장 안의 덧붙은 단계 — 장 번호·진행 막대는 그 장 것을 쓴다. 세부 지역(10-12)은 '기타 충남'을 고른 사람만 거친다
@@ -397,7 +400,7 @@ function renderSentence(){
     title: SENTENCE_Q[state.stateId] || SENTENCE_Q.stay,
     sub: "정답은 없어요. 80자 안의 한 문장으로.",
     content: box, prev: "state",
-    onNext: () => { state.step = "share"; render(); },
+    onNext: () => { state.step = "feeling"; render(); },
   });
   ta.addEventListener("input", () => {
     state.text = ta.value;
@@ -407,6 +410,33 @@ function renderSentence(){
   });
   step.next.disabled = state.text.trim().length === 0;
   return step.el;
+}
+
+/* ── Ⅳ 마음 (10-30 사용자) ──────────────────────────────────────────────────
+   상태 → 이유(문장) → 마음 → 그 마음을 몇 명과 나눴나(나눔). 지금 상태에 따라 묻는 말이 달라진다(survey-taxonomy.js FEELING_Q).
+   선택 문항 — 비워도 다음으로 간다(실제 답이 한두 단어로 짧아, 주관식이 하나 더 늘면 지치는 사람이 생길까 봐). 40자. */
+function renderFeeling(){
+  const box = h("div");
+  box.style.display = "flex"; box.style.flexDirection = "column";
+  const ta = h("textarea", "sentence feeling");
+  ta.maxLength = RECORD_SCHEMA.FEELING_MAX; ta.rows = 2;
+  ta.placeholder = "예: 고맙고, 조금 답답해요.";
+  ta.setAttribute("aria-label", "지금의 마음");
+  ta.value = state.feeling || "";
+  const max = RECORD_SCHEMA.FEELING_MAX;
+  const count = h("div", "char-count", `${ta.value.length} / ${max}`);
+  box.appendChild(ta); box.appendChild(count);
+  ta.addEventListener("input", () => {
+    state.feeling = ta.value;
+    Draft.save(state);
+    count.textContent = `${ta.value.length} / ${max}`;
+  });
+  return questionStep({
+    title: FEELING_Q[state.stateId] || FEELING_Q.stay,
+    sub: "한 줄이면 충분해요. 비워 두어도 괜찮아요.",
+    content: box, prev: "sentence",
+    onNext: () => { state.step = "share"; render(); },
+  }).el;
 }
 
 function renderShare(){
@@ -422,7 +452,7 @@ function renderShare(){
   return questionStep({
     title: "이 마음을 몇 명과 나눠봤나요?",
     sub: "바늘을 돌려 골라주세요.",
-    content: dial, prev: "sentence",
+    content: dial, prev: "feeling",
     onNext: () => { state.step = "keywords"; render(); },
   }).el;
 }
@@ -703,7 +733,7 @@ function renderConsent(){
       entries.forEach(e => { e._new = false; });   // "나의 기록" 표시는 방금 남긴 것 하나만
       const entry = {
         region: state.region, regionDetail: hasDetail(state.region) ? state.regionDetail : undefined,
-        state: state.stateId, share: state.share, text: state.text,
+        state: state.stateId, share: state.share, text: state.text, feeling: (state.feeling || "").trim(),
         keywords: [...state.keywords],
         name: state.disclose === "익명" ? "익명" : state.name.trim(),
         // 배 색 — 원톤이면 갑판은 "auto"(선체를 따라 물든다). 지도도 같은 식으로 그린다(boat-look.js paintMaterials)
@@ -769,6 +799,9 @@ function renderResult(){
   const bottom = h("div", "res-bottom fade-stage");
   bottom.appendChild(h("p", "res-label", "MY SENTENCE · 지금 이곳"));
   bottom.appendChild(h("p", "res-sentence" + (state.text.length > 40 ? " long" : ""), `“${state.text}”`));
+  // Ⅳ 마음 — 적었을 때만, 문장 아래 작게
+  const feel = (state.feeling || "").trim();
+  if(feel) bottom.appendChild(h("p", "res-feeling", feel));
   bottom.appendChild(h("p", "res-meta", [placeOf(state), stateLabel(state.stateId), ...state.keywords].join(" · ")));
   bottom.appendChild(h("p", "res-note", "당신의 문장이 다른 사람들의 기록과 함께 쌓였습니다."));
   const btn = h("button", "cta");
@@ -886,6 +919,7 @@ function renderArchive(){
       c.appendChild(meta);
       if(snap){ const img = h("img", "ar-snap"); img.src = snap; img.alt = ""; c.appendChild(img); }
       c.appendChild(h("span", "ar-text", `“${e.text}”`));
+      if(e.feeling) c.appendChild(h("span", "ar-feeling", e.feeling));   // Ⅳ 마음 — 펼쳤을 때만 보인다(카드 높이 고정)
       const foot = h("span", "ar-foot");
       foot.appendChild(h("span", "ar-kw", e.keywords.join(" · ")));
       foot.appendChild(h("span", "ar-by" + (named ? " named" : ""), `— ${e.name || "익명"}`));

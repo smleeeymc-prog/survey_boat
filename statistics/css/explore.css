@@ -59,6 +59,31 @@ html[data-ex="browse"] .ex-open { opacity: 1; pointer-events: auto; }
 html:not([data-ex="browse"]) .ex-open { transform: translate(-50%, calc(3 * var(--u))); }
 html[data-glass="flat"] .ex-open { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(12, 15, 21, .92); }
 
+/* ── 처음으로 — 오른쪽 위 알약(10-30). 통계 보기와 같은 유리 알약을 한 단계 작게 — 같은 집의 단추로 읽히게.
+   둘러보는 동안에만 보인다(배를 보거나 통계를 펼치면 비켜선다) ── */
+.ex-home {
+  position: fixed; right: var(--pad-x); top: calc(5 * var(--u) + env(safe-area-inset-top, 0px));
+  z-index: 4;
+  display: inline-flex; align-items: center; gap: calc(1.4 * var(--u));
+  padding: calc(1.9 * var(--u)) calc(3.6 * var(--u)) calc(1.9 * var(--u)) calc(3 * var(--u));
+  border-radius: 999px;
+  font-size: calc(3 * var(--u)); font-weight: 600; letter-spacing: .06em; color: var(--t1); text-decoration: none;
+  background: rgba(var(--night), .62);
+  border: 1px solid rgba(246, 242, 234, .2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 12px 32px rgba(0, 0, 0, .3);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .5s var(--ease-io);
+  -webkit-tap-highlight-color: transparent;
+}
+.ex-home::after { content: ""; position: absolute; inset: calc(-1.5 * var(--u)) calc(-1 * var(--u)); }   /* 누르는 자리 넓힘 */
+.ex-home svg { width: calc(3.6 * var(--u)); height: calc(3.6 * var(--u)); fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ex-home:active { background: rgba(246, 242, 234, .12); }
+.ex-home:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html[data-ex="browse"] .ex-home { opacity: 1; pointer-events: auto; }
+html[data-glass="flat"] .ex-home { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(12, 15, 21, .92); }
+
 /* ── 새 배 알림 — 맨 위 가운데 ────────────────────────────────────────── */
 .ex-toast {
   /* 제목(위 10u) 위의 좁은 띠에 — 제목 글자를 가리지 않게 낮고 작게 */

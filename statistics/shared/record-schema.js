@@ -38,12 +38,15 @@
  *   region_detail      (선택) 세부 지역 — region 이 '기타 충남'일 때만, survey-taxonomy.js REGION_DETAILS 의 이름 하나(10-12).
  *                      통계는 region 으로 묶고, 사람 한 명을 보여주는 자리는 placeOf(기록)으로 이 이름을 적는다.
  *                      선택 필드인 이유는 배 색과 같다(옛 기록·옛 대기열, 규칙 배포 전엔 빼고 다시 보낸다 — EXTRA_FIELDS).
+ *   feeling            (선택) Ⅳ 마음 — 지금의 마음 한 줄, 40자 이하(10-30). 선택 문항이라 비우면 필드가 아예 없다.
  * ========================================================================== */
 
 var RECORD_SCHEMA = (function (T) {
   if (!T) throw new Error("record-schema.js: survey-taxonomy.js 를 먼저 불러올 것");
 
   const TEXT_MAX = 80;
+  const FEELING_MAX = 40;
+  const FEELING_FIELD = "feeling";
   const NAME_MAX = 12;
   const KEYWORDS_MAX = 2;
   const ANON_NAME = "익명";
@@ -66,9 +69,9 @@ var RECORD_SCHEMA = (function (T) {
   const REGION_DETAIL_FIELD = "region_detail";
   const REGION_DETAILS = T.REGION_DETAILS || {};
   // 선택 필드 전부 — 옛 규칙(배포 전)에 거절되면 빼고 다시 보낸다(ui/record-sync.js). 묶음은 새로 생긴 것부터:
-  // 세부 지역(10-12)을 모르는 규칙이면 그것만 빼서 배 색(10-06~07)은 살리고, 그래도 거절되면 배 색까지 뺀다.
-  const EXTRA_GROUPS = [[REGION_DETAIL_FIELD], PAINT_FIELDS];
-  const EXTRA_FIELDS = PAINT_FIELDS.concat(REGION_DETAIL_FIELD);   // 생긴 순서(규칙의 필드 목록도 이 순서)
+  // 마음(10-30)을 모르는 규칙이면 그것만, 세부 지역(10-12)까지 모르면 그것도 빼서 배 색(10-06~07)은 살리고, 그래도 거절되면 배 색까지 뺀다.
+  const EXTRA_GROUPS = [[FEELING_FIELD], [REGION_DETAIL_FIELD], PAINT_FIELDS];
+  const EXTRA_FIELDS = PAINT_FIELDS.concat(REGION_DETAIL_FIELD, FEELING_FIELD);   // 생긴 순서(규칙의 필드 목록도 이 순서)
   // 컬러휠 색 — 소문자 6자리만. 규칙에도 같은 식이 들어간다(build-rules.mjs)
   const COLOR_HEX_RE = /^#[0-9a-f]{6}$/;
   const COLOR_HEX_SRC = "^#[0-9a-f]{6}$";
@@ -141,6 +144,8 @@ var RECORD_SCHEMA = (function (T) {
     for (const f of PROP_COLOR_FIELDS) if (f in r && !COLOR_IDS.includes(r[f]) && !isHex(r[f])) problems.push(f);
     if (CAT_COAT_FIELD in r && !CAT_COAT_IDS.includes(r[CAT_COAT_FIELD])) problems.push(CAT_COAT_FIELD);
     if (REGION_DETAIL_FIELD in r && !(REGION_DETAILS[r.region] || []).includes(r[REGION_DETAIL_FIELD])) problems.push(REGION_DETAIL_FIELD);
+    const f = r[FEELING_FIELD];
+    if (FEELING_FIELD in r && (!isStr(f) || f.length < 1 || f.length > FEELING_MAX || f !== f.trim())) problems.push(FEELING_FIELD);
     return problems;
   }
 
@@ -175,7 +180,7 @@ var RECORD_SCHEMA = (function (T) {
    * 설문 답을 새 기록으로. 값 정리(trim·중복 제거·빈 이름 → 익명)는 여기 한 곳에서만 한다.
    * created_at 은 넣지 않는다 — 보내는 쪽(record-store)이 서버 시각을 붙인다.
    */
-  function makeRecord({ id, region, regionDetail, state, share, text, keywords, name, hullColor, deckColor, props, catCoat }) {
+  function makeRecord({ id, region, regionDetail, state, share, text, feeling, keywords, name, hullColor, deckColor, props, catCoat }) {
     const kws = [];
     for (const k of Array.isArray(keywords) ? keywords : []) if (!kws.includes(k)) kws.push(k);
     const nm = clean(name);
@@ -192,9 +197,13 @@ var RECORD_SCHEMA = (function (T) {
     }
     // 세부 지역 — 그 지역에 세부 목록이 있고 목록 안의 이름일 때만(다른 지역으로 바꿨으면 버린다)
     const detail = (REGION_DETAILS[region] || []).includes(regionDetail) ? { [REGION_DETAIL_FIELD]: regionDetail } : {};
+    // 마음 — 비웠으면 필드를 싣지 않는다(빈 글자는 규칙이 거절한다)
+    const fl = clean(feeling);
+    const feel = fl ? { [FEELING_FIELD]: fl } : {};
     return {
       ...paint,
       ...detail,
+      ...feel,
       record_id: id,
       region, state, share,
       text: clean(text),
@@ -236,7 +245,7 @@ var RECORD_SCHEMA = (function (T) {
   }
 
   return {
-    TEXT_MAX, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
+    TEXT_MAX, FEELING_MAX, FEELING_FIELD, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
     FIELDS, PAINT_FIELDS, EXTRA_FIELDS, EXTRA_GROUPS, REGION_DETAIL_FIELD, REGION_DETAILS, PROP_COLOR_FIELDS, CAT_COAT_FIELD, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
     REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS, CAT_COAT_IDS,
     newId, checkNew, checkRecord, makeRecord, safeImage, hasExtras, withoutExtras, placeOf,

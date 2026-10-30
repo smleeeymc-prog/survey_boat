@@ -44,6 +44,16 @@ var SURVEY_TAXONOMY = (function () {
     unsure:   "지금 당신이 이곳에서 망설이게 하는 것은 무엇인가요?",
   };
 
+  // Ⅳ 마음(10-30 사용자) — 문장(왜) 다음, 나눔("이 마음을 몇 명과 나눠봤나요?") 앞. 상태 → 이유 → 마음 → 마음을 나눈 정도로 잇는다.
+  // 지금 상태에 따라 묻는 말이 달라진다. 선택 문항(비워도 된다), 40자(record-schema.js FEELING_MAX).
+  const FEELING_Q = {
+    stay:     "이곳에 머무는 지금, 당신의 마음은 어떤가요?",
+    returned: "다시 돌아온 지금, 당신의 마음은 어떤가요?",
+    leaving:  "떠날 준비를 하는 지금, 당신의 마음은 어떤가요?",
+    between:  "두 곳을 오가는 지금, 당신의 마음은 어떤가요?",
+    unsure:   "아직 정하지 못한 지금, 당신의 마음은 어떤가요?",
+  };
+
   const STATES = [
     {id:"stay", label:"머무르는 중", desc:"지금 이곳에서 계속 살아가고 있어요"},
     {id:"leaving", label:"떠날 준비 중", desc:"곧 이곳을 떠날 계획이 있어요"},
@@ -99,5 +109,5 @@ var SURVEY_TAXONOMY = (function () {
     {id:"tuxedo", label:"턱시도",   swatch:"linear-gradient(to top, #f4f1ea 0 35%, #23201f 35% 100%)"},
     {id:"black",  label:"올블랙",   swatch:"#23201f"},
   ];
-  return { REGIONS, REGION_DETAILS, STATES, SHARES, KEYWORDS, SENTENCE_Q, BOAT_COLORS, PROP_PAINTS, CAT_COATS };
+  return { REGIONS, REGION_DETAILS, STATES, SHARES, KEYWORDS, SENTENCE_Q, FEELING_Q, BOAT_COLORS, PROP_PAINTS, CAT_COATS };
 })();

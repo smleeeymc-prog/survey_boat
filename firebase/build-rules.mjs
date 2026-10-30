@@ -132,7 +132,9 @@ service cloud.firestore {
 ${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list(S.COLOR_IDS)} || paintHex(d.${f}))`).join("\n")}
         && (!('${S.CAT_COAT_FIELD}' in d) || d.${S.CAT_COAT_FIELD} in ${list(S.CAT_COAT_IDS)})
         // 세부 지역 — 있어도 되고 없어도 된다. 있으면 그 지역에 딸린 목록 안의 이름(지금은 '기타 충남'만 세부 목록이 있다)
-        && (!('${S.REGION_DETAIL_FIELD}' in d) || ${Object.entries(S.REGION_DETAILS).map(([r, a]) => `(d.region == ${lit(r)} && d.${S.REGION_DETAIL_FIELD} in ${list(a)})`).join(" || ") || "false"});
+        && (!('${S.REGION_DETAIL_FIELD}' in d) || ${Object.entries(S.REGION_DETAILS).map(([r, a]) => `(d.region == ${lit(r)} && d.${S.REGION_DETAIL_FIELD} in ${list(a)})`).join(" || ") || "false"})
+        // Ⅳ 마음(10-30) — 선택 문항. 있으면 문장과 같은 판정(앞뒤 공백 없음 · 공백뿐인 글 안 됨), ${S.FEELING_MAX}자 이하
+        && (!('${S.FEELING_FIELD}' in d) || cleanText(d.${S.FEELING_FIELD}, ${S.FEELING_MAX}));
     }
 
     match /${COL.records}/{id} {

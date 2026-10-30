@@ -2,7 +2,7 @@
    작성 중인 설문을 이 기기(localStorage)에 잠깐 맡겨 둔다 — 새로고침하거나 브라우저가 꺼진 뒤
    다시 열면 첫 화면에서 "이전 작성부분에서 이어가시겠어요?"를 묻는다 (survey.js renderOnboard).
 
-   · 질문 일곱 단계(지역 ~ 공개)에서만 저장한다. 첫 화면·결과·아카이브는 이어 쓸 게 없다.
+   · 질문 여덟 단계(지역 ~ 공개, 10-30 Ⅳ 마음이 더해졌다)에서만 저장한다. 첫 화면·결과·아카이브는 이어 쓸 게 없다.
    · 동의 체크는 맡겨 두지 않는다 — 동의는 제출하는 그 순간의 의사여야 해서, 이어 쓴 사람도 다시 누른다.
    · 6시간이 지나면 버린다. 전시장 공용 기기라면 앞사람의 문장이 다음 사람에게 뜨면 안 되고,
      실수로 껐다 다시 켜는 경우는 길어야 몇 분이다.
@@ -13,10 +13,10 @@
 const Draft = (() => {
   const KEY = "ibda-survey-draft-v1";
   const TTL_MS = 6 * 60 * 60 * 1000;
-  const STEPS = ["region", "regionDetail", "state", "sentence", "share", "keywords", "color", "consent"];
+  const STEPS = ["region", "regionDetail", "state", "sentence", "feeling", "share", "keywords", "color", "consent"];
   const DISCLOSE = ["익명", "별칭", "실명"];
   // 입력칸 제한과 같은 값 — 보안 규칙과 묶여 있다(문장 80 · 키워드 2 · 이름 12)
-  const MAX_TEXT = 80, MAX_KW = 2, MAX_NAME = 12;
+  const MAX_TEXT = 80, MAX_FEELING = 40, MAX_KW = 2, MAX_NAME = 12;
 
   const T = SURVEY_TAXONOMY;
   const oneOf = (v, list) => (list.includes(v) ? v : null);
@@ -32,7 +32,7 @@ const Draft = (() => {
   function pick(s){
     if(!STEPS.includes(s.step)) return null;
     return {
-      step: s.step, region: s.region, regionDetail: s.regionDetail, stateId: s.stateId, text: s.text, share: s.share,
+      step: s.step, region: s.region, regionDetail: s.regionDetail, stateId: s.stateId, text: s.text, feeling: s.feeling, share: s.share,
       keywords: [...s.keywords], disclose: s.disclose, name: s.name,
       tone: s.tone, hullColor: s.hullColor, deckColor: s.deckColor,
       props: { ...s.props }, catCoat: s.catCoat, at: Date.now(),
@@ -51,6 +51,8 @@ const Draft = (() => {
       regionDetail: null,
       stateId: oneOf(d.stateId, T.STATES.map(x => x.id)),
       text,
+      // Ⅳ 마음(10-30) — 선택 문항이라 비어 있어도 앞 단계를 막지 않는다
+      feeling: typeof d.feeling === "string" ? d.feeling.slice(0, MAX_FEELING) : "",
       share: oneOf(d.share, T.SHARES.map(x => x.id)),
       keywords: [...new Set(kw)],
       disclose: oneOf(d.disclose, DISCLOSE) || "익명",

@@ -33,12 +33,23 @@ if (GLASS_PIN) document.documentElement.dataset.glass = GLASS_PIN;
 const ME = qs.get("me") || null;
 
 const ARRIVAL_QUEUE_MAX = 3;   // 새 배 연출 줄의 상한(전시와 같다)
+/**
+ * 설문 첫 화면 주소 — "처음으로"(10-30). 설문 사이트 안의 지도(/statistics/explore.html)면 한 단계 위가 설문,
+ * 지도만 따로 올린 사이트(루트가 statistics/)면 설문 사이트 주소(config.js SURVEY_URL). 목업·에뮬레이터 표시는 이어 준다.
+ */
+function surveyHome() {
+  const q = new URLSearchParams(location.search), keep = new URLSearchParams();
+  for (const k of ["mock", "emu"]) if (q.get(k) === "1") keep.set(k, "1");
+  const qs = keep.toString() ? `?${keep}` : "";
+  return /\/statistics\//.test(location.pathname) ? new URL(`../${qs}`, location.href).href : C.SURVEY_URL + qs;
+}
+
 // 카드 머리 이름표 — 어떤 배를 보고 있는지
 const TAG = { arrival: "방금 도착한 문장", pick: "바다에 떠 있는 문장", me: "나의 문장" };
 // 이 페이지에 꼭 있어야 하는 요소(selfcheck 8) — 하나만 빠져도 조작 하나가 조용히 죽는다
 const EXPLORE_IDS = ["panel", "countNum", "countPlus", "stageDim", "report", "rNum", "rIdx", "rLabel",
   "rHeadline", "statRows", "rExtra", "rPeriod", "rLegend", "arrival", "logTag", "logNo", "arrivalText",
-  "arrivalSign", "logFrom", "logStatus", "logCargo", "logLogged", "exTouch", "exGuide", "exToast", "exOpen",
+  "arrivalSign", "logFrom", "logStatus", "logCargo", "logLogged", "exTouch", "exGuide", "exToast", "exOpen", "exHome",
   "exCardClose", "exStats", "exStatsClose", "exRegion", "exState", "exFrame", "exSizer", "exPrev", "exNext",
   "exToc", "exPos", "exTocList"];
 
@@ -69,6 +80,7 @@ class Explore {
     this.report = new ReportView(this.panel, () => this.records);
 
     this.el.open.addEventListener("click", () => this._openStats());
+    $("exHome").href = surveyHome();
     $("exStatsClose").addEventListener("click", () => this._closeStats());
     $("exCardClose").addEventListener("click", () => this.world.release());
     this._setMode("boot");

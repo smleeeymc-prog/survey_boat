@@ -297,6 +297,9 @@ body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230p
 .res-sentence{ font-family:var(--serif); font-size:24px; line-height:1.6; font-weight:700; margin-bottom:14px; word-break:keep-all; overflow-wrap:break-word; overflow-wrap:anywhere; max-width:100%; }
 /* 긴 문장(40자 넘게)은 한 단계(약 20%) 줄인다 — 10-14 사용자. 띄어쓰기 없는 문장도 위 overflow-wrap 으로 줄을 넘긴다 */
 .res-sentence.long{ font-size:19px; }
+/* Ⅳ 마음(10-30) — 문장 바로 아래, 작고 흐린 명조 한 줄. 문장과 한 덩어리로 읽히게 위로 당긴다 */
+.res-feeling{ font-family:var(--serif); font-size:15px; line-height:1.5; color:#5E5A53; margin:-6px 0 12px; word-break:keep-all; overflow-wrap:anywhere; }
+.res-feeling::before{ content:"마음 · "; color:#9a7a4e; }
 .res-meta{ font-size:13px; color:#4A4640; margin-bottom:10px; }
 .res-note{ font-size:13px; color:#5E5A53; margin-bottom:26px; }
 .res-bottom .cta{ margin-top:0; background:#16181D; color:var(--b-text); }
@@ -361,6 +364,9 @@ body[data-step="regionDetail"] .scrim-bottom{ height:calc(var(--qpanel-h) + 230p
 .ar-card.open{ height:auto; padding-right:14px; }
 .ar-card.open .ar-snap{ position:static; width:100%; height:auto; margin:2px 0 4px; object-position:center; animation:snapIn .35s ease; }
 .ar-card.open .ar-text{ -webkit-line-clamp:unset; display:block; font-size:17px; }
+.ar-feeling{ display:none; order:2; font-family:var(--serif); font-size:14px; line-height:1.5; color:#6b655c; word-break:keep-all; overflow-wrap:anywhere; }
+.ar-feeling::before{ content:"마음 · "; color:#9a7a4e; }
+.ar-card.open .ar-feeling{ display:block; }
 .ar-card.open .ar-foot{ margin-top:4px; }
 @keyframes snapIn{ from{opacity:0; transform:scale(.96);} to{opacity:1; transform:none;} }
 .ar-empty{ text-align:center; color:#5E5A53; font-size:13px; padding:40px 0; }

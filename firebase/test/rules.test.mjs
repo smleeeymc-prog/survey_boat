@@ -204,6 +204,19 @@ test("세부 지역(10-12): 기타 충남이면 목록 안의 이름, 없어도(
   assert.equal(S.placeOf({ region: "기타 충남" }), "기타 충남");
 });
 
+test("마음(10-30, 선택): 없어도 · 40자까지 통과, 41자·빈칸·공백뿐·앞뒤 공백·숫자는 거절", async () => {
+  const db = user();
+  await assertSucceeds(put(db, good({})));                                            // 마음 없음(선택 문항·옛 기록)
+  await assertSucceeds(put(db, good({ feeling: "고맙고 조금 답답해요 😀" })));
+  await assertSucceeds(put(db, good({ feeling: "가".repeat(S.FEELING_MAX) })));
+  for (const bad of ["가".repeat(S.FEELING_MAX + 1), "", "   ", "\u3000", " 앞 공백", 7]) await assertFails(put(db, good({ feeling: bad })));
+  // makeRecord 는 비웠거나 공백뿐이면 필드를 싣지 않고, 앞뒤 공백은 깎는다
+  const mk = (feeling) => S.makeRecord({ id: S.newId(), region: "아산", state: "stay", share: "many", text: "마음", feeling, keywords: [], name: "익명" });
+  assert.ok(!("feeling" in mk("")) && !("feeling" in mk("   ")) && !("feeling" in mk(undefined)));
+  assert.equal(mk("  든든해요 ").feeling, "든든해요");
+  assert.deepEqual(S.checkNew(mk("든든해요")), []);
+});
+
 test("record_id ≠ 문서 id, id 모양이 다르면 거절된다", async () => {
   const db = user();
   const r = good();

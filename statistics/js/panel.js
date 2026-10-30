@@ -72,7 +72,7 @@ export class Panel {
       report: $("report"), num: $("rNum"), idx: $("rIdx"),
       label: $("rLabel"), headline: $("rHeadline"),
       chart: $("statRows"), extra: $("rExtra"), period: $("rPeriod"), legend: $("rLegend"),
-      arrival: $("arrival"), logNo: $("logNo"), text: $("arrivalText"), sign: $("arrivalSign"),
+      arrival: $("arrival"), logNo: $("logNo"), text: $("arrivalText"), feeling: $("arrivalFeeling"), sign: $("arrivalSign"),
       from: $("logFrom"), status: $("logStatus"), cargo: $("logCargo"), logged: $("logLogged"),
     };
     this.records = [];
@@ -327,6 +327,12 @@ export class Panel {
     e.text.textContent = text;
     // 설문은 80자까지 받는다. 긴 문장은 글자를 한 단계 줄여 카드가 배를 덮지 않게 한다.
     e.text.classList.toggle("long", text.length > 44);
+    // Ⅳ 마음(10-30, 선택 문항) — 적은 기록만 문장 아래 한 줄
+    if (e.feeling) {
+      const feel = typeof record.feeling === "string" ? record.feeling.trim() : "";
+      e.feeling.textContent = feel;
+      e.feeling.hidden = !feel;
+    }
     const who = record.display_name && record.display_name !== "익명" ? record.display_name : "익명";
     e.sign.textContent = `— ${who}`;
     e.from.textContent = placeOf(record) || "—";   // '기타 충남'이면 고른 세부 지역(공주 …)
