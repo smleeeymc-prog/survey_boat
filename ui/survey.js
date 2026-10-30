@@ -711,7 +711,7 @@ function renderConsent(){
     if(state.disclose === "익명") return;
     const inp = h("input", "name-input");
     inp.type = "text"; inp.maxLength = 12;
-    inp.placeholder = state.disclose === "별칭" ? "별칭 (예: 바다)" : "이름 (예: 이승민)";
+    inp.placeholder = state.disclose === "별칭" ? "별칭" : "이름";   // 예시 이름은 뺐다(10-30 사용자)
     inp.setAttribute("aria-label", state.disclose);
     inp.value = state.name || "";
     inp.addEventListener("input", () => { state.name = inp.value; Draft.save(state); updateNext(); });

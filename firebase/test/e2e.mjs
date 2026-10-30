@@ -252,7 +252,9 @@ try {
   const myThumb = await waitFor(async () => (await adminDocs("thumbs")).find((t) => t.id === mine.id), { label: "thumbs 문서", timeout: 40000 });
   check("thumbs 문서가 생긴다 (WebP, 상한 이하)", myThumb && /^data:image\/(webp|jpeg);base64,/.test(myThumb.data) && myThumb.data.length <= S.THUMB.MAX_CHARS,
     myThumb ? `${myThumb.data.slice(0, 22)}… ${myThumb.data.length}자` : "");
-  check("설문: 보낸 뒤 대기열이 빈다", (await queueOf(survey)).length === 0);
+  // 서버에 썸네일 문서가 보이는 순간 설문 쪽 setDoc 약속은 아직 안 풀렸을 수 있다 — 대기열 정리는 그 뒤라 잠깐 기다린다(10-30 한 번 어긋남)
+  const qEmpty = await waitFor(async () => (await queueOf(survey)).length === 0, { label: "대기열 비움", timeout: 10000 }).catch(() => false);
+  check("설문: 보낸 뒤 대기열이 빈다", qEmpty);
 
   await waitFor(async () => (await mapCount()) === 4, { label: "지도 onInsert" });
   const inserted = await map.evaluate((id) => {
