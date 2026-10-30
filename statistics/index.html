@@ -2,9 +2,22 @@
 <html lang="ko" data-glass="lens" data-stage="16x9">
 <head>
 <meta charset="utf-8" />
-<!-- 무대 비율 — 전시 화면은 16:9 가로(10-30). ?stage=9x16 이면 예전 세로 무대(css/panel.css 기본 규칙).
-     CSS 가 그리기 전에 바꿔야 한 프레임 가로로 번쩍이지 않아서 머리에서 바로 고친다. -->
-<script>if (new URLSearchParams(location.search).get("stage") === "9x16") document.documentElement.dataset.stage = "9x16";</script>
+<!-- 무대 — 가로 기반 반응형(10-30): 가로 창은 창을 채우는 가로 무대(16x9 블록, 16:9 보다 넓은 창만 양옆을 비운다),
+     세로로 세운 창은 예전 세로 무대(9x16, css/panel.css 기본 규칙). 기기를 돌리면 따라 바뀐다. ?stage=9x16 · ?stage=16x9 로 못 박을 수 있다.
+     CSS 가 그리기 전에 정해야 한 프레임 다른 무대로 번쩍이지 않아서 머리에서 바로 고친다. -->
+<script>(function () {
+  var h = document.documentElement, q = new URLSearchParams(location.search).get("stage");
+  if (q === "9x16" || q === "16x9") { h.dataset.stage = q; return; }
+  var m = matchMedia("(orientation: portrait)");
+  var set = function (later) {
+    var s = m.matches ? "9x16" : "16x9";
+    if (h.dataset.stage === s) return;
+    h.dataset.stage = s;
+    if (later) dispatchEvent(new Event("resize"));   // 무대 크기가 바뀌었으니 씬(world.js)이 다시 잰다
+  };
+  set(false);
+  m.addEventListener ? m.addEventListener("change", function () { set(true); }) : m.addListener(function () { set(true); });
+})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>머무름의 지도 — 그래도, 여기 살고 있습니다</title>
 <meta name="description" content="참여자들이 남긴 문장이 배가 되어 한 바다에 모이는 전시용 화면" />
