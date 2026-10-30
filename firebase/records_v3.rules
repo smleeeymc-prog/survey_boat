@@ -2,12 +2,11 @@
 // 원본은 exhibition-2026 firestore/firestore.rules의 같은 블록 — 고치면 그쪽에서 npm run rules:block 후 여기로 다시 복사(값은 exhibition-2026이 관리).
     // ── records_v3 시작 ── 「그래도, 여기 살고 있습니다」 v3(테이프)
     // 값 목록 = src/spec/survey.ts(원본 handoff/spec/survey.ts). 질문 값을 바꾸면 여기도 같이 — 빠뜨리면 제출이 조용히 거절된다.
-    // 만들기 = 익명 로그인 필요(기존 records와 같은 기준). 고치기 · 지우기 없음 — 숨길 땐 운영자가 콘솔에서 moderation_status를 'hidden'으로.
-    // 검토 = 기존 사이트와 같이 사후 검토: 만들 때 'public', 운영자가 'hidden'으로 내리면 목록 · id 읽기에서 빠진다.
-    match /records_v3/{id} {
+    // 저장 = 기존 사이트와 같은 records 컬렉션(10-30 결정). 여기선 schema_version 3 '만들기'만 더한다 —
+    // 같은 경로의 match가 둘이면 허용이 OR로 합쳐지므로 기존 validRecord(v1)는 그대로, 읽기 · 고치기 · 지우기도 기존 규칙 그대로.
+    // 만들기 = 익명 로그인 필요(기존과 같은 기준). 숨길 땐 운영자가 콘솔에서 moderation_status를 'hidden'으로.
+    match /records/{id} {
       allow create: if request.auth != null && isRecordV3(id, request.resource.data);
-      allow get: if resource == null || resource.data.moderation_status != 'hidden'; // 다시 보낸 기록이 이미 들어갔는지 확인(검토 전 기록도)
-      allow list: if resource.data.moderation_status == 'public' && request.query.limit <= 50;
 
       function isRecordV3(id, d) {
         let req = ['record_id', 'schema_version', 'region', 'state', 'share', 'text', 'keywords', 'display_name', 'consent_public',

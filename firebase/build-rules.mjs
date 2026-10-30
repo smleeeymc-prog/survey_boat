@@ -55,7 +55,7 @@ const list = (arr) => `[${arr.map(lit).join(", ")}]`;
 
 export async function buildRules() {
   const { schema: S } = loadShared();
-  const { COLLECTIONS: COL } = await import(pathToFileURL(path.join(SHARED, "db-config.js")).href);
+  const { COLLECTIONS: COL, ADMIN_EMAILS } = await import(pathToFileURL(path.join(SHARED, "db-config.js")).href);
   const T = S.THUMB;
   const newFields = S.FIELDS;
   const allowedFields = S.FIELDS.concat(S.EXTRA_FIELDS);
@@ -73,9 +73,10 @@ export async function buildRules() {
 // 요지
 //   ${COL.records}  읽기: moderation_status == "${S.STATUS.PUBLIC}" 인 문서만 누구나 (쿼리에도 같은 where가 있어야 한다)
 //            생성: 로그인(익명 포함) + 필드·타입·값 범위 전부 + 서버 시각 + 공개 상태 고정
-//            수정·삭제: 금지 — 운영자는 콘솔에서 moderation_status 를 "${S.STATUS.HIDDEN}" 으로 (콘솔은 규칙을 우회한다)
-//   ${COL.thumbs}   읽기: 짝이 되는 기록이 공개일 때만 / 생성: 기록이 먼저 있어야 / 수정·삭제 금지
-//   records_v3 · records_v3_meta  다른 사이트(exhibition-2026) 몫 — firebase/records_v3.rules 를 그대로 끼운다
+//            수정·삭제: 관리자만(admin.html) — moderation_status 바꾸기와 문서 삭제. 그 밖엔 금지(콘솔은 규칙을 우회한다)
+//   ${COL.thumbs}   읽기: 짝이 되는 기록이 공개일 때만(관리자는 전부) / 생성: 기록이 먼저 있어야 / 삭제: 관리자만 / 수정 금지
+//   관리자 = 이메일/비밀번호로 로그인한 db-config.js ADMIN_EMAILS 계정(익명 로그인은 아님)
+//   records 생성(schema_version 3) · records_v3_meta  다른 사이트(exhibition-2026 v3 테이프) 몫 — firebase/records_v3.rules 를 그대로 끼운다. 읽기·수정·삭제는 위 records 규칙 그대로
 //   그 밖의 경로는 전부 거부
 //
 // 글자 수(size)는 UTF-16 코드 단위 — JS .length, textarea maxLength 와 같다.
@@ -91,6 +92,13 @@ service cloud.firestore {
 
     function isPublic(data) {
       return data.moderation_status == ${lit(S.STATUS.PUBLIC)};
+    }
+
+    // 관리자 페이지(admin.html, 10-30) — 콘솔에서 만든 이메일/비밀번호 계정만. 익명 로그인 토큰엔 email 이 없다
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == "password"
+        && request.auth.token.email in ${list(ADMIN_EMAILS)};
     }
 
     // 앞뒤 공백 없음 + 공백으로만 된 글도 아님(전각 공백·줄바꿈 포함)
@@ -132,20 +140,26 @@ service cloud.firestore {
 ${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list(S.COLOR_IDS)} || paintHex(d.${f}))`).join("\n")}
         && (!('${S.CAT_COAT_FIELD}' in d) || d.${S.CAT_COAT_FIELD} in ${list(S.CAT_COAT_IDS)})
         // 세부 지역 — 있어도 되고 없어도 된다. 있으면 그 지역에 딸린 목록 안의 이름(지금은 '기타 충남'만 세부 목록이 있다)
-        && (!('${S.REGION_DETAIL_FIELD}' in d) || ${Object.entries(S.REGION_DETAILS).map(([r, a]) => `(d.region == ${lit(r)} && d.${S.REGION_DETAIL_FIELD} in ${list(a)})`).join(" || ") || "false"});
+        && (!('${S.REGION_DETAIL_FIELD}' in d) || ${Object.entries(S.REGION_DETAILS).map(([r, a]) => `(d.region == ${lit(r)} && d.${S.REGION_DETAIL_FIELD} in ${list(a)})`).join(" || ") || "false"})
+        // Ⅳ 마음(10-30) — 선택 문항. 있으면 문장과 같은 판정(앞뒤 공백 없음 · 공백뿐인 글 안 됨), ${S.FEELING_MAX}자 이하
+        && (!('${S.FEELING_FIELD}' in d) || cleanText(d.${S.FEELING_FIELD}, ${S.FEELING_MAX}));
     }
 
     match /${COL.records}/{id} {
       // 없는 문서의 get은 허용한다 — 설문이 재전송 전에 "이미 들어갔나"를 확인할 때
       // 없는 문서가 permission-denied 로 돌아오면 숨김 처리된 문서와 구별할 수 없다.
-      allow get: if resource == null || isPublic(resource.data);
-      allow list: if isPublic(resource.data);
+      allow get: if resource == null || isPublic(resource.data) || isAdmin();
+      allow list: if isPublic(resource.data) || isAdmin();
       allow create: if signedIn() && validRecord(id, request.resource.data);
-      allow update, delete: if false;
+      // 관리자: 공개 상태만 바꾼다(숨기기·되살리기) — 다른 필드는 그대로여야 한다
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["moderation_status"])
+        && request.resource.data.moderation_status in ${list(Object.values(S.STATUS))};
+      allow delete: if isAdmin();
     }
 
     match /${COL.thumbs}/{id} {
-      allow get: if isPublic(get(/databases/$(database)/documents/${COL.records}/$(id)).data);
+      allow get: if isAdmin() || isPublic(get(/databases/$(database)/documents/${COL.records}/$(id)).data);
       allow list: if false;
       allow create: if signedIn()
         && exists(/databases/$(database)/documents/${COL.records}/$(id))
@@ -156,7 +170,8 @@ ${S.PROP_COLOR_FIELDS.map((f) => `        && (!('${f}' in d) || d.${f} in ${list
         && request.resource.data.data is string
         && request.resource.data.data.size() <= ${T.MAX_CHARS}
         && request.resource.data.data.matches('^data:image/(${typeAlt});base64,[A-Za-z0-9+/=]+$');
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
 ${v3}
