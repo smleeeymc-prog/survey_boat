@@ -51,6 +51,9 @@ var RECORD_SCHEMA = (function (T) {
   const KEYWORDS_MAX = 2;
   const ANON_NAME = "익명";
   const SCHEMA_VERSION = 1;
+  // 받아서 보여 주는 기록의 버전 — 1 은 이 설문, 3 은 같은 records 에 쌓는 테이프 사이트(exhibition-2026 v3, 10-30 이슈 #3).
+  // v3 은 질문 답 필드가 같고 배 꾸미기·마음이 없다(지도엔 기본 배로). 새로 만드는 기록(checkNew)은 SCHEMA_VERSION 만.
+  const READ_VERSIONS = [SCHEMA_VERSION, 3];
   // 검토 정책: 즉시 공개 + 운영자가 콘솔에서 "hidden"으로 바꿔 숨김.
   // 승인제로 바꾸려면 CREATE_STATUS 를 "pending" 으로 바꾸고 규칙을 다시 생성·배포한다.
   const STATUS = { PUBLIC: "public", HIDDEN: "hidden", PENDING: "pending" };
@@ -125,7 +128,7 @@ var RECORD_SCHEMA = (function (T) {
   }
 
   /** 값 영역 검사 — 새 기록과 받은 기록이 같이 쓴다. 문제 목록(빈 배열이면 통과). */
-  function checkValues(r, problems) {
+  function checkValues(r, problems, versions = [SCHEMA_VERSION]) {
     if (!REGIONS.includes(r.region)) problems.push("region");
     if (!STATE_IDS.includes(r.state)) problems.push("state");
     if (!SHARE_IDS.includes(r.share)) problems.push("share");
@@ -137,7 +140,7 @@ var RECORD_SCHEMA = (function (T) {
     if (!isStr(n) || n.length < 1 || n.length > NAME_MAX || n !== n.trim()) problems.push("display_name");
     if (r.consent_public !== true) problems.push("consent_public");
     if (r.consent_archive !== true) problems.push("consent_archive");
-    if (r.schema_version !== SCHEMA_VERSION) problems.push("schema_version");
+    if (!versions.includes(r.schema_version)) problems.push("schema_version");
     const isHex = (v) => isStr(v) && COLOR_HEX_RE.test(v);
     if ("hull_color" in r && !COLOR_IDS.includes(r.hull_color) && !isHex(r.hull_color)) problems.push("hull_color");
     if ("deck_color" in r && !DECK_COLOR_IDS.includes(r.deck_color) && !isHex(r.deck_color)) problems.push("deck_color");
@@ -173,7 +176,7 @@ var RECORD_SCHEMA = (function (T) {
     if (!isStr(r.record_id) || !ANY_ID_RE.test(r.record_id)) problems.push("record_id");
     if (!isStr(r.created_at) || !Number.isFinite(Date.parse(r.created_at))) problems.push("created_at");
     if (r.moderation_status !== STATUS.PUBLIC) problems.push("moderation_status");
-    return checkValues(r, problems);
+    return checkValues(r, problems, READ_VERSIONS);
   }
 
   /**
@@ -245,7 +248,7 @@ var RECORD_SCHEMA = (function (T) {
   }
 
   return {
-    TEXT_MAX, FEELING_MAX, FEELING_FIELD, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, STATUS, CREATE_STATUS,
+    TEXT_MAX, FEELING_MAX, FEELING_FIELD, NAME_MAX, KEYWORDS_MAX, ANON_NAME, SCHEMA_VERSION, READ_VERSIONS, STATUS, CREATE_STATUS,
     FIELDS, PAINT_FIELDS, EXTRA_FIELDS, EXTRA_GROUPS, REGION_DETAIL_FIELD, REGION_DETAILS, PROP_COLOR_FIELDS, CAT_COAT_FIELD, DECK_AUTO, COLOR_HEX_RE, COLOR_HEX_SRC, ID_LENGTH, ID_RE, THUMB,
     REGIONS, STATE_IDS, SHARE_IDS, KEYWORDS, COLOR_IDS, DECK_COLOR_IDS, CAT_COAT_IDS,
     newId, checkNew, checkRecord, makeRecord, safeImage, hasExtras, withoutExtras, placeOf,

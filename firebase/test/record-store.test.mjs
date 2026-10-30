@@ -92,6 +92,26 @@ test("최신순 n건·개수·숨김 제외 (created_at 은 ISO 문자열로 온
   assert.equal(await store.dbCountPublic(), 4);
 });
 
+test("테이프 사이트 v3 기록(이슈 #3)도 받아서 화면 검사를 통과한다 · 새 기록은 여전히 v1 만", async () => {
+  // exhibition-2026 이 같은 records 에 쌓는 모양 — uuid id, schema_version 3, 테이프 꾸미기 필드, 배 색·마음 없음
+  const id = "a71e7a7b-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
+  await env.withSecurityRulesDisabled((ctx) => fs.setDoc(fs.doc(ctx.firestore(), "records", id), {
+    record_id: id, schema_version: 3, region: "기타 충남", region_detail: "공주", state: "stay", share: "close",
+    text: "테이프에 적은 문장", keywords: ["관계"], display_name: "익명", consent_public: true, consent_archive: true,
+    shell_kind: "a", shell_color: "lime", shell_color2: "pink", pen_color: "blue", sticker_colors: ["red"], specimen_no: 7,
+    moderation_status: "public", created_at: fs.Timestamp.now(),
+  }));
+  await store.dbSubmitRecord(rec());
+  const recent = await store.dbFetchRecent(10);
+  const v3 = recent.find((r) => r.record_id === id);
+  assert.ok(v3, "v3 기록이 목록에 온다");
+  assert.deepEqual(S.checkRecord(v3), [], JSON.stringify(v3));
+  assert.equal(S.placeOf(v3), "공주");
+  assert.ok(!("shell_kind" in v3), "모르는 테이프 필드는 버린다");
+  assert.equal(await store.dbCountPublic(), recent.length);   // 개수와 화면에 보이는 수가 같다
+  assert.deepEqual(S.checkNew({ ...rec(), schema_version: 3 }), ["schema_version"]);
+});
+
 test("인덱스가 없으면(failed-precondition) 인덱스 없는 쿼리로 물러나 같은 결과를 낸다", async () => {
   for (let i = 0; i < 4; i++) {
     await store.dbSubmitRecord(rec({ text: `문장 ${i}` }));
