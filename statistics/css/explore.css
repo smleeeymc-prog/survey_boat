@@ -7,22 +7,24 @@
  * 화면 상태는 html[data-ex] 하나로 맞춘다(js/explore/main.js _setMode): boot · browse · focus · stats.
  * ========================================================================== */
 
-/* 폰이 주 기기다. 전시 무대는 9:16 상자 하나지만, 폰은 대개 9:16 보다 길쭉해서 위아래가 검게 빈다.
-   여기선 높이를 화면에 꽉 채우고 폭만 9:16 을 넘지 않게 한다 — 길쭉한 만큼 바다가 아래로 더 보인다.
-   단위(u)는 폭 기준 그대로라 글자·카드 크기는 전시와 같은 비율이다. */
+/* [10-30 사용자: "둘러보기에선 9:16 고정 말고 반응형으로"] 무대가 창을 채운다 — 폰 세로·태블릿·노트북 가로 어디서든.
+   상한은 16:9: 바다의 띠(config.js FLOW_ASPECT_MAX)가 16:9 전시에 맞춰져 있어, 그보다 넓으면 화면 양끝에서 배가 감기는 게 보인다.
+   그보다 넓은 창(21:9 등)만 양옆이 어둡게 빈다. 좌우로 더 둘러보는 폭(pan)도 띠 안에서만(explore/view-control.js limits).
+   단위(u)는 짧은 쪽 기준 — 세로 폰은 폭의 1%(예전과 같다), 가로 창은 높이의 0.5625%(9:16 무대였을 때와 같은 글자 크기). */
 :root { --u: min(1vw, .5625vh); }
-@supports (height: 100dvh) {
-  :root { --u: min(1vw, .5625dvh); }
-  #stage { height: 100dvh; }
-}
 #stage {
-  width: calc(100 * var(--u));
+  width: min(100vw, 177.78vh);
   height: 100vh;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+}
+/* 주소창을 뺀 높이(dvh) — 위 규칙보다 뒤에 둬야 이긴다(예전엔 앞에 있어 vh 가 이겼다) */
+@supports (height: 100dvh) {
+  :root { --u: min(1vw, .5625dvh); }
+  #stage { width: min(100vw, 177.78dvh); height: 100dvh; }
 }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -151,6 +153,12 @@ html[data-glass="flat"] .ex-open { backdrop-filter: none; -webkit-backdrop-filte
   transition: opacity .6s var(--ease-io), visibility 0s linear .6s;
 }
 .ex-stats.on { opacity: 1; visibility: visible; transition: opacity .7s var(--ease-io), visibility 0s; }
+/* 가로 창(10-30 반응형) — 통계·배 카드는 가운데 기둥(폭 120u, 세로 폰의 1.2배)에 모은다. 세로 폰에선 50% - 60u 가
+   음수라 예전처럼 pad-x 가 이긴다. 칩 줄·목차 막대가 화면 끝까지 늘어나 읽기 어렵던 것을 막는다 */
+.ex-stats, .arrival {
+  padding-left: max(var(--pad-x), calc(50% - 60 * var(--u)));
+  padding-right: max(var(--pad-x), calc(50% - 60 * var(--u)));
+}
 /* 닫히는 동안(사라지는 0.6초)에도 손은 바로 바다로 — 닫자마자 끌면 그게 바다에 먹어야 한다 */
 .ex-stats:not(.on) { pointer-events: none; }
 .ex-stats-top { display: flex; align-items: center; justify-content: space-between; }

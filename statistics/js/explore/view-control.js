@@ -16,7 +16,7 @@
  * ========================================================================== */
 
 import { TourCamera } from "../camera.js";
-import { EXPLORE_VIEW } from "../config.js";
+import { EXPLORE_VIEW, FLOW_ASPECT_MAX } from "../config.js";
 
 const TAP_MOVE = 8;        // px — 이보다 덜 움직였으면 탭
 const TAP_MS = 450;
@@ -55,10 +55,12 @@ export class ViewControl {
     return { left: r.left, top: r.top, w: r.width || 1, h: r.height || 1, a: (r.width || 1) / (r.height || 1) };
   }
 
-  /** 렌즈 t 에서 고개가 갈 수 있는 끝 — 보이는 가로 끝이 평소 화면 + 양옆 pan 을 넘지 않게 */
+  /** 렌즈 t 에서 고개가 갈 수 있는 끝 — 보이는 가로 끝이 평소 화면 + 양옆 pan 을 넘지 않게.
+   *  [10-30] 무대가 창을 채우게 되자(가로 창은 16:9까지) pan 을 다 주면 바다 띠(FLOW_ASPECT_MAX — 16:9 기준) 밖이 보여
+   *  양끝에서 배가 감긴다. 보이는 가로가 띠 기준 화면비를 넘지 않게 줄인다 — 세로 폰은 그대로 20%, 16:9 창은 0(줌했을 때만 옆으로). */
   limits(t = this.view.tan) {
     const a = this.cam.aspect;
-    const edgeX = Math.atan(this.home * a * (1 + 2 * EXPLORE_VIEW.pan));
+    const edgeX = Math.atan(this.home * Math.max(a, Math.min(a * (1 + 2 * EXPLORE_VIEW.pan), FLOW_ASPECT_MAX)));
     const edgeY = Math.atan(this.home);
     return {
       yaw: Math.max(0, edgeX - Math.atan(t * a)),
