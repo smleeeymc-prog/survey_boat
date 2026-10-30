@@ -4,3 +4,5 @@ node_modules
 *-debug.log
 # E2E(firebase/test/e2e.mjs 7번)가 남기는 목업 아카이브 스크린샷
 firebase/test/mock-archive-*.png
+# firebase/ 에서 npm install 하면 생긴다 — 레포는 package.json 버전 고정만 쓴다(잠금 파일 없음)
+firebase/package-lock.json
