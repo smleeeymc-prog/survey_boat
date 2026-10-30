@@ -31,11 +31,15 @@ var Kiosk = (function () {
   const request = root.requestFullscreen || root.webkitRequestFullscreen;
   const canFull = !!request && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-  const standalone = () => matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches || navigator.standalone === true;
+  // 홈 화면에 '설치'한 앱으로 열렸나(바로가기는 아니다 — 바로가기는 그냥 크롬 탭으로 열린다). 이미 전체화면 앱이면 할 게 없다
+  const standalone = () => matchMedia("(display-mode: fullscreen), (display-mode: standalone), (display-mode: minimal-ui)").matches || navigator.standalone === true;
+  const fullApp = () => matchMedia("(display-mode: fullscreen)").matches;
+  // 설치된 앱으로 열었으면 설정을 안 켜도 전체화면을 노린다(10-30 사용자: 갤럭시 탭 S7 FE 크롬 — 홈 화면에 추가해도 전체화면이 안 됐다)
+  const wanted = () => !!conf.fullscreen || standalone();
 
   /* ── 전체화면 유지 ─────────────────────────────────────── */
   function enter() {
-    if (!conf.fullscreen || !canFull || isFull() || standalone()) return;
+    if (!wanted() || !canFull || isFull() || fullApp()) return;
     try {
       const p = request.call(root, { navigationUI: "hide" });
       if (p && p.catch) p.catch(() => {});
@@ -48,7 +52,7 @@ var Kiosk = (function () {
 
   let lock = null;
   async function keepAwake() {
-    if (!conf.fullscreen || !("wakeLock" in navigator) || lock || document.visibilityState !== "visible") return;
+    if (!wanted() || !("wakeLock" in navigator) || lock || document.visibilityState !== "visible") return;
     try {
       lock = await navigator.wakeLock.request("screen");
       lock.addEventListener("release", () => { lock = null; });
@@ -57,7 +61,20 @@ var Kiosk = (function () {
   document.addEventListener("visibilitychange", keepAwake);
   document.addEventListener("fullscreenchange", keepAwake);
   document.addEventListener("webkitfullscreenchange", keepAwake);
-  if (conf.fullscreen) keepAwake();
+  if (wanted()) keepAwake();
+
+  /* ── 앱으로 설치 ───────────────────────────────────────────
+     크롬 메뉴의 "홈 화면에 추가"는 '바로가기'로 만들어질 때가 있다 — 그러면 아이콘을 눌러도 주소창 있는 탭으로 열린다.
+     크롬이 주는 설치 기회(beforeinstallprompt)를 잡아 두었다가 운영자 설정의 "앱으로 설치" 버튼으로 진짜 설치(WebAPK)를 한다.
+     설치된 앱은 manifest 의 display: fullscreen 으로 상태바·주소창 없이 뜬다. 참여자 폰에 설치 안내 띠가 뜨지 않게 기본 안내는 막는다. */
+  let installEvt = null;
+  addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; });
+  addEventListener("appinstalled", () => { installEvt = null; });
+  // 설치 조건을 확실히 채우려고 서비스 워커를 둔다(루트 sw.js — 캐시는 안 한다). 지도 도메인처럼 없는 곳에선 조용히 실패
+  if ("serviceWorker" in navigator && document.currentScript) {
+    const sw = new URL("../../sw.js", document.currentScript.src);
+    if (sw.origin === location.origin) navigator.serviceWorker.register(sw, { scope: new URL("./", sw).pathname }).catch(() => {});
+  }
 
   /* ── 운영자 설정 창 ─────────────────────────────────────── */
   const CSS = `
@@ -70,6 +87,7 @@ var Kiosk = (function () {
     #kioskPanel input{ width:22px; height:22px; margin:1px 0 0; accent-color:#e6c79a; flex:0 0 auto; }
     #kioskPanel p{ font-size:12.5px; line-height:1.55; color:rgba(246,242,234,.66); margin:12px 0 0; }
     #kioskPanel .st{ font-size:12.5px; color:#e6c79a; margin-top:10px; }
+    #kioskPanel button.install{ background:#e6c79a; }
     #kioskPanel button{ margin-top:16px; width:100%; height:44px; border:0; border-radius:22px; background:#f6f2ea; color:#111318;
       font:600 15px/1 "IBM Plex Sans KR",system-ui,sans-serif; cursor:pointer; }`;
   function openPanel() {
@@ -81,15 +99,17 @@ var Kiosk = (function () {
     wrap.id = "kioskPanel";
     wrap.setAttribute("role", "dialog");
     wrap.setAttribute("aria-label", "운영자 설정");
-    const status = !canFull ? (standalone() ? "홈 화면 앱으로 열려 있어요 — 이미 주소창 없이 떠 있습니다." : "이 브라우저는 페이지 전체화면을 지원하지 않아요(아이폰 등). 홈 화면에 추가해서 여세요.")
-      : standalone() ? "홈 화면 앱으로 열려 있어요." : "";
+    const mode = fullApp() ? "설치된 앱(전체화면)" : standalone() ? "설치된 앱(창 — 누르면 전체화면으로)" : "브라우저 탭";
+    const status = `지금: ${mode}` + (!canFull && !fullApp() ? " · 이 브라우저는 페이지 전체화면을 지원하지 않아요(아이폰 등) — 홈 화면에 추가해서 여세요." : "");
     wrap.innerHTML = `<div class="kp">
       <h2>운영자 설정 · 이 기기</h2>
       <label><input type="checkbox" ${conf.fullscreen ? "checked" : ""}><span>이 기기는 늘 전체화면으로<br><small style="opacity:.7">상태바·주소창·툴바를 숨기고, 화면 꺼짐도 막아요</small></span></label>
       <p>브라우저 규칙상 페이지를 열 때마다 화면을 한 번 눌러야 전체화면이 돼요(참여자가 처음 누르는 버튼이면 충분해요). 설문 ↔ 지도로 넘어갈 때도 다음 터치에서 다시 들어갑니다.
-      깜빡임 없이 쓰려면 브라우저 메뉴의 <b>홈 화면에 추가</b>로 설치해서 여세요.</p>
-      ${status ? `<p class="st">${status}</p>` : ""}
-      <button type="button">닫기</button></div>`;
+      깜빡임 없이 쓰려면 <b>앱으로 설치</b>해서 홈 화면 아이콘으로 여세요. 크롬 메뉴의 "홈 화면에 추가"가 <b>바로가기</b>로 만들어지면 탭으로 열려 전체화면이 안 돼요 —
+      그 아이콘은 지우고 아래 버튼(또는 크롬 메뉴의 <b>앱 설치</b>)으로 다시 설치하세요.</p>
+      <p class="st">${status}</p>
+      ${installEvt && !standalone() ? `<button type="button" class="install">앱으로 설치</button>` : ""}
+      <button type="button" class="close">닫기</button></div>`;
     const box = wrap.querySelector("input");
     box.addEventListener("change", () => {
       conf = { ...conf, fullscreen: box.checked };
@@ -97,10 +117,17 @@ var Kiosk = (function () {
       if (box.checked) { enter(); keepAwake(); }
       else { if (lock) lock.release().catch(() => {}); if (isFull()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
     });
-    wrap.querySelector("button").addEventListener("click", () => wrap.remove());
+    wrap.querySelector(".close").addEventListener("click", () => wrap.remove());
+    const inst = wrap.querySelector(".install");
+    if (inst) inst.addEventListener("click", async () => {
+      const ev = installEvt; installEvt = null;
+      try { await ev.prompt(); const r = await ev.userChoice; inst.textContent = r && r.outcome === "accepted" ? "설치했어요 — 홈 화면 아이콘으로 여세요" : "설치를 취소했어요"; }
+      catch (_) { inst.textContent = "설치 창을 못 열었어요 — 크롬 메뉴 → 앱 설치"; }
+      inst.disabled = true;
+    });
     wrap.addEventListener("click", (e) => { if (e.target === wrap) wrap.remove(); });
     document.body.appendChild(wrap);
-    wrap.querySelector("button").focus();
+    wrap.querySelector(".close").focus();
   }
 
   // 숨은 입구 — 왼쪽 위 구석을 3초 안에 다섯 번. click 으로 센다: pointerup 에서 열면 같은 탭의 뒤따르는 click 이
@@ -115,5 +142,5 @@ var Kiosk = (function () {
   const boot = () => { if (new URLSearchParams(location.search).get("operator") === "1") openPanel(); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
 
-  return { get on() { return !!conf.fullscreen; }, openPanel, enter };
+  return { get on() { return wanted(); }, openPanel, enter };
 })();

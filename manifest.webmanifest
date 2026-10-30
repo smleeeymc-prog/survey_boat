@@ -3,6 +3,7 @@
   "short_name": "여기 살고 있습니다",
   "description": "입다 · 2026 다원예술 프로젝트 — 참여형 아카이브",
   "lang": "ko",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
