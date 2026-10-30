@@ -5,7 +5,7 @@
  * (explore.html)와 같이 쓴다. 여기 있는 건 전시 화면만의 진행이다:
  *   · 저장소(store) → 기록이 오면 배를 띄우고, 새 기록이면 차례대로 크게 보여준다(줄은 최대 3)
  *   · 패널(panel) — 풍경/통계 시간표, 누적 수, 방금 도착한 문장
- *   · 보정 화면(?depths=1) · 디버그 오버레이(?debug=1)
+ *   · 보정 화면(?depths=1) · 디버그 오버레이(?debug=1) · 누르면 전체화면(fullscreen.js)
  * ========================================================================== */
 
 import * as C from "./config.js";
@@ -16,6 +16,7 @@ import { makeStyle } from "./style.js";
 import { Panel } from "./panel.js";
 import { pickStore } from "./store.js";
 import { runSelfChecks } from "./selfcheck.js";
+import { setupFullscreen } from "./fullscreen.js";
 
 const qs = new URLSearchParams(location.search);
 const TIME_KEY = C.TIME_OF_DAY[qs.get("time")] ? qs.get("time") : C.DEFAULT_TIME_KEY;
@@ -205,6 +206,8 @@ class Exhibit {
 }
 
 // ── 부팅 ────────────────────────────────────────────────────────────────────
+// 태블릿 크롬 등에서 주소창·툴바 없이 — 화면을 한 번 누르면 전체화면(fullscreen.js 머리말)
+setupFullscreen();
 const scene = new Exhibit(document.getElementById("scene"));
 scene.frame();
 scene.load()

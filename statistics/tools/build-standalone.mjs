@@ -57,7 +57,8 @@ const MODULE_ORDER = [
   // text.js 는 셋 모두가 쓰는 글자 도구, insights.js 는 metrics 의 MOTIVE_OF 를 쓴다.
   "stats/text.js", "stats/metrics.js", "stats/insights.js", "stats/views.js", "stats/index.js",
   // world.js(장면)는 main.js(전시 진행)가 쓴다 — 바로 앞. js/explore/ 는 인터랙티브 입구라 시안에 넣지 않는다.
-  "panel.js", "selfcheck.js", "world.js", "main.js",
+  // fullscreen.js 는 main.js 가 부팅 때 부른다(시안 iframe 에서는 막혀 있어 아무것도 안 한다).
+  "panel.js", "selfcheck.js", "world.js", "fullscreen.js", "main.js",
 ];
 
 const read = (p) => fs.readFileSync(p, "utf8");

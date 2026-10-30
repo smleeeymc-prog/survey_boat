@@ -642,6 +642,22 @@ html[data-stage="16x9"] .log-row dd.num { font-size: calc(2.3 * var(--u)); }
   .arrival, .arrival * { animation: none !important; transition: none !important; }
 }
 
+/* 전체화면 안내(js/fullscreen.js) — 켜고 몇 초, 전체화면에서 나왔을 때 몇 초만. 송출 화면을 가리지 않게 작게 오른쪽 아래 */
+.fsHint {
+  position: fixed; right: calc(2.4 * var(--u)); bottom: calc(2.4 * var(--u));
+  z-index: 8;
+  pointer-events: none;
+  font-size: calc(1.8 * var(--u)); font-weight: 500; letter-spacing: .08em;
+  color: var(--t1);
+  background: rgba(var(--night), .62);
+  border: 1px solid rgba(246, 242, 234, .16);
+  border-radius: 99px;
+  padding: .55em 1.1em;
+  opacity: 0;
+  transition: opacity .8s var(--ease-io);
+}
+.fsHint.on { opacity: 1; }
+
 /* 디버그 오버레이 (?debug=1) — 전시 중에는 절대 보이지 않는다 */
 #hud {
   position: fixed; right: 10px; bottom: 10px; z-index: 9;
