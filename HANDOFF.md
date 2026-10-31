@@ -324,7 +324,6 @@ survey_boat/
 │   ├─ record-sync.js   DB 연결: 제출·대기열·썸네일·아카이브 목록 (09-30, 13장)
 │   ├─ draft.js         작성 중 저장 · 새로고침 뒤 "이어 쓰기" (10-06, 6.23)
 │   └─ survey.js        설문 흐름: state · render() · 단계별 화면
-├─ dev/look-lab.js     임시 테스트 메뉴 (그림자 토글·FPS)
 ├─ HANDOFF.md          이 문서
 ├─ assets/             블렌더 산출물 자리 · 굽기 원본 (화면이 읽는 곳이 아니다)
 │   ├─ scene_baked.glb  블렌더에서 뽑은 원본 (요소마다 텍스처가 따로)
@@ -566,8 +565,8 @@ onboard → prompt → region → state → sentence → share → keywords → 
 | 틸트시프트 · 비네트 | `#sceneStage` 안 `.tiltBlur` · `.sceneVignette` (CSS) | 09-30 B′ 때 틸트시프트를 뺐다가 **같은 날 되살렸다**(사용자: 등대 지붕 흐림이 사라졌다) — 이번엔 **띠 경계가 카메라 구도(FRAMING.shift)를 따라간다**(6.18). **비네트는 결과 화면에서만** 바깥에서 들어온다 |
 | 화면 구도 | `FRAMING` (index.html) | 질문 단계는 배를 화면 위로 13% 올리고(`camera.setViewOffset`) 1.1배 물러난다, 결과는 10%. 질문 판과 겹치지 않게 |
 
-테스트 메뉴(`dev/look-lab.js`, 오른쪽 위 "룩")에는 부드러운 그림자 켜고 끄기와 FPS만 남았다.
-지울 때는 그 파일과 `index.html`의 `import("./dev/look-lab.js")` 한 줄만 지운다. 블룸·그레인은 고르지
+테스트 메뉴(오른쪽 위 "룩" — 부드러운 그림자 켜고 끄기·FPS)는 **10-31 사용자 요청으로 뺐다**(`dev/look-lab.js`와 import 한 줄).
+그림자는 늘 켜짐(`SOFT_SHADOWS_DEFAULT = true` — 끄려면 이 값). 예전에 메뉴로 끈 기기의 기억값(localStorage `lookLab.v2`)은 이제 안 읽는다. 블룸·그레인은 고르지
 않아서 코드를 뺐다(블룸은 장면을 두 번 그려 가장 무거웠다).
 
 지금까지 해 보고 뺀 것 (다시 시도할 때 참고): 환경광 IBL/PMREM(가장 무거움, 100 → 190ms),
