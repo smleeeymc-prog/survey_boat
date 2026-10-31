@@ -12,7 +12,7 @@
         let req = ['record_id', 'schema_version', 'region', 'state', 'share', 'text', 'keywords', 'display_name', 'consent_public',
                    'consent_archive', 'shell_kind', 'shell_color', 'pen_color', 'sticker_colors', 'moderation_status', 'created_at'];
         let colors = ['base', 'red', 'orange', 'lemon', 'lime', 'cyan', 'blue', 'violet', 'pink'];
-        return d.keys().hasAll(req) && d.keys().hasOnly(req.concat(['region_detail', 'shell_color2', 'specimen_no']))
+        return d.keys().hasAll(req) && d.keys().hasOnly(req.concat(['region_detail', 'shell_color2', 'specimen_no', 'feeling']))
           && d.record_id == id && id.matches('^[A-Za-z0-9-]{8,64}$')
           && d.schema_version == 3
           && d.region in ['아산', '천안', '기타 충남', '충남 밖', '비공개']
@@ -22,6 +22,7 @@
           && d.state in ['stay', 'leaving', 'between', 'returned', 'unsure']
           && d.share in ['many', 'close', 'few', 'none']
           && isTextV3(d.text, 80)
+          && (!('feeling' in d) || isTextV3(d.feeling, 40)) // v18 Ⅲ-2 마음 — 선택, 비우면 필드 없음
           && d.keywords is list && d.keywords.size() <= 2 && d.keywords.toSet().size() == d.keywords.size()
           && d.keywords.hasOnly(['일', '관계', '가족', '창작', '익숙함', '주거', '불안', '자유', '소속감', '우연'])
           && isTextV3(d.display_name, 12)
